@@ -1,0 +1,40 @@
+# Operating System
+.DS_Store
+Thumbs.db
+
+# IDE & Editors
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+.classpath
+.project
+.settings/
+
+# Gradle & Node Build Artifacts
+.gradle/
+build/
+bin/
+out/
+node_modules/
+dist/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Security & Secrets (CRITICAL: NEVER COMMIT TO VCS)
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.p12
+*.jks
+*.crt
+**/secrets/
+**/application-secret.yaml
+**/application-secret.properties
+**/application-secret.yml
+
+# Logs
+*.log
+logs/

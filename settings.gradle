@@ -1,0 +1,4 @@
+rootProject.name = 'doro-platform'
+include 'auth'
+include 'guard'
+include 'sdk'

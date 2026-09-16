@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package doro.guard.v1;
+
+option java_multiple_files = true;
+option java_package = "com.hunnit_beasts.guard.interfaces.grpc";
+option java_outer_classname = "DoroGuardProto";
+
+message RelationTupleProto {
+  string namespace = 1;
+  string object_id = 2;
+  string relation = 3;
+  string subject_namespace = 4;
+  string subject_id = 5;
+  string subject_relation = 6;
+}
+
+message CheckRequest {
+  string namespace = 1;
+  string object_id = 2;
+  string relation = 3;
+  string subject_namespace = 4;
+  string subject_id = 5;
+  string subject_relation = 6;
+}
+
+message CheckResponse {
+  bool allowed = 1;
+  int32 depth = 2;
+  string reason = 3;
+}
+
+message WriteTuplesRequest {
+  repeated RelationTupleProto tuples = 1;
+}
+
+message WriteTuplesResponse {
+  int32 written_count = 1;
+}
+
+message DeleteTuplesRequest {
+  repeated RelationTupleProto tuples = 1;
+}
+
+message DeleteTuplesResponse {
+  int32 deleted_count = 1;
+}
+
+message ExpandRequest {
+  string namespace = 1;
+  string object_id = 2;
+  string relation = 3;
+}
+
+message ExpandResponse {
+  string tree_json = 1;
+}
+
+service GuardService {
+  rpc Check(CheckRequest) returns (CheckResponse);
+  rpc WriteTuples(WriteTuplesRequest) returns (WriteTuplesResponse);
+  rpc DeleteTuples(DeleteTuplesRequest) returns (DeleteTuplesResponse);
+  rpc Expand(ExpandRequest) returns (ExpandResponse);
+}

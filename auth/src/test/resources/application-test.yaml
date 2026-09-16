@@ -1,0 +1,38 @@
+spring:
+  application:
+    name: doro-iam-test
+
+  datasource:
+    url: jdbc:h2:mem:doro_iam_test;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+        format_sql: true
+        jdbc:
+          time_zone: UTC
+    open-in-view: false
+
+  flyway:
+    enabled: false
+
+doro:
+  iam:
+    issuer: https://auth.doro.local
+    jwt:
+      access-token-validity-seconds: 900
+      refresh-token-validity-seconds: 1209600
+    session:
+      max-active-sessions-per-user: 10
+      inactivity-timeout-seconds: 604800
+
+management:
+  health:
+    redis:
+      enabled: false

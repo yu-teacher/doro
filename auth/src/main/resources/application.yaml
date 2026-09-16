@@ -1,0 +1,77 @@
+spring:
+  application:
+    name: doro-iam
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+  config:
+    import: optional:classpath:application-secret.yaml
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/doro_iam}
+    username: ${SPRING_DATASOURCE_USERNAME:doro_admin}
+    password: ${SPRING_DATASOURCE_PASSWORD:doro_secret}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 20000
+      idle-timeout: 300000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          time_zone: UTC
+    open-in-view: false
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    table: auth_schema_history
+    locations: classpath:db/migration
+
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      password: ${SPRING_DATA_REDIS_PASSWORD:}
+      timeout: 3000ms
+
+doro:
+  iam:
+    issuer: https://auth.doro.local
+    jwt:
+      access-token-validity-seconds: 900 # 15분
+      refresh-token-validity-seconds: 1209600 # 14일
+    session:
+      max-active-sessions-per-user: 10
+      inactivity-timeout-seconds: 604800 # 7일
+  guard:
+    url: ${DORO_GUARD_URL:http://localhost:28081}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when_authorized
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} [traceId=%X{traceId:-NONE}] [userId=%X{userId:-ANON}] [clientIp=%X{clientIp:-LOCAL}] - %msg%n"
+  level:
+    com.hunnit_beasts.auth: DEBUG
+    org.springframework.security: INFO
+

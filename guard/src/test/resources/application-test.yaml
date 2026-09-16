@@ -1,0 +1,39 @@
+server:
+  port: 0
+
+spring:
+  application:
+    name: doro-guard-test
+
+  datasource:
+    url: jdbc:h2:mem:doro_guard_test;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+        format_sql: true
+        jdbc:
+          time_zone: UTC
+    open-in-view: false
+
+  flyway:
+    enabled: false
+
+doro:
+  guard:
+    grpc:
+      port: 0
+    engine:
+      max-depth: 32
+      cache-ttl-seconds: 60
+
+management:
+  health:
+    redis:
+      enabled: false

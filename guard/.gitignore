@@ -1,0 +1,11 @@
+.gradle/
+build/
+out/
+bin/
+.DS_Store
+*.pem
+*.key
+*.p12
+*.jks
+application-secret.yaml
+.env*

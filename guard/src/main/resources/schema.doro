@@ -1,0 +1,32 @@
+# Doro Guard Standard Zanzibar Schema DSL
+
+type user {
+  relation manager: user | system#admin
+  relation super_manager: user | system#super_admin
+  relation can_reset_2fa: manager | super_manager
+}
+
+type group {
+  relation member: user | group#member
+}
+
+type system {
+  relation super_admin: user
+  relation admin: user | super_admin
+  relation auditor: user | admin
+  relation manage_roles: super_admin
+}
+
+type folder {
+  relation parent: folder
+  relation owner: user
+  relation editor: user | owner
+  relation viewer: user | editor | parent#viewer
+}
+
+type document {
+  relation parent: folder
+  relation owner: user
+  relation editor: user | group#member | owner
+  relation viewer: user | group#member | editor | parent#viewer
+}

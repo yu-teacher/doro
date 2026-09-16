@@ -1,0 +1,161 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: doro-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-doro_iam}
+      POSTGRES_USER: ${POSTGRES_USER:-doro_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-doro_secret}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - doro_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-doro_admin} -d ${POSTGRES_DB:-doro_iam}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - doro-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: doro-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - doro_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - doro-network
+
+  auth-api:
+    build:
+      context: ./auth
+      dockerfile: Dockerfile
+    container_name: doro-auth-api
+    restart: unless-stopped
+    ports:
+      - "${AUTH_PORT:-8080}:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-doro_iam}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-doro_admin}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-doro_secret}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      DORO_IAM_ISSUER: ${DORO_IAM_ISSUER:-https://auth.doro.local}
+      DORO_GUARD_URL: ${DORO_GUARD_URL:-http://guard-api:8081}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      guard-api:
+        condition: service_started
+    networks:
+      - doro-network
+
+  guard-api:
+    build:
+      context: ./guard
+      dockerfile: Dockerfile
+    container_name: doro-guard-api
+    restart: unless-stopped
+    ports:
+      - "${GUARD_PORT:-8081}:8081"
+      - "${GUARD_GRPC_PORT:-9090}:9090"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-doro_iam}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-doro_admin}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-doro_secret}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      PORT: 8081
+      GRPC_PORT: 9090
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - doro-network
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: doro-web-portal
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-3000}:80"
+    depends_on:
+      - auth-api
+      - guard-api
+    networks:
+      - doro-network
+
+  loki:
+    image: grafana/loki:3.3.2
+    container_name: doro-loki
+    user: "0:0"
+    restart: unless-stopped
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    volumes:
+      - ./monitoring/loki/loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - doro_lokidata:/tmp/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - doro-network
+
+  promtail:
+    image: grafana/promtail:3.3.2
+    container_name: doro-promtail
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/promtail/promtail-config.yaml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+    networks:
+      - doro-network
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: doro-grafana
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - doro_grafanadata:/var/lib/grafana
+    depends_on:
+      - loki
+    networks:
+      - doro-network
+
+networks:
+  doro-network:
+    driver: bridge
+
+volumes:
+  doro_pgdata:
+  doro_redisdata:
+  doro_lokidata:
+  doro_grafanadata:
+
+
