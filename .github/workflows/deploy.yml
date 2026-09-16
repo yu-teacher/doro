@@ -1,0 +1,43 @@
+name: 🚀 DORO CI/CD Deploy to Mini Server
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Build & Deploy on Mini Server
+    runs-on: self-hosted
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Setup Environment
+        run: |
+          if [ ! -f .env ]; then
+            cp .env.example .env
+          fi
+
+      - name: 🐳 Deploy with Docker Compose
+        run: |
+          docker compose up -d --build --remove-orphans
+
+      - name: 🔍 Verify Health Status
+        run: |
+          echo "Waiting 20 seconds for services to warm up..."
+          sleep 20
+          docker compose ps
+          
+          # Health check verification
+          AUTH_STATUS=$(curl -s http://localhost:8080/actuator/health || echo "FAIL")
+          GUARD_STATUS=$(curl -s http://localhost:8081/actuator/health || echo "FAIL")
+          
+          echo "Auth API Status: $AUTH_STATUS"
+          echo "Guard API Status: $GUARD_STATUS"
+
+      - name: 🧹 Clean unused images
+        if: always()
+        run: |
+          docker image prune -f
