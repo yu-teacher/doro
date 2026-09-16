@@ -27,8 +27,8 @@ jobs:
           # Start PostgreSQL & Redis first and ensure separate DBs exist
           docker compose up -d postgres redis
           sleep 3
-          docker compose exec -T postgres psql -U doro_admin -d doro_iam -c "SELECT 'CREATE DATABASE doro_auth' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'doro_auth')\gexec" || true
-          docker compose exec -T postgres psql -U doro_admin -d doro_iam -c "SELECT 'CREATE DATABASE doro_guard' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'doro_guard')\gexec" || true
+          docker compose exec -T postgres psql -U doro_admin -d postgres -c "CREATE DATABASE doro_auth;" 2>/dev/null || true
+          docker compose exec -T postgres psql -U doro_admin -d postgres -c "CREATE DATABASE doro_guard;" 2>/dev/null || true
 
       - name: 🐳 Deploy with Docker Compose
         run: |
