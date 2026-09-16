@@ -39,3 +39,36 @@
 - **분산 추적(Distributed Tracing) & MDC 정합성**:
   - 인바운드 HTTP 요청 시 `X-Trace-Id` 헤더(없을 시 신규 UUID)를 추출하여 SLF4J MDC에 `traceId`, `userId`, `clientIp`를 바인딩할 것.
   - 마이크로서비스 간 통신(HTTP, gRPC, Redis Pub-Sub/Stream) 시 `traceId`를 헤더/메타데이터로 필수 전파(Propagation)하여, Grafana에서 단일 트랜잭션 전 구간의 로그를 한 번에 조회할 수 있게 보장할 것.
+
+---
+
+### 5. 신규 서브 서비스(마이크로서비스) 추가 시 AI 표준 절차 (New Service Blueprint)
+모든 AI 어시스턴트는 사용자가 Doro 플랫폼 기반의 새로운 서브 서비스(예: 블로그, 쇼핑몰, 결제 등)를 추가하도록 요청할 때 반드시 다음 5단계를 누락 없이 순서대로 수행해야 합니다:
+
+1. **독립 Database 프로비저닝 (Database-per-Service)**:
+   - 신규 서비스의 DB는 `service_{name}` 명명 규칙으로 독립 정의할 것.
+   - `docker-compose.yml`의 `postgres` 환경변수 `POSTGRES_MULTIPLE_DATABASES` 및 `.env.example`, `.env`에 `service_{name}`을 추가하여 자동 프로비저닝되게 할 것.
+   - 신규 서비스의 Flyway 히스토리 테이블은 `{name}_schema_history`로 격리하고, `ddl-auto: validate`를 적용할 것.
+
+2. **Doro SDK 및 인증/인가 연동**:
+   - 신규 서비스의 `build.gradle`에 `implementation project(':sdk')` 의존성을 추가할 것.
+   - `application.yaml`에 IAM JWKS 및 Guard gRPC 엔드포인트를 연결할 것:
+     ```yaml
+     doro:
+       iam:
+         jwks-uri: http://auth-api:8080/.well-known/jwks.json
+       guard:
+         grpc-host: guard-api
+         grpc-port: 9090
+     ```
+   - 컨트롤러에 `@DoroGuard` 어노테이션(SpEL)을 적용해 Zanzibar 인가를 위임하고, `@CurrentDoroUser`로 인증 사용자를 주입받을 것.
+
+3. **Zanzibar 권한 스키마 정의 (`schema.doro`)**:
+   - 신규 서비스에서 다루는 객체와 관계(예: `type blog_post { relation author: user; relation viewer: author ... }`)를 정의하고, Guard API(`POST /api/v1/schemas`)를 통해 스키마 버전을 등록할 것.
+
+4. **도커 오케스트레이션 및 관측성 연동**:
+   - `docker-compose.yml`에 신규 서비스 컨테이너를 등록하고 `doro-network`에 연결할 것.
+   - 모든 로그는 `stdout` 표준 출력(SLF4J)으로 방출하고 `X-Trace-Id`를 전파하여 Promtail/Loki가 자동 수집하도록 구성할 것.
+
+5. **CI/CD 자동 배포 검증**:
+   - 신규 서비스를 추가한 뒤 커밋 & 푸시하여, GitHub Actions Self-Hosted Runner가 미니 서버에 신규 서비스 컨테이너를 자동으로 빌드 및 무중단 배포하고 정상 가동(`healthy`)함을 확인할 것.
