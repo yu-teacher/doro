@@ -40,18 +40,18 @@ flowchart TB
     end
 
     subgraph Storage ["Infrastructure"]
-        Postgres[(PostgreSQL 16)]
-        Redis[(Redis 7 - Token Blacklist & Session)]
+        Postgres[("PostgreSQL 16")]
+        Redis[("Redis 7 - Token Blacklist & Session")]
     end
 
-    Client -->|1. Login / OAuth 2.1| IAM
-    IAM -->|Store Credentials / Tuples| Postgres
-    IAM -->|Session Kill-Switch| Redis
+    Client -->|"1. Login / OAuth 2.1"| OAuthEngine
+    AuthEngine -->|"Store Credentials"| Postgres
+    SessionEngine -->|"Session Kill-Switch"| Redis
     
-    SubService -->|Import SDK| SDK
-    Client -->|2. Request with JWT| SubService
-    SDK -->|3. Local JWKS Verification| JwksEndpoint
-    SDK -->|4. High-Speed ReBAC Check (gRPC)| GrpcServer
+    SubService -->|"Import SDK"| JwtFilter
+    Client -->|"2. Request with JWT"| SubService
+    JwtFilter -->|"3. Local JWKS Verification"| JwksEndpoint
+    GuardClient -->|"4. ReBAC Check (gRPC 9090)"| GrpcServer
     GrpcServer --> CheckEngine
     CheckEngine --> TupleStore
     TupleStore --> Postgres
