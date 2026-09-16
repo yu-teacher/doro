@@ -79,8 +79,8 @@ docker compose up -d
 
 | 서비스 | 컨테이너명 / 디렉토리 | 포트 | 헬스체크 & UI 문서 |
 | :--- | :--- | :--- | :--- |
-| **PostgreSQL** | `doro-postgres` | `5432` | `pg_isready` |
-| **Redis** | `doro-redis` | `6379` | `redis-cli ping` |
+| **PostgreSQL** | `doro-postgres` | `5432` | • **Database-per-Service 격리**:<br>  - `doro_auth`: IAM/인증 전용 DB<br>  - `doro_guard`: Zanzibar ReBAC 전용 DB |
+| **Redis** | `doro-redis` | `6379` | `redis-cli ping` (세션 킬스위치 & L2 인가 캐시) |
 | **Doro IAM** | `doro-auth-api` | `8080` | • **Swagger UI**: `http://localhost:8080/swagger-ui.html`<br>• **Actuator**: `http://localhost:8080/actuator/health`<br>• **JWKS**: `http://localhost:8080/.well-known/jwks.json` |
 | **Doro Guard** | `doro-guard-api` | `8081` (REST)<br>`9090` (gRPC) | • **Swagger UI**: `http://localhost:8081/swagger-ui.html`<br>• **Actuator**: `http://localhost:8081/actuator/health`<br>• **Check**: `POST http://localhost:8081/api/v1/tuples/check` |
 | **Doro Web Portal** | `web/` (React + Vite) | `3000` | • **통합 로그인/계정 센터**: `http://localhost:3000/account`<br>• 구글 스타일 다중 계정 전환 & 2FA & 킬스위치 |
