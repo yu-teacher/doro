@@ -7,10 +7,12 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-doro_iam}
       POSTGRES_USER: ${POSTGRES_USER:-doro_admin}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-doro_secret}
+      POSTGRES_MULTIPLE_DATABASES: ${POSTGRES_MULTIPLE_DATABASES:-doro_auth,doro_guard}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - doro_pgdata:/var/lib/postgresql/data
+      - ./init-db:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-doro_admin} -d ${POSTGRES_DB:-doro_iam}"]
       interval: 5s
@@ -45,7 +47,7 @@ services:
       - "${AUTH_PORT:-8080}:8080"
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-doro_iam}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${AUTH_DB:-doro_auth}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-doro_admin}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-doro_secret}
       SPRING_DATA_REDIS_HOST: redis
@@ -73,7 +75,7 @@ services:
       - "${GUARD_GRPC_PORT:-9090}:9090"
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-doro_iam}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${GUARD_DB:-doro_guard}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-doro_admin}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-doro_secret}
       SPRING_DATA_REDIS_HOST: redis

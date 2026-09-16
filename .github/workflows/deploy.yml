@@ -14,11 +14,21 @@ jobs:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
 
-      - name: ⚙️ Setup Environment
+      - name: ⚙️ Setup Environment & Databases
         run: |
           if [ ! -f .env ]; then
             cp .env.example .env
+          else
+            # Ensure new DB configs exist in .env
+            grep -q "AUTH_DB" .env || echo "AUTH_DB=doro_auth" >> .env
+            grep -q "GUARD_DB" .env || echo "GUARD_DB=doro_guard" >> .env
           fi
+
+          # Start PostgreSQL & Redis first and ensure separate DBs exist
+          docker compose up -d postgres redis
+          sleep 3
+          docker compose exec -T postgres psql -U doro_admin -d doro_iam -c "SELECT 'CREATE DATABASE doro_auth' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'doro_auth')\gexec" || true
+          docker compose exec -T postgres psql -U doro_admin -d doro_iam -c "SELECT 'CREATE DATABASE doro_guard' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'doro_guard')\gexec" || true
 
       - name: 🐳 Deploy with Docker Compose
         run: |
