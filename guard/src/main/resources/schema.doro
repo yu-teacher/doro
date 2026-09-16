@@ -31,23 +31,4 @@ type document {
   relation viewer: user | group#member | editor | parent#viewer
 }
 
-type blog_series {
-  relation owner: user
-  relation editor: owner
-  relation viewer: user | editor
-}
-
-type blog_post {
-  relation author: user
-  relation series: blog_series
-  relation editor: author
-  relation viewer: author | user
-}
-
-type blog_comment {
-  relation author: user
-  relation post: blog_post
-  relation editor: author
-  relation can_delete: author | post#author
-}
 
