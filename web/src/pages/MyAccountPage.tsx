@@ -17,10 +17,7 @@ import {
   ExternalLink,
   Loader2,
   Layers,
-  FileText,
-  HardDrive,
-  Presentation,
-  LayoutGrid,
+  BookOpen,
   Edit2,
   Calendar,
   Key,
@@ -30,8 +27,10 @@ import {
   ShieldCheck,
   Crown,
   Search,
+  Utensils,
 } from 'lucide-react';
 import { getErrorMessage } from '../utils/errorUtils';
+import { getBlogUrl, getMenuUrl } from '../utils/urlUtils';
 import { UserRole } from '../types/auth';
 
 export const MyAccountPage: React.FC = () => {
@@ -487,34 +486,87 @@ export const MyAccountPage: React.FC = () => {
 
               {/* Sub-Services Quick Launch */}
               <div className="glass-card google-card-shadow rounded-3xl p-6">
-                <h3 className="text-base font-bold text-slate-800 mb-4">연동된 Doro 서브 서비스</h3>
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-800">연동된 Doro 서브 서비스</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">Doro 중앙 계정으로 원클릭 SSO 인증된 공식 서비스입니다.</p>
+                  </div>
+                  <button
+                    onClick={() => setActiveTab('apps')}
+                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 cursor-pointer"
+                  >
+                    전체 보기 <ExternalLink className="w-3 h-3" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {[
-                    { name: 'Doro Docs', icon: FileText, color: 'text-blue-500 bg-blue-50', desc: '문서 협업', link: '#' },
-                    { name: 'Doro Drive', icon: HardDrive, color: 'text-amber-500 bg-amber-50', desc: '클라우드 저장소', link: '#' },
-                    { name: 'Doro Slides', icon: Presentation, color: 'text-orange-500 bg-orange-50', desc: '프레젠테이션', link: '#' },
-                    { name: 'Doro Board', icon: LayoutGrid, color: 'text-emerald-500 bg-emerald-50', desc: '팀 게시판', link: '#' },
-                    { name: 'Doro Ops Logs', icon: Terminal, color: 'text-indigo-500 bg-indigo-50', desc: '시스템 관제 로그', link: '/logs' },
+                    {
+                      name: 'DORO.log',
+                      icon: BookOpen,
+                      color: 'text-emerald-500 bg-emerald-50 border-emerald-100',
+                      desc: '개발자를 위한 오픈 기술 블로그 & 엔지니어링 지식 공유',
+                      link: getBlogUrl(),
+                      badge: '공식 서브 서비스',
+                      isExternal: true,
+                    },
+                    {
+                      name: '도로메뉴 (Doro Menu)',
+                      icon: Utensils,
+                      color: 'text-pink-500 bg-pink-50 border-pink-100',
+                      desc: '오늘 뭐 먹지? 위치 기반 메뉴 추천 & 도로롱 뽑기',
+                      link: getMenuUrl(),
+                      badge: '공식 서브 서비스',
+                      isExternal: true,
+                    },
+                    ...(isAdmin
+                      ? [
+                          {
+                            name: 'Doro Ops Logs',
+                            icon: Terminal,
+                            color: 'text-indigo-500 bg-indigo-50 border-indigo-100',
+                            desc: '전체 마이크로서비스 실시간 분산 추적 및 관제 로그',
+                            link: '/logs',
+                            badge: '실시간 관제',
+                            isExternal: false,
+                          },
+                        ]
+                      : []),
                   ].map((s) => {
                     const Icon = s.icon;
                     return (
                       <div
                         key={s.name}
-                        onClick={() => s.link.startsWith('/') && navigate(s.link)}
-                        className={`p-4 bg-slate-50/70 border border-slate-100 rounded-2xl flex flex-col items-center text-center transition-all ${
-                          s.link.startsWith('/') ? 'hover:bg-indigo-50/50 hover:border-indigo-200 cursor-pointer' : ''
-                        }`}
+                        onClick={() => {
+                          if (s.isExternal || s.link.startsWith('http') || s.link === '/') {
+                            window.location.href = s.link;
+                          } else {
+                            navigate(s.link);
+                          }
+                        }}
+                        className="p-5 bg-slate-50/70 hover:bg-white border border-slate-200/80 hover:border-emerald-300 rounded-2xl flex flex-col justify-between hover:shadow-md transition-all cursor-pointer group"
                       >
-                        <div className={`w-12 h-12 rounded-2xl ${s.color} flex items-center justify-center mb-2 shadow-2xs`}>
-                          <Icon className="w-6 h-6" />
+                        <div className="flex items-start justify-between mb-3">
+                          <div className={`w-12 h-12 rounded-2xl ${s.color} border flex items-center justify-center shadow-2xs group-hover:scale-105 transition-transform`}>
+                            <Icon className="w-6 h-6" />
+                          </div>
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                              s.badge === '실시간 관제'
+                                ? 'text-indigo-600 bg-indigo-50 border border-indigo-200'
+                                : 'text-emerald-600 bg-emerald-50 border border-emerald-200'
+                            }`}
+                          >
+                            {s.badge}
+                          </span>
                         </div>
-                        <span className="text-xs font-bold text-slate-800">{s.name}</span>
-                        <span className="text-[10px] text-slate-400 mt-0.5">{s.desc}</span>
-                        <span className={`mt-2 text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          s.link.startsWith('/') ? 'text-indigo-600 bg-indigo-50 border border-indigo-200' : 'text-emerald-600 bg-emerald-50'
-                        }`}>
-                          {s.link.startsWith('/') ? '실시간 관제' : 'SSO 연동'}
-                        </span>
+                        <div>
+                          <h4 className="text-sm font-bold text-slate-800 group-hover:text-emerald-600 transition-colors flex items-center gap-1.5">
+                            {s.name}
+                            <ExternalLink className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-500 transition-colors" />
+                          </h4>
+                          <p className="text-xs text-slate-500 mt-1 leading-relaxed">{s.desc}</p>
+                        </div>
                       </div>
                     );
                   })}
@@ -1006,28 +1058,45 @@ export const MyAccountPage: React.FC = () => {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {[
-                  { name: 'Doro Docs', desc: '실시간 문서 협업 에디터', icon: FileText, color: 'text-blue-500 bg-blue-50', link: '#' },
-                  { name: 'Doro Drive', desc: '엔터프라이즈 파일 클라우드', icon: HardDrive, color: 'text-amber-500 bg-amber-50', link: '#' },
-                  { name: 'Doro Slides', desc: '스마트 프레젠테이션', icon: Presentation, color: 'text-orange-500 bg-orange-50', link: '#' },
-                  { name: 'Doro Board', desc: '전사 협업 게시판', icon: LayoutGrid, color: 'text-emerald-500 bg-emerald-50', link: '#' },
+                  {
+                    name: 'DORO.log',
+                    desc: '개발자를 위한 오픈 기술 블로그 & 엔지니어링 아티클',
+                    icon: BookOpen,
+                    color: 'text-emerald-500 bg-emerald-50 border-emerald-100',
+                    link: getBlogUrl(),
+                    badge: 'SSO 연동 완료',
+                  },
+                  {
+                    name: '도로메뉴 (Doro Menu)',
+                    desc: '오늘 뭐 먹지 고민 해결! 위치 기반 추천 & 메뉴 정해주는 도로롱',
+                    icon: Utensils,
+                    color: 'text-pink-500 bg-pink-50 border-pink-100',
+                    link: getMenuUrl(),
+                    badge: '공식 서브 서비스',
+                  },
                 ].map((app) => {
                   const Icon = app.icon;
                   return (
-                    <div key={app.name} className="p-5 bg-slate-50/80 border border-slate-200/80 rounded-2xl flex items-center justify-between">
+                    <div key={app.name} className="p-5 bg-white border border-slate-200/80 rounded-2xl flex items-center justify-between hover:border-emerald-300 hover:shadow-xs transition-all">
                       <div className="flex items-center gap-3.5">
-                        <div className={`w-12 h-12 rounded-2xl ${app.color} flex items-center justify-center shrink-0`}>
+                        <div className={`w-12 h-12 rounded-2xl ${app.color} border flex items-center justify-center shrink-0`}>
                           <Icon className="w-6 h-6" />
                         </div>
                         <div>
-                          <h4 className="text-xs font-bold text-slate-800">{app.name}</h4>
-                          <p className="text-[11px] text-slate-500">{app.desc}</p>
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-sm font-bold text-slate-800">{app.name}</h4>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full text-emerald-600 bg-emerald-50 border border-emerald-200">
+                              {app.badge}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500 mt-0.5">{app.desc}</p>
                         </div>
                       </div>
                       <a
                         href={app.link}
-                        className="py-1.5 px-3 bg-white border border-slate-200 hover:bg-slate-100 rounded-xl text-xs font-bold text-slate-700 flex items-center gap-1 shadow-2xs"
+                        className="py-2 px-3.5 bg-slate-50 border border-slate-200 hover:bg-emerald-600 hover:border-emerald-600 hover:text-white rounded-xl text-xs font-bold text-slate-700 flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
                       >
-                        열기 <ExternalLink className="w-3 h-3" />
+                        열기 <ExternalLink className="w-3.5 h-3.5" />
                       </a>
                     </div>
                   );

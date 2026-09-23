@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAuthStore } from '../../store/authStore';
-import { FileText, HardDrive, Presentation, LayoutGrid, Shield, ExternalLink, X } from 'lucide-react';
+import { BookOpen, Shield, Terminal, ExternalLink, X, Utensils } from 'lucide-react';
+import { getBlogUrl, getMenuUrl } from '../../utils/urlUtils';
 
 interface AppLauncherModalProps {
   isOpen: boolean;
@@ -15,14 +16,25 @@ export const AppLauncherModal: React.FC<AppLauncherModalProps> = ({ isOpen, onCl
   if (!isOpen) return null;
 
   const baseApps = [
-    { name: 'Doro Docs', desc: '실시간 문서 협업', icon: FileText, color: 'text-blue-500 bg-blue-50', link: '#' },
-    { name: 'Doro Drive', desc: '클라우드 파일 저장소', icon: HardDrive, color: 'text-amber-500 bg-amber-50', link: '#' },
-    { name: 'Doro Slides', desc: '프레젠테이션 제작', icon: Presentation, color: 'text-orange-500 bg-orange-50', link: '#' },
-    { name: 'Doro Board', desc: '사내 팀 게시판', icon: LayoutGrid, color: 'text-emerald-500 bg-emerald-50', link: '#' },
+    {
+      name: 'DORO.log',
+      desc: '개발자 오픈 기술 블로그',
+      icon: BookOpen,
+      color: 'text-emerald-500 bg-emerald-50',
+      link: getBlogUrl(),
+    },
+    {
+      name: '도로메뉴',
+      desc: '메뉴 정해주는 도로롱',
+      icon: Utensils,
+      color: 'text-pink-500 bg-pink-50',
+      link: getMenuUrl(),
+    },
   ];
 
   const adminApps = [
     { name: 'Doro Guard', desc: 'Zanzibar ReBAC API', icon: Shield, color: 'text-indigo-500 bg-indigo-50', link: 'http://localhost:28081/swagger-ui.html' },
+    { name: 'Doro Ops Logs', desc: '시스템 관제 로그', icon: Terminal, color: 'text-indigo-500 bg-indigo-50', link: '/logs' },
   ];
 
   const apps = isAdmin ? [...baseApps, ...adminApps] : baseApps;
@@ -40,7 +52,7 @@ export const AppLauncherModal: React.FC<AppLauncherModalProps> = ({ isOpen, onCl
           </button>
         </div>
 
-        <div className={`grid ${apps.length <= 4 ? 'grid-cols-2' : 'grid-cols-3'} gap-3 pt-4`}>
+        <div className={`grid ${apps.length === 1 ? 'grid-cols-1' : apps.length <= 4 ? 'grid-cols-2' : 'grid-cols-3'} gap-3 pt-4`}>
           {apps.map((app) => {
             const Icon = app.icon;
             return (
