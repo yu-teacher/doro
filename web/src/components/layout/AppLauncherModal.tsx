@@ -2,6 +2,7 @@ import React from 'react';
 import { useAuthStore } from '../../store/authStore';
 import { BookOpen, Shield, Terminal, ExternalLink, X, Utensils } from 'lucide-react';
 import { getBlogUrl, getMenuUrl } from '../../utils/urlUtils';
+import { trackEvent } from '../../utils/analytics';
 
 interface AppLauncherModalProps {
   isOpen: boolean;
@@ -61,6 +62,12 @@ export const AppLauncherModal: React.FC<AppLauncherModalProps> = ({ isOpen, onCl
                 href={app.link}
                 target={app.link.startsWith('http') ? '_blank' : '_self'}
                 rel="noreferrer"
+                onClick={() => {
+                  trackEvent('service_launch', {
+                    service_name: app.name,
+                    destination: app.link,
+                  });
+                }}
                 className="group flex flex-col items-center justify-center p-3 rounded-2xl hover:bg-slate-50 transition-all hover:scale-105 text-center"
               >
                 <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${app.color} mb-2 shadow-xs group-hover:shadow-md transition-shadow`}>
