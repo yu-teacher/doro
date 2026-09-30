@@ -12,6 +12,8 @@ import java.util.UUID;
 public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID> {
     Optional<RefreshToken> findByTokenHash(String tokenHash);
 
+    Optional<RefreshToken> findFirstByFamilyIdAndIsRevokedFalseOrderByCreatedAtDesc(UUID familyId);
+
     @Modifying
     @Query("UPDATE RefreshToken r SET r.isRevoked = true WHERE r.familyId = :familyId")
     void revokeAllByFamilyId(@Param("familyId") UUID familyId);

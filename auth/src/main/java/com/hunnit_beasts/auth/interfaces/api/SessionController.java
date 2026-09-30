@@ -21,6 +21,10 @@ public class SessionController {
     @GetMapping
     public ResponseEntity<ApiResponse<List<SessionResponse>>> getActiveSessions(
             @AuthenticationPrincipal UUID userId) {
+        if (userId == null) {
+            throw new com.hunnit_beasts.auth.common.exception.AuthException(
+                    com.hunnit_beasts.auth.common.exception.ErrorCode.UNAUTHORIZED, "로그인이 필요한 요청입니다.");
+        }
         List<SessionResponse> sessions = sessionService.getActiveSessions(userId);
         return ResponseEntity.ok(ApiResponse.success(sessions));
     }

@@ -4,6 +4,7 @@ import jakarta.annotation.PostConstruct;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
@@ -32,9 +33,10 @@ public class JwtKeyProvider {
     private final StringRedisTemplate redisTemplate;
 
     public JwtKeyProvider() {
-        this.redisTemplate = null;
+        this(null);
     }
 
+    @Autowired(required = false)
     public JwtKeyProvider(StringRedisTemplate redisTemplate) {
         this.redisTemplate = redisTemplate;
     }

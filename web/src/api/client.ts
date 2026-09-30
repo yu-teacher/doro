@@ -21,31 +21,47 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
+let activeRefreshPromise: Promise<string | null> | null = null;
+
 apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
-    if ((error.response?.status === 401 || error.response?.status === 403) && !originalRequest._retry) {
+    if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
       const activeAccount = useAuthStore.getState().getActiveAccount();
 
       if (activeAccount && activeAccount.refreshToken) {
-        try {
-          const res = await axios.post('/api/v1/auth/token/refresh', {
-            refreshToken: activeAccount.refreshToken,
-          });
+        if (!activeRefreshPromise) {
+          activeRefreshPromise = (async () => {
+            try {
+              const res = await axios.post('/api/v1/auth/token/refresh', {
+                refreshToken: activeAccount.refreshToken,
+              });
 
-          const tokenData = res.data?.data || res.data;
-          if (tokenData && tokenData.accessToken) {
-            useAuthStore.getState().updateActiveToken(tokenData.accessToken, tokenData.refreshToken);
-            if (originalRequest.headers.set) {
-              originalRequest.headers.set('Authorization', `Bearer ${tokenData.accessToken}`);
-            } else {
-              originalRequest.headers.Authorization = `Bearer ${tokenData.accessToken}`;
+              const tokenData = res.data?.data || res.data;
+              if (tokenData && tokenData.accessToken) {
+                useAuthStore.getState().updateActiveToken(tokenData.accessToken, tokenData.refreshToken);
+                return tokenData.accessToken as string;
+              }
+              return null;
+            } catch {
+              return null;
+            } finally {
+              activeRefreshPromise = null;
             }
-            return apiClient(originalRequest);
+          })();
+        }
+
+        const newAccessToken = await activeRefreshPromise;
+        if (newAccessToken) {
+          if (originalRequest.headers.set) {
+            originalRequest.headers.set('Authorization', `Bearer ${newAccessToken}`);
+          } else {
+            originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
           }
-        } catch {
+          return apiClient(originalRequest);
+        } else {
           // 토큰 갱신 실패 시 만료된 계정 세션 정리 후 로그인 페이지로 안내
           const activeIndex = useAuthStore.getState().activeAccountIndex;
           useAuthStore.getState().removeAccount(activeIndex);

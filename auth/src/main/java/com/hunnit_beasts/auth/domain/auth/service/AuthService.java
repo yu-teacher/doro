@@ -53,7 +53,7 @@ public class AuthService {
     @Value("${doro.iam.issuer:https://auth.doro.local}")
     private String issuer;
 
-    @Value("${doro.iam.jwt.access-token-validity-seconds:900}")
+    @Value("${doro.iam.jwt.access-token-validity-seconds:86400}")
     private long accessTokenValiditySeconds;
 
     @Transactional

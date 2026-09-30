@@ -64,3 +64,7 @@ tasks.named('test') {
 	maxHeapSize = '2048m'
 }
 
+jar {
+	enabled = false
+}
+

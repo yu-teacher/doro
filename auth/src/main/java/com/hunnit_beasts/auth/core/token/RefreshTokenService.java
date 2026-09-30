@@ -22,6 +22,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.Optional;
 import java.util.UUID;
 
 @Slf4j
@@ -34,7 +35,7 @@ public class RefreshTokenService {
     private final KillSwitchPublisher killSwitchPublisher;
     private final SecureRandom secureRandom = new SecureRandom();
 
-    @Value("${doro.iam.jwt.refresh-token-validity-seconds:1209600}")
+    @Value("${doro.iam.jwt.refresh-token-validity-seconds:2592000}")
     private long refreshTokenValiditySeconds;
 
     /**

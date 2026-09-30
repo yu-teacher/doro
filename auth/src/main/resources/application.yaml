@@ -44,11 +44,11 @@ doro:
   iam:
     issuer: https://auth.doro.local
     jwt:
-      access-token-validity-seconds: 900 # 15분
-      refresh-token-validity-seconds: 1209600 # 14일
+      access-token-validity-seconds: 86400 # 24시간 (하루)
+      refresh-token-validity-seconds: 2592000 # 30일 (1달)
     session:
       max-active-sessions-per-user: 10
-      inactivity-timeout-seconds: 604800 # 7일
+      inactivity-timeout-seconds: 2592000 # 30일 (1달)
   guard:
     url: ${DORO_GUARD_URL:http://localhost:28081}
 

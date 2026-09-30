@@ -23,7 +23,7 @@ public class SessionService {
 
     private final UserSessionRepository sessionRepository;
 
-    @Value("${doro.iam.session.inactivity-timeout-seconds:604800}")
+    @Value("${doro.iam.session.inactivity-timeout-seconds:2592000}")
     private long inactivityTimeoutSeconds;
 
     @Transactional

@@ -17,7 +17,7 @@ public class KillSwitchPublisher {
 
     private final StringRedisTemplate redisTemplate;
     private final ChannelTopic killSwitchTopic;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
 
     public KillSwitchPublisher(
             @Autowired(required = false) StringRedisTemplate redisTemplate,
