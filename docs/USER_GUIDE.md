@@ -4,6 +4,15 @@
 
 본 문서는 **DORO IAM(통합 인증)**, **DORO Guard(Zanzibar ReBAC 인가)**, 그리고 **DORO SDK(서브 서비스 연동 스타터)**의 상세한 사용법과 실전 코드 예제를 제공합니다.
 
+> [!WARNING]
+> **이 문서는 실제 코드와 여러 부분이 다릅니다.** 소스를 직접 확인해 검증한 내용은 `DORO_AGENT_GUIDE.md`(작성: 2026-09-30)를 참고하세요. 주요 차이:
+> - 액세스 토큰 TTL은 15분이 아니라 **24시간**, 계정 잠금 응답은 423이 아니라 **403**
+> - 가입 필드는 `name`, 로그인 응답은 `{requires2fa, tempTicket, tokens}`, 2FA는 `/2fa/setup`·`/2fa/verify`·`/2fa/login`
+> - 로그아웃은 인증이 필요한 `POST /api/v1/auth/logout` (본인 세션만, `sessionId` 생략 시 토큰의 `sid` 사용)
+> - 다중 계정 API(`/accounts/add`, `/accounts/switch`)와 OAuth 리다이렉트 SSO는 **구현되어 있지 않음**
+> - Guard 경로는 `/api/v1/guard/{check,tuples,schema}`, 스키마 등록은 JSON `{"dsl": ...}` 이며 **전체 교체**(자기 타입만 보내면 다른 스키마가 사라짐)
+> - DSL 파서는 **괄호를 지원하지 않고**, 릴레이션은 사용하기 전에 선언해야 함
+
 ---
 
 ## 📑 목차

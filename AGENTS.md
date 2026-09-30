@@ -64,7 +64,8 @@
    - 컨트롤러에 `@DoroGuard` 어노테이션(SpEL)을 적용해 Zanzibar 인가를 위임하고, `@CurrentDoroUser`로 인증 사용자를 주입받을 것.
 
 3. **Zanzibar 권한 스키마 정의 (`schema.doro`)**:
-   - 신규 서비스에서 다루는 객체와 관계(예: `type blog_post { relation author: user; relation viewer: author ... }`)를 정의하고, Guard API(`POST /api/v1/schemas`)를 통해 스키마 버전을 등록할 것.
+   - 신규 서비스에서 다루는 객체와 관계(예: `type blog_post { relation author: user; relation viewer: author ... }`)를 정의하고, Guard API를 통해 스키마 버전을 등록할 것.
+   - ⚠ Guard 스키마는 **전역 단일 버전이며 등록은 전체 교체**다. 자기 타입만 POST 하면 IAM(`system` 등) 및 타 서비스 스키마가 사라진다. 반드시 `GET /api/v1/guard/schema` 로 활성 DSL 을 받아 자기 타입을 **병합**한 뒤 `POST /api/v1/guard/schema` (JSON `{"dsl": "..."}`)로 등록할 것 (참조 구현: `doro-blog` 의 `BlogSchemaInitializer`).
 
 4. **도커 오케스트레이션 및 관측성 연동**:
    - `docker-compose.yml`에 신규 서비스 컨테이너를 등록하고 `doro-network`에 연결할 것.
