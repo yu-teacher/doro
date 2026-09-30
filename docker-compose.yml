@@ -6,10 +6,10 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-doro_iam}
       POSTGRES_USER: ${POSTGRES_USER:-doro_admin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-doro_secret}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
       POSTGRES_MULTIPLE_DATABASES: ${POSTGRES_MULTIPLE_DATABASES:-doro_auth,doro_guard}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${POSTGRES_BIND:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - doro_pgdata:/var/lib/postgresql/data
       - ./init-db:/docker-entrypoint-initdb.d:ro
@@ -25,12 +25,16 @@ services:
     image: redis:7-alpine
     container_name: doro-redis
     restart: unless-stopped
+    # REDIS_PASSWORD 가 설정되면 requirepass 활성화 (미설정 시 기존 동작 유지)
+    command: ["sh", "-c", "exec redis-server $${REDIS_PASSWORD:+--requirepass \"$$REDIS_PASSWORD\"}"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "${REDIS_BIND:-127.0.0.1}:${REDIS_PORT:-6379}:6379"
     volumes:
       - doro_redisdata:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli --no-auth-warning ping | grep -q PONG"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -44,14 +48,15 @@ services:
     container_name: doro-auth-api
     restart: unless-stopped
     ports:
-      - "${AUTH_PORT:-8080}:8080"
+      - "${AUTH_BIND:-0.0.0.0}:${AUTH_PORT:-8080}:8080"
     environment:
       SPRING_PROFILES_ACTIVE: prod
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${AUTH_DB:-doro_auth}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-doro_admin}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-doro_secret}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       DORO_IAM_ISSUER: ${DORO_IAM_ISSUER:-https://auth.doro.local}
       DORO_GUARD_URL: ${DORO_GUARD_URL:-http://guard-api:8081}
     depends_on:
@@ -71,15 +76,16 @@ services:
     container_name: doro-guard-api
     restart: unless-stopped
     ports:
-      - "${GUARD_PORT:-8081}:8081"
-      - "${GUARD_GRPC_PORT:-9090}:9090"
+      - "${GUARD_BIND:-127.0.0.1}:${GUARD_PORT:-8081}:8081"
+      - "${GUARD_BIND:-127.0.0.1}:${GUARD_GRPC_PORT:-9090}:9090"
     environment:
       SPRING_PROFILES_ACTIVE: prod
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${GUARD_DB:-doro_guard}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-doro_admin}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-doro_secret}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       PORT: 8081
       GRPC_PORT: 9090
     depends_on:
@@ -97,7 +103,7 @@ services:
     container_name: doro-web-portal
     restart: unless-stopped
     ports:
-      - "${WEB_PORT:-3000}:80"
+      - "${WEB_BIND:-0.0.0.0}:${WEB_PORT:-3000}:80"
     depends_on:
       - auth-api
       - guard-api
@@ -110,7 +116,7 @@ services:
     user: "0:0"
     restart: unless-stopped
     ports:
-      - "${LOKI_PORT:-3100}:3100"
+      - "${LOKI_BIND:-127.0.0.1}:${LOKI_PORT:-3100}:3100"
     volumes:
       - ./monitoring/loki/loki-config.yaml:/etc/loki/local-config.yaml:ro
       - doro_lokidata:/tmp/loki
@@ -137,10 +143,10 @@ services:
     container_name: doro-grafana
     restart: unless-stopped
     ports:
-      - "${GRAFANA_PORT:-3001}:3000"
+      - "${GRAFANA_BIND:-127.0.0.1}:${GRAFANA_PORT:-3001}:3000"
     environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro

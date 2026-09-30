@@ -5,6 +5,7 @@ import com.hunnit_beasts.doro.sdk.client.DoroGuardClient;
 import com.hunnit_beasts.doro.sdk.security.filter.DoroJwtAuthFilter;
 import com.hunnit_beasts.doro.sdk.security.jwks.JwksKeyProvider;
 import com.hunnit_beasts.doro.sdk.web.CurrentDoroUserArgumentResolver;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -33,8 +34,15 @@ public class DoroAutoConfiguration implements WebMvcConfigurer {
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnWebApplication
-    public FilterRegistrationBean<DoroJwtAuthFilter> doroJwtAuthFilterRegistration(JwksKeyProvider jwksKeyProvider) {
-        DoroJwtAuthFilter filter = new DoroJwtAuthFilter(jwksKeyProvider);
+    public FilterRegistrationBean<DoroJwtAuthFilter> doroJwtAuthFilterRegistration(JwksKeyProvider jwksKeyProvider,
+                                                                                    DoroProperties properties) {
+        DoroProperties.IamProperties iam = properties.getIam();
+        DoroJwtAuthFilter filter = new DoroJwtAuthFilter(
+                jwksKeyProvider,
+                iam.getIssuer(),
+                iam.getIssuerValidation(),
+                iam.getCookieName(),
+                iam.getClockSkewSeconds());
         FilterRegistrationBean<DoroJwtAuthFilter> registration = new FilterRegistrationBean<>(filter);
         registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
         return registration;
@@ -52,8 +60,8 @@ public class DoroAutoConfiguration implements WebMvcConfigurer {
 
     @Bean
     @ConditionalOnMissingBean
-    public DoroGuardAspect doroGuardAspect(DoroGuardClient doroGuardClient) {
-        return new DoroGuardAspect(doroGuardClient);
+    public DoroGuardAspect doroGuardAspect(ObjectProvider<DoroGuardClient> doroGuardClient) {
+        return new DoroGuardAspect(doroGuardClient.getIfAvailable());
     }
 
     @Bean

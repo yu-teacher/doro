@@ -5,7 +5,6 @@ import com.hunnit_beasts.doro.sdk.client.DoroGuardClient;
 import com.hunnit_beasts.doro.sdk.domain.DoroUser;
 import com.hunnit_beasts.doro.sdk.domain.DoroUserContext;
 import com.hunnit_beasts.doro.sdk.exception.DoroAccessDeniedException;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
@@ -22,15 +21,34 @@ import java.lang.reflect.Method;
 
 @Slf4j
 @Aspect
-@RequiredArgsConstructor
 public class DoroGuardAspect {
 
     private final DoroGuardClient guardClient;
     private final ExpressionParser parser = new SpelExpressionParser();
     private final ParameterNameDiscoverer paramNameDiscoverer = new DefaultParameterNameDiscoverer();
 
+    /** guardClient 가 null 이면(doro.guard.enabled=false) 보호 대상 호출은 fail-closed 로 거부한다. */
+    public DoroGuardAspect(DoroGuardClient guardClient) {
+        this.guardClient = guardClient;
+    }
+
+    /** 메서드 레벨 @DoroGuard */
     @Around("@annotation(doroGuard)")
     public Object enforcePermission(ProceedingJoinPoint joinPoint, DoroGuard doroGuard) throws Throwable {
+        return enforce(joinPoint, doroGuard);
+    }
+
+    /** 클래스 레벨 @DoroGuard. 메서드에 별도 @DoroGuard 가 있으면 메서드 쪽이 우선한다. */
+    @Around("@within(doroGuard) && !@annotation(com.hunnit_beasts.doro.sdk.annotation.DoroGuard)")
+    public Object enforceClassPermission(ProceedingJoinPoint joinPoint, DoroGuard doroGuard) throws Throwable {
+        return enforce(joinPoint, doroGuard);
+    }
+
+    private Object enforce(ProceedingJoinPoint joinPoint, DoroGuard doroGuard) throws Throwable {
+        if (guardClient == null) {
+            log.error("@DoroGuard is used but doro.guard.enabled=false; denying request (fail-closed)");
+            throw new DoroAccessDeniedException("Doro Guard 가 비활성화되어 보호된 리소스에 접근할 수 없습니다.");
+        }
         MethodSignature signature = (MethodSignature) joinPoint.getSignature();
         Method method = signature.getMethod();
         Object[] args = joinPoint.getArgs();

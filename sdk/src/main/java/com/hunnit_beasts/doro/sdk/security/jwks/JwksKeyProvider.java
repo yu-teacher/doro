@@ -3,6 +3,7 @@ package com.hunnit_beasts.doro.sdk.security.jwks;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
 import java.math.BigInteger;
@@ -20,21 +21,44 @@ public class JwksKeyProvider {
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
     private final Map<String, PublicKey> keyCache = new ConcurrentHashMap<>();
+    private volatile long lastRefreshAttemptMillis = 0L;
+    private volatile long lastSuccessfulRefreshMillis = 0L;
+
+    /** 캐시 미스/만료로 인한 JWKS 재조회 사이의 최소 간격 (임의 kid 요청에 의한 증폭 방지) */
+    private static final long REFRESH_COOLDOWN_MILLIS = 30_000L;
+    /** 캐시된 키를 이 시간이 지나면 다음 조회 때 갱신한다 (같은 kid 로 키가 교체된 경우 대비) */
+    private static final long KEY_TTL_MILLIS = 600_000L;
+    private static final int HTTP_TIMEOUT_MILLIS = 3_000;
 
     public JwksKeyProvider(String jwksUri) {
         this.jwksUri = jwksUri;
-        this.restClient = RestClient.builder().build();
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(HTTP_TIMEOUT_MILLIS);
+        requestFactory.setReadTimeout(HTTP_TIMEOUT_MILLIS);
+        this.restClient = RestClient.builder().requestFactory(requestFactory).build();
         this.objectMapper = new ObjectMapper();
     }
 
     public PublicKey getPublicKey(String kid) {
         PublicKey cached = keyCache.get(kid);
+        long now = System.currentTimeMillis();
         if (cached != null) {
+            if (now - lastSuccessfulRefreshMillis > KEY_TTL_MILLIS && cooldownElapsed(now)) {
+                refreshKeys();
+                PublicKey refreshed = keyCache.get(kid);
+                return refreshed != null ? refreshed : cached;
+            }
             return cached;
         }
 
-        refreshKeys();
+        if (cooldownElapsed(now)) {
+            refreshKeys();
+        }
         return keyCache.get(kid);
+    }
+
+    private boolean cooldownElapsed(long now) {
+        return jwksUri != null && !jwksUri.isBlank() && now - lastRefreshAttemptMillis >= REFRESH_COOLDOWN_MILLIS;
     }
 
     public void registerKey(String kid, PublicKey publicKey) {
@@ -46,6 +70,7 @@ public class JwksKeyProvider {
             return;
         }
 
+        lastRefreshAttemptMillis = System.currentTimeMillis();
         try {
             String jwksJson = restClient.get()
                     .uri(jwksUri)
@@ -54,6 +79,7 @@ public class JwksKeyProvider {
 
             if (jwksJson != null) {
                 parseAndCacheJwks(jwksJson);
+                lastSuccessfulRefreshMillis = System.currentTimeMillis();
                 log.info("Successfully refreshed JWKS keys from {}", jwksUri);
             }
         } catch (Exception e) {

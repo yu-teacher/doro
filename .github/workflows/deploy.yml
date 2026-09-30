@@ -16,19 +16,21 @@ jobs:
 
       - name: ⚙️ Setup Environment & Databases
         run: |
+          # .env 는 서버에서 직접 관리한다. 예제 값(기본 비밀번호)으로 배포하지 않는다.
           if [ ! -f .env ]; then
-            cp .env.example .env
-          else
-            # Ensure new DB configs exist in .env
-            grep -q "AUTH_DB" .env || echo "AUTH_DB=doro_auth" >> .env
-            grep -q "GUARD_DB" .env || echo "GUARD_DB=doro_guard" >> .env
+            echo "::error::.env not found. Create it from .env.example with real secrets before deploying."
+            exit 1
           fi
+          # Ensure new DB configs exist in .env
+          grep -q "AUTH_DB" .env || echo "AUTH_DB=doro_auth" >> .env
+          grep -q "GUARD_DB" .env || echo "GUARD_DB=doro_guard" >> .env
+          set -a; . ./.env; set +a
 
           # Start PostgreSQL & Redis first and ensure separate DBs exist
           docker compose up -d postgres redis
           sleep 3
-          docker compose exec -T postgres psql -U doro_admin -d postgres -c "CREATE DATABASE doro_auth;" 2>/dev/null || true
-          docker compose exec -T postgres psql -U doro_admin -d postgres -c "CREATE DATABASE doro_guard;" 2>/dev/null || true
+          docker compose exec -T postgres psql -U "${POSTGRES_USER:-doro_admin}" -d postgres -c "CREATE DATABASE ${AUTH_DB:-doro_auth};" 2>/dev/null || true
+          docker compose exec -T postgres psql -U "${POSTGRES_USER:-doro_admin}" -d postgres -c "CREATE DATABASE ${GUARD_DB:-doro_guard};" 2>/dev/null || true
 
       - name: 🐳 Deploy with Docker Compose
         run: |
@@ -36,16 +38,24 @@ jobs:
 
       - name: 🔍 Verify Health Status
         run: |
-          echo "Waiting 20 seconds for services to warm up..."
-          sleep 20
+          set -a; . ./.env; set +a
           docker compose ps
-          
-          # Health check verification
-          AUTH_STATUS=$(curl -s http://localhost:8080/actuator/health || echo "FAIL")
-          GUARD_STATUS=$(curl -s http://localhost:8081/actuator/health || echo "FAIL")
-          
-          echo "Auth API Status: $AUTH_STATUS"
-          echo "Guard API Status: $GUARD_STATUS"
+
+          check() {
+            name="$1"; url="$2"
+            for i in $(seq 1 30); do
+              if curl -fsS "$url" | grep -q '"status":"UP"'; then
+                echo "$name: UP"
+                return 0
+              fi
+              sleep 5
+            done
+            echo "::error::$name health check failed ($url)"
+            return 1
+          }
+
+          check "Auth API" "http://localhost:${AUTH_PORT:-8080}/actuator/health"
+          check "Guard API" "http://localhost:${GUARD_PORT:-8081}/actuator/health"
 
       - name: 🧹 Clean unused images
         if: always()
