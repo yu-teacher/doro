@@ -39,6 +39,13 @@ public class RefreshTokenService {
     private long refreshTokenValiditySeconds;
 
     /**
+     * 회전 직후 이 시간(초) 안에 들어온 직전 토큰은 공격이 아니라 동시 요청(다중 탭 등)으로 보고 세션을 유지한다.
+     * 기본값 0 은 비활성(즉시 재사용 공격으로 판정)이며, 다중 탭 경합이 문제될 때만 켠다.
+     */
+    @Value("${doro.iam.jwt.refresh-reuse-grace-seconds:0}")
+    private long refreshReuseGraceSeconds;
+
+    /**
      * 신규 세션에 대한 초기 Refresh Token 생성
      */
     @Transactional
@@ -71,6 +78,11 @@ public class RefreshTokenService {
 
         // 1. 재사용 공격 탐지 (이미 회전/폐기된 토큰이 다시 인입된 경우)
         if (existingToken.isRevoked()) {
+            if (isConcurrentRotationRace(existingToken)) {
+                log.warn("Refresh token presented right after rotation (treated as concurrent request): sessionId={}",
+                        existingToken.getSessionId());
+                throw new AuthException(ErrorCode.INVALID_TOKEN);
+            }
             log.error("SECURITY ALERT: Refresh token reuse detected! FamilyId={}, SessionId={}",
                     existingToken.getFamilyId(), existingToken.getSessionId());
 
@@ -107,8 +119,11 @@ public class RefreshTokenService {
             throw new AuthException(ErrorCode.SESSION_EXPIRED);
         }
 
-        // 4. 기존 토큰 폐기 (RTR)
-        existingToken.revoke();
+        // 4. 기존 토큰 폐기 (RTR). 조건부 UPDATE 의 결과로 동시 요청 중 단 하나만 회전에 성공하게 한다.
+        if (refreshTokenRepository.revokeIfActive(existingToken.getId()) == 0) {
+            log.warn("Lost refresh token rotation race: sessionId={}", existingToken.getSessionId());
+            throw new AuthException(ErrorCode.INVALID_TOKEN);
+        }
 
         // 5. 새 토큰 생성 (동일 Family 유지)
         String newRawToken = generateSecureToken();
@@ -126,6 +141,16 @@ public class RefreshTokenService {
         session.touch();
 
         return new RotatedTokenResult(newRawToken, session);
+    }
+
+    private boolean isConcurrentRotationRace(RefreshToken revokedToken) {
+        if (refreshReuseGraceSeconds <= 0) {
+            return false;
+        }
+        return refreshTokenRepository.findFirstByFamilyIdAndIsRevokedFalseOrderByCreatedAtDesc(revokedToken.getFamilyId())
+                .map(active -> active.getCreatedAt() != null
+                        && Instant.now().isBefore(active.getCreatedAt().plusSeconds(refreshReuseGraceSeconds)))
+                .orElse(false);
     }
 
     @Transactional

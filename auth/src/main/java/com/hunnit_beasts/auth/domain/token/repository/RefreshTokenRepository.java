@@ -21,4 +21,9 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID
     @Modifying
     @Query("UPDATE RefreshToken r SET r.isRevoked = true WHERE r.sessionId = :sessionId")
     void revokeAllBySessionId(@Param("sessionId") UUID sessionId);
+
+    /** 아직 폐기되지 않은 경우에만 폐기한다. 갱신된 행 수(0 또는 1)로 동시 회전 경합의 승자를 가린다. */
+    @Modifying(flushAutomatically = true)
+    @Query("UPDATE RefreshToken r SET r.isRevoked = true WHERE r.id = :id AND r.isRevoked = false")
+    int revokeIfActive(@Param("id") UUID id);
 }

@@ -13,6 +13,10 @@ import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
 @Service
@@ -24,7 +28,11 @@ public class TotpService {
     private static final int MODULO = 1_000_000;
     private static final String BASE32_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
+    private static final int ALLOWED_STEP_DRIFT = 1;
+
     private final SecureRandom secureRandom = new SecureRandom();
+    // 사용자별로 마지막에 사용한 TOTP 스텝. 같은 코드의 재사용(replay)을 막는다. (단일 인스턴스 메모리 기준)
+    private final Map<UUID, Long> lastUsedStepByUser = new ConcurrentHashMap<>();
 
     /**
      * Google Authenticator 호환 20바이트(160비트) Base32 시크릿 생성
@@ -46,11 +54,37 @@ public class TotpService {
     }
 
     /**
-     * 클라이언트가 입력한 6자리 코드 검증 (시간 오차 ±1 스텝 허용)
+     * 클라이언트가 입력한 6자리 코드 검증 (시간 오차 ±1 스텝 허용). 코드 재사용 여부는 검사하지 않는다.
      */
     public boolean verifyCode(String base32Secret, String inputCode) {
-        if (base32Secret == null || inputCode == null || inputCode.length() != DIGITS) {
+        return findMatchingStep(base32Secret, inputCode) != null;
+    }
+
+    /**
+     * 코드 검증 후 사용 처리한다. 이미 사용된 스텝(또는 그 이전 스텝)의 코드는 유효해도 거부한다.
+     */
+    public boolean verifyAndConsume(UUID userId, String base32Secret, String inputCode) {
+        Long step = findMatchingStep(base32Secret, inputCode);
+        if (step == null) {
             return false;
+        }
+        AtomicBoolean accepted = new AtomicBoolean(false);
+        lastUsedStepByUser.compute(userId, (id, previous) -> {
+            if (previous == null || step > previous) {
+                accepted.set(true);
+                return step;
+            }
+            return previous;
+        });
+        if (!accepted.get()) {
+            log.warn("Rejected replayed TOTP code: userId={}", userId);
+        }
+        return accepted.get();
+    }
+
+    private Long findMatchingStep(String base32Secret, String inputCode) {
+        if (base32Secret == null || inputCode == null || inputCode.length() != DIGITS) {
+            return null;
         }
 
         try {
@@ -58,17 +92,16 @@ public class TotpService {
             byte[] key = decodeBase32(base32Secret);
             long currentStep = Instant.now().getEpochSecond() / TIME_STEP_SECONDS;
 
-            // -2, -1, 0, +1, +2 윈도우 검사 (스마트폰 시계 오차 ±60초 허용)
-            for (long step = currentStep - 2; step <= currentStep + 2; step++) {
+            for (long step = currentStep - ALLOWED_STEP_DRIFT; step <= currentStep + ALLOWED_STEP_DRIFT; step++) {
                 if (generateCodeForStep(key, step) == code) {
-                    return true;
+                    return step;
                 }
             }
         } catch (Exception e) {
             log.warn("TOTP verification failed due to format error: {}", e.getMessage());
         }
 
-        return false;
+        return null;
     }
 
     private int generateCodeForStep(byte[] key, long step) throws NoSuchAlgorithmException, InvalidKeyException {

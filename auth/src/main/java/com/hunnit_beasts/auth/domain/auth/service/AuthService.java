@@ -116,9 +116,7 @@ public class AuthService {
             throw new AuthException(ErrorCode.INVALID_CREDENTIALS);
         }
 
-        credentialService.resetFailedAttempts(user.getId());
-
-        // 2FA 등록 여부 확인
+        // 2FA 등록 여부 확인 (2FA 계정은 OTP 까지 통과해야 실패 카운트를 초기화한다)
         if (credential.getTotpSecret() != null && !credential.getTotpSecret().isBlank()) {
             String tempTicket = UUID.randomUUID().toString();
             pendingTwoFactorTickets.put(tempTicket, new TwoFactorTicketSession(
@@ -129,6 +127,7 @@ public class AuthService {
             return LoginResponse.requiresTwoFactor(tempTicket);
         }
 
+        credentialService.resetFailedAttempts(user.getId());
         TokenResponse tokenResponse = issueSessionAndTokens(user, request.deviceInfo(), ipAddress, userAgent);
         return LoginResponse.directSuccess(tokenResponse);
     }
@@ -149,7 +148,13 @@ public class AuthService {
         Credential credential = credentialRepository.findByUserId(session.userId())
                 .orElseThrow(() -> new AuthException(ErrorCode.INVALID_CREDENTIALS));
 
-        if (!totpService.verifyCode(credential.getTotpSecret(), request.code())) {
+        if (credential.isLocked()) {
+            throw new AuthException(ErrorCode.ACCOUNT_LOCKED);
+        }
+
+        if (!totpService.verifyAndConsume(user.getId(), credential.getTotpSecret(), request.code())) {
+            // OTP 실패도 계정 잠금 카운트에 합산한다 (티켓을 새로 받아 무한 시도하는 것을 막는다)
+            credentialService.recordFailedAttempt(user.getId());
             int attempts = session.failedAttempts().incrementAndGet();
             if (attempts >= 5) {
                 pendingTwoFactorTickets.remove(request.tempTicket());
@@ -160,6 +165,7 @@ public class AuthService {
 
         // 인증 성공 시에만 티켓 즉시 파기
         pendingTwoFactorTickets.remove(request.tempTicket());
+        credentialService.resetFailedAttempts(user.getId());
         return issueSessionAndTokens(user, request.deviceInfo(), ipAddress, userAgent);
     }
 
@@ -183,7 +189,12 @@ public class AuthService {
         Credential credential = credentialRepository.findByUserId(userId)
                 .orElseThrow(() -> new AuthException(ErrorCode.INVALID_CREDENTIALS));
 
-        if (credential.getTotpSecret() == null || !totpService.verifyCode(credential.getTotpSecret(), code)) {
+        if (credential.isLocked()) {
+            throw new AuthException(ErrorCode.ACCOUNT_LOCKED);
+        }
+
+        if (credential.getTotpSecret() == null || !totpService.verifyAndConsume(userId, credential.getTotpSecret(), code)) {
+            credentialService.recordFailedAttempt(userId);
             throw new AuthException(ErrorCode.INVALID_2FA_CODE);
         }
     }

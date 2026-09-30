@@ -8,6 +8,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 @Slf4j
@@ -19,12 +21,12 @@ public class CredentialService {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void recordFailedAttempt(UUID userId) {
-        credentialRepository.findByUserId(userId).ifPresent(credential -> {
-            credential.recordFailedAttempt();
-            credentialRepository.saveAndFlush(credential);
-            log.warn("Failed attempt recorded for userId={}. Total failed: {}, Locked until: {}",
-                    userId, credential.getFailedAttempts(), credential.getLockedUntil());
-        });
+        if (credentialRepository.incrementFailedAttempts(userId) == 0) {
+            return;
+        }
+        Instant lockedUntil = Instant.now().plus(Credential.LOCK_DURATION_MINUTES, ChronoUnit.MINUTES);
+        boolean locked = credentialRepository.lockIfThresholdReached(userId, Credential.MAX_FAILED_ATTEMPTS, lockedUntil) > 0;
+        log.warn("Failed attempt recorded for userId={}, locked={}", userId, locked);
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)

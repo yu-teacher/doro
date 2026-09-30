@@ -17,8 +17,8 @@ import java.util.UUID;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Credential extends BaseTimeEntity {
 
-    private static final int MAX_FAILED_ATTEMPTS = 5;
-    private static final int LOCK_DURATION_MINUTES = 15;
+    public static final int MAX_FAILED_ATTEMPTS = 5;
+    public static final int LOCK_DURATION_MINUTES = 15;
 
     @Id
     @Column(name = "id", nullable = false, updatable = false)
