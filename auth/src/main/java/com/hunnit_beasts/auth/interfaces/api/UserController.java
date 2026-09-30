@@ -10,6 +10,8 @@ import com.hunnit_beasts.auth.domain.user.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import com.hunnit_beasts.auth.core.token.SessionClaims;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -46,11 +48,12 @@ public class UserController {
     @PutMapping("/me/password")
     public ResponseEntity<ApiResponse<Void>> changePassword(
             @AuthenticationPrincipal UUID userId,
+            Authentication authentication,
             @Valid @RequestBody ChangePasswordRequest request) {
         if (userId == null) {
             throw new AuthException(ErrorCode.UNAUTHORIZED, "로그인이 필요한 요청입니다.");
         }
-        userService.changePassword(userId, request);
+        userService.changePassword(userId, request, SessionClaims.currentSessionId(authentication));
         return ResponseEntity.ok(ApiResponse.success());
     }
 }

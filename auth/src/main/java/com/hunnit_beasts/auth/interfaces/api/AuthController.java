@@ -10,6 +10,8 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import com.hunnit_beasts.auth.core.token.SessionClaims;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -100,8 +102,18 @@ public class AuthController {
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<ApiResponse<Void>> logout(@RequestParam("sessionId") UUID sessionId) {
-        authService.logout(sessionId);
+    public ResponseEntity<ApiResponse<Void>> logout(
+            @AuthenticationPrincipal UUID userId,
+            Authentication authentication,
+            @RequestParam(value = "sessionId", required = false) UUID sessionId) {
+        if (userId == null) {
+            throw new AuthException(ErrorCode.UNAUTHORIZED, "로그인이 필요한 요청입니다.");
+        }
+        UUID targetSessionId = sessionId != null ? sessionId : SessionClaims.currentSessionId(authentication);
+        if (targetSessionId == null) {
+            throw new AuthException(ErrorCode.INVALID_INPUT, "종료할 세션을 식별할 수 없습니다.");
+        }
+        authService.logout(userId, targetSessionId);
         return ResponseEntity.ok(ApiResponse.success());
     }
 }

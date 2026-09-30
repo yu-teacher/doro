@@ -5,7 +5,10 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -36,7 +39,7 @@ public class GlobalExceptionHandler {
         List<ErrorResponse.FieldErrorDetail> details = ex.getBindingResult().getFieldErrors().stream()
                 .map(err -> ErrorResponse.FieldErrorDetail.builder()
                         .field(err.getField())
-                        .rejectedValue(err.getRejectedValue())
+                        .rejectedValue(isSensitiveField(err.getField()) ? null : err.getRejectedValue())
                         .reason(err.getDefaultMessage())
                         .build())
                 .toList();
@@ -51,6 +54,31 @@ public class GlobalExceptionHandler {
                 .build();
 
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+    }
+
+    @ExceptionHandler({
+            HttpMessageNotReadableException.class,
+            MissingServletRequestParameterException.class,
+            MethodArgumentTypeMismatchException.class
+    })
+    public ResponseEntity<ErrorResponse> handleBadRequest(Exception ex, HttpServletRequest request) {
+        log.warn("Bad request at {}: {}", request.getRequestURI(), ex.getClass().getSimpleName());
+
+        ErrorResponse response = ErrorResponse.builder()
+                .status(HttpStatus.BAD_REQUEST.value())
+                .error(HttpStatus.BAD_REQUEST.getReasonPhrase())
+                .code("INVALID_INPUT_VALUE")
+                .message("요청 형식이 올바르지 않습니다.")
+                .path(request.getRequestURI())
+                .build();
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+    }
+
+    /** 비밀번호·시크릿·토큰 등 민감 필드의 입력값은 검증 실패 응답에 되돌려 보내지 않는다. */
+    private static boolean isSensitiveField(String field) {
+        String lower = field == null ? "" : field.toLowerCase();
+        return lower.contains("password") || lower.contains("secret") || lower.contains("token") || lower.contains("code");
     }
 
     @ExceptionHandler(Exception.class)

@@ -4,6 +4,7 @@ import com.hunnit_beasts.auth.common.exception.AuthException;
 import com.hunnit_beasts.auth.common.exception.ErrorCode;
 import com.hunnit_beasts.auth.domain.credential.entity.Credential;
 import com.hunnit_beasts.auth.domain.credential.repository.CredentialRepository;
+import com.hunnit_beasts.auth.domain.session.service.SessionRevocationService;
 import com.hunnit_beasts.auth.domain.user.dto.ChangePasswordRequest;
 import com.hunnit_beasts.auth.domain.user.dto.UpdateProfileRequest;
 import com.hunnit_beasts.auth.domain.user.dto.UserProfileResponse;
@@ -30,6 +31,7 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final GuardClient guardClient;
     private final UserRelationSyncService userRelationSyncService;
+    private final SessionRevocationService sessionRevocationService;
 
     @Transactional(readOnly = true)
     public UserProfileResponse getProfile(UUID userId) {
@@ -131,8 +133,9 @@ public class UserService {
         );
     }
 
+    /** 비밀번호 변경 후 현재 세션(keepSessionId)을 제외한 모든 세션을 종료한다. keepSessionId 가 null 이면 전부 종료. */
     @Transactional
-    public void changePassword(UUID userId, ChangePasswordRequest request) {
+    public void changePassword(UUID userId, ChangePasswordRequest request, UUID keepSessionId) {
         Credential credential = credentialRepository.findByUserId(userId)
                 .orElseThrow(() -> new AuthException(ErrorCode.USER_NOT_FOUND));
 
@@ -142,6 +145,7 @@ public class UserService {
 
         String encodedNewPassword = passwordEncoder.encode(request.newPassword());
         credential.updatePassword(encodedNewPassword);
+        sessionRevocationService.revokeOtherSessions(userId, keepSessionId, "PASSWORD_CHANGED");
         log.info("User password changed successfully: userId={}", userId);
     }
 

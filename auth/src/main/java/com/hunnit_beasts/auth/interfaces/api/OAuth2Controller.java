@@ -1,5 +1,7 @@
 package com.hunnit_beasts.auth.interfaces.api;
 
+import com.hunnit_beasts.auth.common.exception.AuthException;
+import com.hunnit_beasts.auth.common.exception.ErrorCode;
 import com.hunnit_beasts.auth.common.response.ApiResponse;
 import com.hunnit_beasts.auth.domain.auth.dto.TokenResponse;
 import com.hunnit_beasts.auth.domain.oauth.dto.OAuth2TokenRequest;
@@ -13,10 +15,14 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 @RestController
 @RequiredArgsConstructor
 public class OAuth2Controller {
+
+    /** RFC 7636 S256 code_challenge: base64url 43자 */
+    private static final Pattern PKCE_CHALLENGE = Pattern.compile("^[A-Za-z0-9_-]{43}$");
 
     private final OAuth2Service oAuth2Service;
 
@@ -31,6 +37,16 @@ public class OAuth2Controller {
             @RequestParam(value = "code_challenge") String codeChallenge,
             @RequestParam(value = "state", required = false) String state,
             @AuthenticationPrincipal UUID userId) {
+
+        if (userId == null) {
+            throw new AuthException(ErrorCode.UNAUTHORIZED, "로그인이 필요한 요청입니다.");
+        }
+        if (!"code".equals(responseType)) {
+            throw new AuthException(ErrorCode.INVALID_INPUT, "response_type 은 code 만 지원합니다.");
+        }
+        if (!PKCE_CHALLENGE.matcher(codeChallenge).matches()) {
+            throw new AuthException(ErrorCode.INVALID_INPUT, "code_challenge 형식이 올바르지 않습니다.");
+        }
 
         String code = oAuth2Service.generateAuthorizationCode(clientId, redirectUri, userId, codeChallenge);
         return ResponseEntity.ok(ApiResponse.success(Map.of(

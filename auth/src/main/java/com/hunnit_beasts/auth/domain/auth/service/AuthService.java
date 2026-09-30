@@ -3,7 +3,6 @@ package com.hunnit_beasts.auth.domain.auth.service;
 import com.hunnit_beasts.auth.common.exception.AuthException;
 import com.hunnit_beasts.auth.common.exception.ErrorCode;
 import com.hunnit_beasts.auth.core.crypto.CustomArgon2PasswordEncoder;
-import com.hunnit_beasts.auth.core.redis.KillSwitchPublisher;
 import com.hunnit_beasts.auth.core.token.JwtTokenProvider;
 import com.hunnit_beasts.auth.core.token.RefreshTokenService;
 import com.hunnit_beasts.auth.core.totp.TotpService;
@@ -12,6 +11,7 @@ import com.hunnit_beasts.auth.domain.credential.entity.Credential;
 import com.hunnit_beasts.auth.domain.credential.repository.CredentialRepository;
 import com.hunnit_beasts.auth.domain.credential.service.CredentialService;
 import com.hunnit_beasts.auth.domain.session.entity.UserSession;
+import com.hunnit_beasts.auth.domain.session.service.SessionRevocationService;
 import com.hunnit_beasts.auth.domain.session.service.SessionService;
 import com.hunnit_beasts.auth.domain.user.entity.User;
 import com.hunnit_beasts.auth.domain.user.entity.UserRole;
@@ -43,7 +43,7 @@ public class AuthService {
     private final RefreshTokenService refreshTokenService;
     private final SessionService sessionService;
     private final TotpService totpService;
-    private final KillSwitchPublisher killSwitchPublisher;
+    private final SessionRevocationService sessionRevocationService;
     private final UserRelationSyncService userRelationSyncService;
 
     private record TwoFactorTicketSession(UUID userId, AtomicInteger failedAttempts, Instant expiresAt) {}
@@ -227,11 +227,8 @@ public class AuthService {
     }
 
     @Transactional
-    public void logout(UUID sessionId) {
-        UserSession session = sessionService.getActiveSession(sessionId);
-        sessionService.deactivateSession(sessionId);
-        refreshTokenService.revokeAllForSession(sessionId);
-        killSwitchPublisher.publishSessionRevoked(session.getUserId(), sessionId, "LOGOUT");
+    public void logout(UUID userId, UUID sessionId) {
+        sessionRevocationService.revokeOwnSession(userId, sessionId, "LOGOUT");
         log.info("Session terminated and killswitch sent: sessionId={}", sessionId);
     }
 

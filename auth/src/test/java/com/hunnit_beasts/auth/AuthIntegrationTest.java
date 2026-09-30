@@ -98,6 +98,7 @@ class AuthIntegrationTest {
 
         // 7. 로그아웃
         mockMvc.perform(post("/api/v1/auth/logout")
+                        .header("Authorization", "Bearer " + accessToken)
                         .param("sessionId", sessionId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
