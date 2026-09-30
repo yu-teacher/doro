@@ -464,3 +464,8 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST localhost:8081/api/v1/guard/che
 - **2FA 등록 절차**: `POST /2fa/setup` 은 시크릿을 `pending_totp_secret`(대기)에만 저장하고, `POST /2fa/verify` 로 유효한 코드를 확인해야 활성화된다. 이미 활성화된 계정의 setup 은 거부(400). `POST /2fa/disable` 은 **현재 OTP 코드(`{code}`)** 가 필요하다. 코드 검증 실패는 계정 잠금 카운트에 합산된다. (본문 §2.2, §9-D 의 "setup 즉시 활성화" 는 배포 전 기준)
 - **요청 제한(IP 단위, 429 + Retry-After)**: 로그인·2FA 로그인 10분당 20회, 계정 조회 10분당 30회, 가입 1시간당 10회. `doro.iam.rate-limit.*` 로 조정하고 `DORO_IAM_RATE_LIMIT_ENABLED=false` 로 끈다. 클라이언트 IP 는 사설망/루프백 프록시가 준 `X-Real-IP` 만 신뢰하고 공인 IP 에서 온 요청의 헤더는 무시한다. 단일 인스턴스 메모리 기준이다.
 - **역할 변경**: 대상 사용자의 세션을 모두 종료해 낡은 역할 클레임을 제거한다. 관리자 목록 API(`GET /admin/users`)는 JWT 역할 클레임에 더해 Guard `system:doro#admin` 으로 최종 판정한다.
+
+### 운영 메모 (2026-09-30)
+- **doro-blog 배포는 수동이다**: 로컬(Java 25)에서 `./gradlew test bootJar` 와 `web: npm run build` 로 jar/dist 를 만든 뒤 `rsync` 로 `~/doro-blog/build/libs/`, `~/doro-blog/web/dist/` 에 올리고 `docker compose -f docker-compose.prod.yml up -d --build blog-backend blog-web`. **로컬 `docker-compose.prod.yml` 을 서버로 덮어쓰지 말 것** (서버 파일에는 MinIO 서비스가 있고 로컬 사본에는 없다). blog-web 이미지는 `FROM doro-web:latest`(포털 이미지)를 베이스로 쓴다. 배포 전 `~/backups/` 에 jar/dist/compose 를 백업한다.
+- **Guard 서비스 토큰**: `~/doro/.env` 의 `DORO_GUARD_SERVICE_TOKEN` 을 auth(CI 배포)와 blog(`~/doro-blog/.env`)가 함께 쓴다. 현재 모드는 `WARN`. 토큰 없는 호출 경고가 없는 것을 확인한 뒤 `ENFORCE` 로 올린다.
+- **⚠ 기본 비밀번호 사용 중**: 운영 PostgreSQL(`doro_admin`)과 MinIO 루트 계정의 비밀번호/시크릿이 문서화된 기본값(`doro_secret`)과 동일하다(해시 비교로 확인). 5432 는 127.0.0.1 로 제한했지만 MinIO(9000/9001)는 0.0.0.0 에 열려 있다. 회전 계획이 필요하다.
