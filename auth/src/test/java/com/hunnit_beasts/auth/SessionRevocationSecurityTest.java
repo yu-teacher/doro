@@ -229,4 +229,13 @@ class SessionRevocationSecurityTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.code").isNotEmpty());
     }
+
+    @Test
+    @DisplayName("존재하지 않는 경로 404, 지원하지 않는 메서드 405, 잘못된 Content-Type 415 (500 이 아니다)")
+    void clientMistakesAreNot500() throws Exception {
+        mockMvc.perform(get("/oauth2/no-such-endpoint")).andExpect(status().isNotFound());
+        mockMvc.perform(post("/oauth2/authorize")).andExpect(status().isMethodNotAllowed());
+        mockMvc.perform(post("/oauth2/token").contentType(MediaType.TEXT_PLAIN).content("x"))
+                .andExpect(status().isUnsupportedMediaType());
+    }
 }

@@ -48,4 +48,13 @@ class GuardCorsAndSwaggerHealthTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").exists());
     }
+
+    @Test
+    @DisplayName("Guard: 잘못된 Content-Type 은 500 이 아니라 415, 없는 경로는 404")
+    void clientMistakesAreNot500() throws Exception {
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/v1/guard/check")
+                        .contentType("text/plain").content("x"))
+                .andExpect(status().isUnsupportedMediaType());
+        mockMvc.perform(get("/api/v1/guard/nope")).andExpect(status().isNotFound());
+    }
 }
