@@ -80,7 +80,11 @@ public class UserService {
     }
 
     @Transactional(readOnly = true)
-    public List<UserProfileResponse> getAllUsers() {
+    public List<UserProfileResponse> getAllUsers(UUID adminId) {
+        // JWT 역할 클레임은 토큰 수명만큼 낡을 수 있으므로 최종 인가는 Guard 에 위임한다.
+        if (adminId == null || !guardClient.check("system", "doro", "admin", adminId.toString())) {
+            throw new AuthException(ErrorCode.ACCESS_DENIED);
+        }
         return userRepository.findAll().stream()
                 .map(user -> {
                     boolean hasTotp = credentialRepository.findByUserId(user.getId())
@@ -114,6 +118,8 @@ public class UserService {
 
         user.changeRole(newRole);
         userRelationSyncService.syncUserTuples(user, newRole);
+        // 기존 토큰의 역할 클레임이 새 역할과 어긋나므로 대상의 모든 세션을 종료해 다시 로그인하게 한다.
+        sessionRevocationService.revokeOtherSessions(targetUserId, null, "ROLE_CHANGED");
         log.info("User role changed and Zanzibar ReBAC tuples synchronized: targetUserId={}, newRole={}, adminId={}",
                 targetUserId, newRole, adminId);
 

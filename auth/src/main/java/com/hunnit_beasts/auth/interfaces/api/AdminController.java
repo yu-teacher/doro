@@ -28,8 +28,8 @@ public class AdminController {
      */
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
-    public ResponseEntity<ApiResponse<List<UserProfileResponse>>> getAllUsers() {
-        return ResponseEntity.ok(ApiResponse.success(userService.getAllUsers()));
+    public ResponseEntity<ApiResponse<List<UserProfileResponse>>> getAllUsers(@AuthenticationPrincipal UUID adminId) {
+        return ResponseEntity.ok(ApiResponse.success(userService.getAllUsers(adminId)));
     }
 
     /**

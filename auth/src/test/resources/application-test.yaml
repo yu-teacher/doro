@@ -32,6 +32,8 @@ doro:
     jwt:
       access-token-validity-seconds: 86400
       refresh-token-validity-seconds: 2592000
+    rate-limit:
+      enabled: false
     session:
       max-active-sessions-per-user: 10
       inactivity-timeout-seconds: 2592000

@@ -169,6 +169,7 @@ public class AuthService {
         return issueSessionAndTokens(user, request.deviceInfo(), ipAddress, userAgent);
     }
 
+    /** 2FA 등록 시작: 시크릿을 "대기" 상태로만 저장한다. verifyTotp 로 코드를 확인해야 활성화된다. */
     @Transactional
     public TotpSetupResponse setupTotp(UUID userId) {
         User user = userRepository.findById(userId)
@@ -177,13 +178,21 @@ public class AuthService {
         Credential credential = credentialRepository.findByUserId(userId)
                 .orElseThrow(() -> new AuthException(ErrorCode.INVALID_CREDENTIALS));
 
+        if (credential.hasActiveTotp()) {
+            throw new AuthException(ErrorCode.INVALID_INPUT, "이미 2단계 인증이 활성화되어 있습니다. 해제한 뒤 다시 설정해 주세요.");
+        }
+
         String secret = totpService.generateSecret();
-        credential.updateTotpSecret(secret);
+        credential.beginTotpEnrollment(secret);
 
         String qrUri = totpService.generateQrUri(user.getEmail(), secret, "Doro");
         return new TotpSetupResponse(secret, qrUri);
     }
 
+    /**
+     * 등록 대기 중이면 코드를 확인해 2FA 를 활성화하고, 이미 활성화된 계정이면 코드만 검증한다.
+     * 실패는 계정 잠금 카운트에 합산한다.
+     */
     @Transactional
     public void verifyTotp(UUID userId, String code) {
         Credential credential = credentialRepository.findByUserId(userId)
@@ -193,18 +202,44 @@ public class AuthService {
             throw new AuthException(ErrorCode.ACCOUNT_LOCKED);
         }
 
-        if (credential.getTotpSecret() == null || !totpService.verifyAndConsume(userId, credential.getTotpSecret(), code)) {
+        if (credential.hasPendingTotp()) {
+            if (!totpService.verifyAndConsume(userId, credential.getPendingTotpSecret(), code)) {
+                credentialService.recordFailedAttempt(userId);
+                throw new AuthException(ErrorCode.INVALID_2FA_CODE);
+            }
+            credential.confirmTotpEnrollment();
+            log.info("User 2FA (TOTP) enabled after code confirmation: userId={}", userId);
+            return;
+        }
+
+        if (!credential.hasActiveTotp() || !totpService.verifyAndConsume(userId, credential.getTotpSecret(), code)) {
             credentialService.recordFailedAttempt(userId);
             throw new AuthException(ErrorCode.INVALID_2FA_CODE);
         }
     }
 
+    /** 2FA 해제는 현재 유효한 OTP 코드로 재인증해야 한다. (탈취된 세션만으로 보호를 끄지 못하게 한다) */
     @Transactional
-    public void disableTotp(UUID userId) {
+    public void disableTotp(UUID userId, String code) {
         Credential credential = credentialRepository.findByUserId(userId)
                 .orElseThrow(() -> new AuthException(ErrorCode.INVALID_CREDENTIALS));
+
+        if (credential.isLocked()) {
+            throw new AuthException(ErrorCode.ACCOUNT_LOCKED);
+        }
+
+        if (!credential.hasActiveTotp()) {
+            credential.clearPendingTotp();
+            return;
+        }
+
+        if (!totpService.verifyAndConsume(userId, credential.getTotpSecret(), code)) {
+            credentialService.recordFailedAttempt(userId);
+            throw new AuthException(ErrorCode.INVALID_2FA_CODE);
+        }
         credential.updateTotpSecret(null);
-        log.info("User 2FA (TOTP) disabled successfully: userId={}", userId);
+        credential.clearPendingTotp();
+        log.info("User 2FA (TOTP) disabled after code re-authentication: userId={}", userId);
     }
 
     @Transactional

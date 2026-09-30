@@ -156,15 +156,17 @@ export const MyAccountPage: React.FC = () => {
   // 2FA 비활성화(해제) 상태
   const [disablingTotp, setDisablingTotp] = useState(false);
   const [showDisableConfirm, setShowDisableConfirm] = useState(false);
+  const [disableTotpCode, setDisableTotpCode] = useState('');
 
   const handleDisable2fa = async () => {
     setDisablingTotp(true);
     setTotpErrorMessage(null);
     setTotpSuccessMessage(null);
     try {
-      await authApi.disable2fa();
+      await authApi.disable2fa(disableTotpCode);
       setTotpSuccessMessage('2단계 인증(2FA)이 성공적으로 해제(비활성화)되었습니다.');
       setShowDisableConfirm(false);
+      setDisableTotpCode('');
       setTotpSetupData(null);
       fetchProfile();
     } catch (err: unknown) {
@@ -875,10 +877,26 @@ export const MyAccountPage: React.FC = () => {
                             </p>
                           </div>
                         </div>
+                        <div>
+                          <label htmlFor="disable-totp-code" className="block text-[11px] font-bold text-red-900 mb-1">
+                            본인 확인: 인증 앱의 현재 6자리 코드
+                          </label>
+                          <input
+                            id="disable-totp-code"
+                            type="text"
+                            inputMode="numeric"
+                            autoComplete="one-time-code"
+                            maxLength={6}
+                            value={disableTotpCode}
+                            onChange={(e) => setDisableTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                            placeholder="000000"
+                            className="w-full px-3 py-2 border border-red-200 rounded-xl text-sm tracking-[0.4em] text-center font-mono bg-white focus:outline-hidden focus:ring-2 focus:ring-red-300"
+                          />
+                        </div>
                         <div className="flex items-center gap-2 justify-end">
                           <button
                             type="button"
-                            onClick={() => setShowDisableConfirm(false)}
+                            onClick={() => { setShowDisableConfirm(false); setDisableTotpCode(''); }}
                             className="px-3 py-1.5 border border-slate-200 bg-white text-slate-600 text-xs font-semibold rounded-xl cursor-pointer hover:bg-slate-50"
                           >
                             취소
@@ -886,7 +904,7 @@ export const MyAccountPage: React.FC = () => {
                           <button
                             type="button"
                             onClick={handleDisable2fa}
-                            disabled={disablingTotp}
+                            disabled={disablingTotp || disableTotpCode.length !== 6}
                             className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                           >
                             {disablingTotp ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : '2FA 해제 확정'}

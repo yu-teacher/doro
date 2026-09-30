@@ -64,8 +64,8 @@ export const authApi = {
   },
 
   // 8-1. 2FA 비활성화 (해제)
-  disable2fa: async () => {
-    const response = await apiClient.post<{ success: boolean }>('/api/v1/auth/2fa/disable');
+  disable2fa: async (code: string) => {
+    const response = await apiClient.post<{ success: boolean }>('/api/v1/auth/2fa/disable', { code });
     return response.data;
   },
 

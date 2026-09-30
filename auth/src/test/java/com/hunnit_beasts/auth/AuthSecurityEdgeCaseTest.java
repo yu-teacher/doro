@@ -35,6 +35,15 @@ class AuthSecurityEdgeCaseTest {
     private CredentialRepository credentialRepository;
 
     @Autowired
+    private com.hunnit_beasts.auth.core.totp.TotpService totpService;
+
+    private String currentCode(String secret) {
+        byte[] key = ReflectionTestUtils.invokeMethod(totpService, "decodeBase32", secret);
+        int code = ReflectionTestUtils.invokeMethod(totpService, "generateCodeForStep", key, Instant.now().getEpochSecond() / 30);
+        return String.format("%06d", code);
+    }
+
+    @Autowired
     private CustomArgon2PasswordEncoder passwordEncoder;
 
     @Test
@@ -95,8 +104,10 @@ class AuthSecurityEdgeCaseTest {
         String email = "totp.edge@doro.local";
         UUID userId = authService.signup(new SignUpRequest(email, "Password123!", "Totp Edge User"));
 
-        // 2FA 설정 및 활성화
+        // 2FA 설정 및 활성화 (setup 은 대기 상태로만 저장하므로 코드를 확인해야 활성화된다)
         authService.setupTotp(userId);
+        String pendingSecret = credentialRepository.findByUserId(userId).orElseThrow().getPendingTotpSecret();
+        authService.verifyTotp(userId, currentCode(pendingSecret));
 
         // 1단계 비밀번호 검증 -> tempTicket 발급 확인
         LoginResponse loginResponse = authService.login(new LoginRequest(email, "Password123!", "Mac"), "127.0.0.1", "UA");

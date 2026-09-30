@@ -33,6 +33,10 @@ public class Credential extends BaseTimeEntity {
     @Column(name = "totp_secret", length = 64)
     private String totpSecret;
 
+    /** 2FA 등록 절차 중(코드 확인 전)인 시크릿. 확인이 끝나면 totpSecret 으로 승격된다. */
+    @Column(name = "pending_totp_secret", length = 64)
+    private String pendingTotpSecret;
+
     @Column(name = "failed_attempts", nullable = false)
     private int failedAttempts;
 
@@ -80,5 +84,27 @@ public class Credential extends BaseTimeEntity {
 
     public void updateTotpSecret(String totpSecret) {
         this.totpSecret = totpSecret;
+    }
+
+    public boolean hasActiveTotp() {
+        return totpSecret != null && !totpSecret.isBlank();
+    }
+
+    public boolean hasPendingTotp() {
+        return pendingTotpSecret != null && !pendingTotpSecret.isBlank();
+    }
+
+    public void beginTotpEnrollment(String secret) {
+        this.pendingTotpSecret = secret;
+    }
+
+    /** 대기 중인 시크릿을 활성 시크릿으로 승격한다. */
+    public void confirmTotpEnrollment() {
+        this.totpSecret = this.pendingTotpSecret;
+        this.pendingTotpSecret = null;
+    }
+
+    public void clearPendingTotp() {
+        this.pendingTotpSecret = null;
     }
 }

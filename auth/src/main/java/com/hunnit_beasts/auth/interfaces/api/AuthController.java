@@ -1,6 +1,7 @@
 package com.hunnit_beasts.auth.interfaces.api;
 
 import com.hunnit_beasts.auth.common.exception.AuthException;
+import com.hunnit_beasts.auth.common.web.ClientIpResolver;
 import com.hunnit_beasts.auth.common.exception.ErrorCode;
 import com.hunnit_beasts.auth.common.response.ApiResponse;
 import com.hunnit_beasts.auth.domain.auth.dto.*;
@@ -45,7 +46,7 @@ public class AuthController {
             @Valid @RequestBody LoginRequest request,
             HttpServletRequest servletRequest) {
 
-        String ipAddress = servletRequest.getRemoteAddr();
+        String ipAddress = ClientIpResolver.resolve(servletRequest);
         String userAgent = servletRequest.getHeader("User-Agent");
 
         LoginResponse loginResponse = authService.login(request, ipAddress, userAgent);
@@ -75,11 +76,12 @@ public class AuthController {
 
     @PostMapping("/2fa/disable")
     public ResponseEntity<ApiResponse<Void>> disableTotp(
-            @AuthenticationPrincipal UUID userId) {
+            @AuthenticationPrincipal UUID userId,
+            @Valid @RequestBody TotpVerifyRequest request) {
         if (userId == null) {
             throw new AuthException(ErrorCode.UNAUTHORIZED, "로그인이 필요한 요청입니다.");
         }
-        authService.disableTotp(userId);
+        authService.disableTotp(userId, request.code());
         return ResponseEntity.ok(ApiResponse.success());
     }
 
@@ -88,7 +90,7 @@ public class AuthController {
             @Valid @RequestBody TotpLoginRequest request,
             HttpServletRequest servletRequest) {
 
-        String ipAddress = servletRequest.getRemoteAddr();
+        String ipAddress = ClientIpResolver.resolve(servletRequest);
         String userAgent = servletRequest.getHeader("User-Agent");
 
         TokenResponse tokenResponse = authService.loginWithTotp(request, ipAddress, userAgent);

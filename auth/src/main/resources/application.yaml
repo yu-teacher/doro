@@ -52,6 +52,15 @@ doro:
     jwt:
       access-token-validity-seconds: ${DORO_IAM_ACCESS_TOKEN_TTL_SECONDS:900} # 기본 15분. 로그인 유지는 30일 리프레시 토큰(회전)이 담당한다
       refresh-token-validity-seconds: 2592000 # 30일 (1달)
+    rate-limit:
+      # 공개 인증 엔드포인트의 IP 단위 요청 제한 (고정 윈도우)
+      enabled: ${DORO_IAM_RATE_LIMIT_ENABLED:true}
+      login-max: ${DORO_IAM_RATE_LIMIT_LOGIN_MAX:20}
+      login-window-seconds: 600
+      lookup-max: 30
+      lookup-window-seconds: 600
+      signup-max: 10
+      signup-window-seconds: 3600
     session:
       max-active-sessions-per-user: 10
       inactivity-timeout-seconds: 2592000 # 30일 (1달)

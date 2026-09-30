@@ -29,6 +29,9 @@ public enum ErrorCode {
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "AUTH_40401", "사용자를 찾을 수 없습니다."),
     SESSION_NOT_FOUND(HttpStatus.NOT_FOUND, "AUTH_40402", "세션을 찾을 수 없습니다."),
 
+    // 429 Too Many Requests
+    TOO_MANY_REQUESTS(HttpStatus.TOO_MANY_REQUESTS, "AUTH_42901", "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요."),
+
     // 409 Conflict
     EMAIL_ALREADY_EXISTS(HttpStatus.CONFLICT, "AUTH_40901", "이미 사용 중인 이메일입니다."),
 
