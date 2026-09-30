@@ -1,4 +1,4 @@
-import axios from 'axios';
+import { apiClient } from './client';
 
 export interface ParsedLogEntry {
   id: string;
@@ -20,10 +20,14 @@ export interface LogFilterParams {
   limit?: number;
 }
 
-const lokiClient = axios.create({
-  baseURL: '/loki/api/v1',
-  timeout: 5000,
-});
+const LOKI_API_PREFIX = '/loki/api/v1';
+const LOKI_TIMEOUT_MS = 5000;
+
+// Loki 조회는 관리자 인증이 필요하므로 토큰 첨부/갱신 로직이 있는 apiClient 를 사용한다.
+const lokiClient = {
+  get: (path: string, config?: Parameters<typeof apiClient.get>[1]) =>
+    apiClient.get(`${LOKI_API_PREFIX}${path}`, { timeout: LOKI_TIMEOUT_MS, ...config }),
+};
 
 /**
  * 로그 한 줄을 정규식으로 파싱하여 구조화된 엔트리로 변환

@@ -17,13 +17,15 @@ public class ServiceTokenServerInterceptor implements ServerInterceptor {
             Metadata.Key.of(ServiceAuthProperties.HEADER_NAME.toLowerCase(), Metadata.ASCII_STRING_MARSHALLER);
 
     private final ServiceAuthProperties properties;
+    private final RateLimitedWarn rateLimitedWarn = new RateLimitedWarn();
 
     @Override
     public <ReqT, RespT> ServerCall.Listener<ReqT> interceptCall(
             ServerCall<ReqT, RespT> call, Metadata headers, ServerCallHandler<ReqT, RespT> next) {
         if (properties.isActive() && !properties.matches(headers.get(TOKEN_KEY))) {
-            log.warn("Guard gRPC call without a valid service token: method={}, mode={}",
-                    call.getMethodDescriptor().getFullMethodName(), properties.getMode());
+            String method = call.getMethodDescriptor().getFullMethodName();
+            rateLimitedWarn.warn(log, "grpc:" + method,
+                    "Guard gRPC call without a valid service token: method={}, mode={}", method, properties.getMode());
             if (properties.getMode() == ServiceAuthProperties.Mode.ENFORCE) {
                 call.close(Status.UNAUTHENTICATED.withDescription("service token required"), new Metadata());
                 return new ServerCall.Listener<>() { };

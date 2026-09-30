@@ -23,6 +23,7 @@ public class ServiceTokenFilter extends OncePerRequestFilter {
     private static final String PROTECTED_PREFIX = "/api/v1/guard";
 
     private final ServiceAuthProperties properties;
+    private final RateLimitedWarn rateLimitedWarn = new RateLimitedWarn();
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
@@ -35,7 +36,8 @@ public class ServiceTokenFilter extends OncePerRequestFilter {
                                     FilterChain filterChain) throws ServletException, IOException {
         boolean authenticated = properties.matches(request.getHeader(ServiceAuthProperties.HEADER_NAME));
         if (!authenticated) {
-            log.warn("Guard REST call without a valid service token: method={}, path={}, mode={}",
+            rateLimitedWarn.warn(log, "rest:" + request.getMethod() + ":" + request.getRequestURI(),
+                    "Guard REST call without a valid service token: method={}, path={}, mode={}",
                     request.getMethod(), request.getRequestURI(), properties.getMode());
             if (properties.getMode() == ServiceAuthProperties.Mode.ENFORCE) {
                 response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
