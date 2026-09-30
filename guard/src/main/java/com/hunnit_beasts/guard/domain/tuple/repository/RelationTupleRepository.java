@@ -55,4 +55,19 @@ public interface RelationTupleRepository extends JpaRepository<RelationTuple, UU
             @Param("subId") String subjectId,
             @Param("subRel") String subjectRelation
     );
+
+    /** 유니크 제약과 경합해도 예외 없이 건너뛴다. 실제로 삽입된 행 수(0 또는 1)를 반환한다. */
+    @Modifying
+    @Query(value = "INSERT INTO relation_tuples (id, namespace, object_id, relation, subject_namespace, subject_id, subject_relation, created_at) " +
+            "VALUES (:id, :ns, :objId, :rel, :subNs, :subId, :subRel, CURRENT_TIMESTAMP) ON CONFLICT DO NOTHING",
+            nativeQuery = true)
+    int insertIfAbsent(
+            @Param("id") UUID id,
+            @Param("ns") String namespace,
+            @Param("objId") String objectId,
+            @Param("rel") String relation,
+            @Param("subNs") String subjectNamespace,
+            @Param("subId") String subjectId,
+            @Param("subRel") String subjectRelation
+    );
 }

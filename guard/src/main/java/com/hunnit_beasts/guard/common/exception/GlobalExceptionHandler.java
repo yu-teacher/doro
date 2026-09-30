@@ -5,6 +5,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -14,6 +15,37 @@ import java.util.List;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(GuardException.class)
+    public ResponseEntity<ErrorResponse> handleGuardException(GuardException ex, HttpServletRequest request) {
+        ErrorCode errorCode = ex.getErrorCode();
+        log.warn("GuardException [{}]: {} at {}", errorCode.name(), ex.getMessage(), request.getRequestURI());
+
+        ErrorResponse response = ErrorResponse.builder()
+                .status(errorCode.getHttpStatus().value())
+                .error(errorCode.getHttpStatus().getReasonPhrase())
+                .code(errorCode.name())
+                .message(ex.getMessage())
+                .path(request.getRequestURI())
+                .build();
+
+        return ResponseEntity.status(errorCode.getHttpStatus()).body(response);
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleUnreadableBody(HttpMessageNotReadableException ex, HttpServletRequest request) {
+        log.warn("Unreadable request body at {}", request.getRequestURI());
+
+        ErrorResponse response = ErrorResponse.builder()
+                .status(HttpStatus.BAD_REQUEST.value())
+                .error(HttpStatus.BAD_REQUEST.getReasonPhrase())
+                .code("INVALID_INPUT_VALUE")
+                .message("요청 본문 형식이 올바르지 않습니다.")
+                .path(request.getRequestURI())
+                .build();
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+    }
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException ex, HttpServletRequest request) {

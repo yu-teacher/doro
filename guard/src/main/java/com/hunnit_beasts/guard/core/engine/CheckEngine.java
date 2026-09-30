@@ -3,6 +3,7 @@ package com.hunnit_beasts.guard.core.engine;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.hunnit_beasts.guard.core.dsl.ast.AstNodes.*;
+import com.hunnit_beasts.guard.core.dsl.service.SchemaChangedEvent;
 import com.hunnit_beasts.guard.core.dsl.service.SchemaService;
 import com.hunnit_beasts.guard.domain.tuple.entity.RelationTuple;
 import com.hunnit_beasts.guard.domain.tuple.repository.RelationTupleRepository;
@@ -11,10 +12,12 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicLong;
 
 @Slf4j
 @Service
@@ -28,10 +31,26 @@ public class CheckEngine {
     private int maxDepth = 32;
 
     // L1 인메모리 캐시 (TTL 60초)
+    // 캐시 무효화 세대. 평가 도중 무효화가 일어났다면 그 평가 결과는 캐시에 넣지 않는다.
+    private final AtomicLong cacheGeneration = new AtomicLong();
+
     private final Cache<String, Boolean> l1Cache = Caffeine.newBuilder()
             .maximumSize(50_000)
             .expireAfterWrite(Duration.ofSeconds(60))
             .build();
+
+    /** 깊이 초과/순환으로 탐색이 잘린 횟수. 잘린 결과는 "진짜 거부"와 구분되므로 캐시하지 않고 차집합에서는 거부로 처리한다. */
+    public static class EvalState {
+        private int cutoffs;
+
+        void markCutoff() {
+            cutoffs++;
+        }
+
+        int cutoffs() {
+            return cutoffs;
+        }
+    }
 
     public record CheckResult(boolean allowed, int maxDepthReached, String reason) {}
 
@@ -46,6 +65,8 @@ public class CheckEngine {
         private final String subjectRelation;
         private final int depth;
         private final Set<String> visited;
+        // 한 번의 check 요청 전체에서 공유되는 평가 상태
+        private final EvalState state;
 
         public String toSignature() {
             String sub = subjectNamespace + ":" + subjectId;
@@ -68,6 +89,7 @@ public class CheckEngine {
                     .subjectRelation(newSubRel)
                     .depth(depth + 1)
                     .visited(newVisited)
+                    .state(state)
                     .build();
         }
     }
@@ -83,6 +105,7 @@ public class CheckEngine {
                 .subjectRelation(subjectRelation)
                 .depth(0)
                 .visited(new HashSet<>())
+                .state(new EvalState())
                 .build();
 
         String cacheKey = initialContext.toSignature();
@@ -91,8 +114,12 @@ public class CheckEngine {
             return new CheckResult(cached, 0, "L1_CACHE_HIT");
         }
 
+        long generation = cacheGeneration.get();
         boolean allowed = evaluate(initialContext);
-        l1Cache.put(cacheKey, allowed);
+        boolean cacheable = initialContext.getState().cutoffs() == 0 && generation == cacheGeneration.get();
+        if (cacheable) {
+            l1Cache.put(cacheKey, allowed);
+        }
         return new CheckResult(allowed, initialContext.getDepth(), allowed ? "ACCESS_GRANTED" : "ACCESS_DENIED");
     }
 
@@ -100,11 +127,13 @@ public class CheckEngine {
         // 1. 최대 깊이 초과 및 순환 참조 방어 (Cycle Detection)
         if (ctx.getDepth() > maxDepth) {
             log.warn("CheckEngine: Max recursion depth reached ({}) for {}", maxDepth, ctx.toSignature());
+            ctx.getState().markCutoff();
             return false;
         }
 
         if (ctx.getVisited().contains(ctx.toSignature())) {
             log.warn("CheckEngine: Circular reference detected at {}", ctx.toSignature());
+            ctx.getState().markCutoff();
             return false; // 순환 발생 시 안전하게 false 반환
         }
 
@@ -202,7 +231,17 @@ public class CheckEngine {
 
         if (node instanceof DifferenceNode diffNode) {
             // 차집합 (-): base는 만족하고 subtract는 불만족해야 true
-            return evaluateExpression(diffNode.base(), ctx) && !evaluateExpression(diffNode.subtract(), ctx);
+            if (!evaluateExpression(diffNode.base(), ctx)) {
+                return false;
+            }
+            int cutoffsBefore = ctx.getState().cutoffs();
+            boolean subtracted = evaluateExpression(diffNode.subtract(), ctx);
+            if (ctx.getState().cutoffs() > cutoffsBefore) {
+                // 제외 대상(subtract) 평가가 잘렸다면 결과를 신뢰할 수 없으므로 fail-closed 로 거부한다.
+                log.warn("CheckEngine: subtract branch truncated at {}; denying (fail-closed)", ctx.toSignature());
+                return false;
+            }
+            return !subtracted;
         }
 
         if (node instanceof TupleToUsersetNode ttuNode) {
@@ -235,6 +274,12 @@ public class CheckEngine {
     }
 
     public void invalidateCache() {
+        cacheGeneration.incrementAndGet();
         l1Cache.invalidateAll();
+    }
+
+    @EventListener
+    public void onSchemaChanged(SchemaChangedEvent event) {
+        invalidateCache();
     }
 }

@@ -7,10 +7,13 @@ import com.hunnit_beasts.guard.domain.schema.repository.SchemaDefinitionReposito
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -25,6 +28,7 @@ public class SchemaService {
     private final DslParser dslParser;
     private final SchemaDefinitionRepository schemaRepository;
     private final ResourceLoader resourceLoader;
+    private final ApplicationEventPublisher eventPublisher;
 
     private final AtomicReference<SchemaAst> activeSchemaRef = new AtomicReference<>();
     private final AtomicReference<String> activeDslTextRef = new AtomicReference<>();
@@ -88,9 +92,27 @@ public class SchemaService {
                 .build();
         SchemaDefinition saved = schemaRepository.save(newSchema);
 
-        applySchema(dslText);
-        log.info("Successfully registered and activated Zanzibar schema version {}", nextVersion);
+        // 메모리 스키마 교체는 커밋 이후에 한다. 롤백된 트랜잭션이 메모리 상태만 바꿔 버리는 것을 막는다.
+        runAfterCommit(() -> {
+            applySchema(dslText);
+            eventPublisher.publishEvent(new SchemaChangedEvent());
+            log.info("Activated Zanzibar schema version {} in memory", nextVersion);
+        });
+        log.info("Registered Zanzibar schema version {}", nextVersion);
         return saved;
+    }
+
+    private void runAfterCommit(Runnable action) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    action.run();
+                }
+            });
+        } else {
+            action.run();
+        }
     }
 
     public void applySchema(String dslText) {

@@ -3,6 +3,9 @@ package com.hunnit_beasts.guard.interfaces.grpc;
 import com.hunnit_beasts.guard.core.engine.CheckEngine;
 import com.hunnit_beasts.guard.domain.tuple.dto.TupleDto;
 import com.hunnit_beasts.guard.domain.tuple.service.TupleService;
+import com.hunnit_beasts.guard.common.exception.GuardException;
+import io.grpc.Status;
+import io.grpc.StatusRuntimeException;
 import io.grpc.stub.StreamObserver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -40,7 +43,7 @@ public class GuardGrpcService extends GuardServiceGrpc.GuardServiceImplBase {
             responseObserver.onCompleted();
         } catch (Exception e) {
             log.error("Error during gRPC check: {}", e.getMessage(), e);
-            responseObserver.onError(e);
+            responseObserver.onError(toStatus(e));
         }
     }
 
@@ -67,7 +70,7 @@ public class GuardGrpcService extends GuardServiceGrpc.GuardServiceImplBase {
             responseObserver.onCompleted();
         } catch (Exception e) {
             log.error("Error during gRPC writeTuples: {}", e.getMessage(), e);
-            responseObserver.onError(e);
+            responseObserver.onError(toStatus(e));
         }
     }
 
@@ -94,7 +97,20 @@ public class GuardGrpcService extends GuardServiceGrpc.GuardServiceImplBase {
             responseObserver.onCompleted();
         } catch (Exception e) {
             log.error("Error during gRPC deleteTuples: {}", e.getMessage(), e);
-            responseObserver.onError(e);
+            responseObserver.onError(toStatus(e));
         }
+    }
+
+    /** 내부 예외를 gRPC Status 로 변환한다. 원시 예외를 그대로 넘기면 클라이언트에는 UNKNOWN 으로만 보인다. */
+    private static StatusRuntimeException toStatus(Exception e) {
+        if (e instanceof GuardException guardException) {
+            Status status = guardException.getErrorCode().getHttpStatus().is4xxClientError()
+                    ? Status.INVALID_ARGUMENT : Status.INTERNAL;
+            return status.withDescription(guardException.getMessage()).asRuntimeException();
+        }
+        if (e instanceof IllegalArgumentException) {
+            return Status.INVALID_ARGUMENT.withDescription(e.getMessage()).asRuntimeException();
+        }
+        return Status.INTERNAL.withDescription("internal error").asRuntimeException();
     }
 }
