@@ -33,5 +33,7 @@ public class DoroProperties {
         private String grpcHost = "localhost";
         private int grpcPort = 9090;
         private boolean enabled = true;
+        /** Guard 서비스 토큰(X-Doro-Service-Token). 비어 있으면 헤더를 보내지 않는다. */
+        private String serviceToken = "";
     }
 }

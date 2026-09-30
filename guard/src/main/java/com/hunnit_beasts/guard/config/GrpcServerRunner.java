@@ -20,6 +20,7 @@ import java.io.IOException;
 public class GrpcServerRunner {
 
     private final GuardGrpcService guardGrpcService;
+    private final ServiceAuthProperties serviceAuthProperties;
 
     @Value("${doro.guard.grpc.port:9090}")
     private int grpcPort;
@@ -36,6 +37,7 @@ public class GrpcServerRunner {
         server = ServerBuilder.forPort(grpcPort)
                 .addService(guardGrpcService)
                 .intercept(new TraceIdServerInterceptor())
+                .intercept(new ServiceTokenServerInterceptor(serviceAuthProperties))
                 .build()
                 .start();
 

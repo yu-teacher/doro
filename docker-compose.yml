@@ -59,6 +59,7 @@ services:
       SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       DORO_IAM_ISSUER: ${DORO_IAM_ISSUER:-https://auth.doro.local}
       DORO_GUARD_URL: ${DORO_GUARD_URL:-http://guard-api:8081}
+      DORO_GUARD_SERVICE_TOKEN: ${DORO_GUARD_SERVICE_TOKEN:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -88,6 +89,8 @@ services:
       SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       PORT: 8081
       GRPC_PORT: 9090
+      DORO_GUARD_SECURITY_MODE: ${DORO_GUARD_SECURITY_MODE:-OFF}
+      DORO_GUARD_SERVICE_TOKEN: ${DORO_GUARD_SERVICE_TOKEN:-}
     depends_on:
       postgres:
         condition: service_healthy

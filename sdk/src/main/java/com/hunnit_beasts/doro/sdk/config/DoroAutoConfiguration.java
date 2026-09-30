@@ -54,7 +54,9 @@ public class DoroAutoConfiguration implements WebMvcConfigurer {
     public DoroGuardClient doroGuardClient(DoroProperties properties) {
         return new DoroGuardClient(
                 properties.getGuard().getGrpcHost(),
-                properties.getGuard().getGrpcPort()
+                properties.getGuard().getGrpcPort(),
+                3,
+                properties.getGuard().getServiceToken()
         );
     }
 

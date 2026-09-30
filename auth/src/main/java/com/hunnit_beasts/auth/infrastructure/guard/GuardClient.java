@@ -20,15 +20,19 @@ public class GuardClient {
 
     private final RestClient restClient;
 
-    public GuardClient(@Value("${doro.guard.url:http://localhost:28081}") String guardUrl) {
+    public GuardClient(@Value("${doro.guard.url:http://localhost:28081}") String guardUrl,
+                       @Value("${doro.guard.service-token:}") String serviceToken) {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(Duration.ofSeconds(2));
         requestFactory.setReadTimeout(Duration.ofSeconds(3));
 
-        this.restClient = RestClient.builder()
+        RestClient.Builder builder = RestClient.builder()
                 .baseUrl(guardUrl)
-                .requestFactory(requestFactory)
-                .build();
+                .requestFactory(requestFactory);
+        if (serviceToken != null && !serviceToken.isBlank()) {
+            builder.defaultHeader("X-Doro-Service-Token", serviceToken);
+        }
+        this.restClient = builder.build();
         log.info("Initialized Doro GuardClient with target URL: {}", guardUrl);
     }
 

@@ -49,6 +49,10 @@ doro:
     engine:
       max-depth: 32
       cache-ttl-seconds: 60
+    security:
+      # OFF | WARN | ENFORCE. 모든 호출자가 토큰을 보내도록 배포한 뒤 OFF -> WARN -> ENFORCE 순으로 올린다.
+      mode: ${DORO_GUARD_SECURITY_MODE:OFF}
+      service-token: ${DORO_GUARD_SERVICE_TOKEN:}
 
 management:
   endpoints:

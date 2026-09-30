@@ -19,9 +19,13 @@ public class DoroGuardClient {
     }
 
     public DoroGuardClient(String host, int port, long timeoutSeconds) {
+        this(host, port, timeoutSeconds, null);
+    }
+
+    public DoroGuardClient(String host, int port, long timeoutSeconds, String serviceToken) {
         this(ManagedChannelBuilder.forAddress(host, port)
                 .usePlaintext()
-                .build(), timeoutSeconds);
+                .build(), timeoutSeconds, serviceToken);
     }
 
     public DoroGuardClient(ManagedChannel channel) {
@@ -29,10 +33,18 @@ public class DoroGuardClient {
     }
 
     public DoroGuardClient(ManagedChannel channel, long timeoutSeconds) {
+        this(channel, timeoutSeconds, null);
+    }
+
+    public DoroGuardClient(ManagedChannel channel, long timeoutSeconds, String serviceToken) {
         this.channel = channel;
         this.timeoutSeconds = timeoutSeconds > 0 ? timeoutSeconds : 3;
-        this.blockingStub = GuardServiceGrpc.newBlockingStub(channel)
+        GuardServiceGrpc.GuardServiceBlockingStub stub = GuardServiceGrpc.newBlockingStub(channel)
                 .withInterceptors(new TraceIdClientInterceptor());
+        if (serviceToken != null && !serviceToken.isBlank()) {
+            stub = stub.withInterceptors(new ServiceTokenClientInterceptor(serviceToken));
+        }
+        this.blockingStub = stub;
     }
 
     private GuardServiceGrpc.GuardServiceBlockingStub getStub() {
