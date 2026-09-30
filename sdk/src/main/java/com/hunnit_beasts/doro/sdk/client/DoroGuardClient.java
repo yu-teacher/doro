@@ -3,6 +3,8 @@ package com.hunnit_beasts.doro.sdk.client;
 import com.hunnit_beasts.guard.interfaces.grpc.*;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
+import com.hunnit_beasts.doro.sdk.exception.DoroGuardUnavailableException;
+import com.hunnit_beasts.doro.sdk.exception.DoroGuardWriteFailedException;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.concurrent.TimeUnit;
@@ -150,6 +152,74 @@ public class DoroGuardClient {
         } catch (Exception e) {
             log.error("DoroGuardClient deleteTuple failed: {}", e.getMessage());
             return 0;
+        }
+    }
+
+    /**
+     * check 의 예외 전파 버전. Guard 장애와 실제 거부를 구분할 수 있다.
+     * 장애 시 DoroGuardUnavailableException 을 던지고, 정상 응답이면 허용 여부를 반환한다.
+     */
+    public boolean checkOrThrow(String namespace, String objectId, String relation,
+                                String subjectNamespace, String subjectId, String subjectRelation) {
+        try {
+            CheckRequest request = CheckRequest.newBuilder()
+                    .setNamespace(namespace)
+                    .setObjectId(objectId)
+                    .setRelation(relation)
+                    .setSubjectNamespace(subjectNamespace)
+                    .setSubjectId(subjectId)
+                    .setSubjectRelation(subjectRelation != null ? subjectRelation : "")
+                    .build();
+            return getStub().check(request).getAllowed();
+        } catch (Exception e) {
+            log.error("DoroGuardClient checkOrThrow failed: {}", e.getMessage());
+            throw new DoroGuardUnavailableException("Doro Guard 를 사용할 수 없습니다.", e);
+        }
+    }
+
+    public boolean checkOrThrow(String namespace, String objectId, String relation, String subjectId) {
+        return checkOrThrow(namespace, objectId, relation, "user", subjectId, null);
+    }
+
+    /** writeTuple 의 예외 전파 버전. 실패하면 DoroGuardWriteFailedException 을 던진다. */
+    public int writeTupleOrThrow(String namespace, String objectId, String relation,
+                                 String subjectNamespace, String subjectId, String subjectRelation) {
+        try {
+            WriteTuplesRequest request = WriteTuplesRequest.newBuilder()
+                    .addTuples(RelationTupleProto.newBuilder()
+                            .setNamespace(namespace)
+                            .setObjectId(objectId)
+                            .setRelation(relation)
+                            .setSubjectNamespace(subjectNamespace)
+                            .setSubjectId(subjectId)
+                            .setSubjectRelation(subjectRelation != null ? subjectRelation : "")
+                            .build())
+                    .build();
+            return getStub().writeTuples(request).getWrittenCount();
+        } catch (Exception e) {
+            log.error("DoroGuardClient writeTupleOrThrow failed: {}", e.getMessage());
+            throw new DoroGuardWriteFailedException("Doro Guard 튜플 쓰기에 실패했습니다.", e);
+        }
+    }
+
+    /** deleteTuple 의 예외 전파 버전. 실패하면 DoroGuardWriteFailedException 을 던진다. */
+    public int deleteTupleOrThrow(String namespace, String objectId, String relation,
+                                  String subjectNamespace, String subjectId, String subjectRelation) {
+        try {
+            DeleteTuplesRequest request = DeleteTuplesRequest.newBuilder()
+                    .addTuples(RelationTupleProto.newBuilder()
+                            .setNamespace(namespace)
+                            .setObjectId(objectId)
+                            .setRelation(relation)
+                            .setSubjectNamespace(subjectNamespace)
+                            .setSubjectId(subjectId)
+                            .setSubjectRelation(subjectRelation != null ? subjectRelation : "")
+                            .build())
+                    .build();
+            return getStub().deleteTuples(request).getDeletedCount();
+        } catch (Exception e) {
+            log.error("DoroGuardClient deleteTupleOrThrow failed: {}", e.getMessage());
+            throw new DoroGuardWriteFailedException("Doro Guard 튜플 삭제에 실패했습니다.", e);
         }
     }
 

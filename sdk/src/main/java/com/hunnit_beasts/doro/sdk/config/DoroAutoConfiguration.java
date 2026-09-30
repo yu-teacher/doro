@@ -5,6 +5,7 @@ import com.hunnit_beasts.doro.sdk.client.DoroGuardClient;
 import com.hunnit_beasts.doro.sdk.security.filter.DoroJwtAuthFilter;
 import com.hunnit_beasts.doro.sdk.security.jwks.JwksKeyProvider;
 import com.hunnit_beasts.doro.sdk.web.CurrentDoroUserArgumentResolver;
+import com.hunnit_beasts.doro.sdk.web.DoroExceptionHandlerAdvice;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -64,6 +65,14 @@ public class DoroAutoConfiguration implements WebMvcConfigurer {
     @ConditionalOnMissingBean
     public DoroGuardAspect doroGuardAspect(ObjectProvider<DoroGuardClient> doroGuardClient) {
         return new DoroGuardAspect(doroGuardClient.getIfAvailable());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnWebApplication
+    @ConditionalOnProperty(prefix = "doro.web", name = "exception-handler", havingValue = "true", matchIfMissing = true)
+    public DoroExceptionHandlerAdvice doroExceptionHandlerAdvice() {
+        return new DoroExceptionHandlerAdvice();
     }
 
     @Bean
