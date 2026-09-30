@@ -437,3 +437,20 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST localhost:8081/api/v1/guard/che
 | 참조 서비스 | `doro-blog/` (`BlogSchemaInitializer`, `blog-schema.doro`, `GlobalExceptionHandler`, `PostService`) |
 | 라우팅 규칙 | `Doro/gateway/nginx.conf`, `doro-blog/AGENTS.md` |
 | 엔지니어링 룰 | `workspace/AGENTS.md`, `Doro/AGENTS.md` |
+
+---
+
+## 부록. `hardening/phase1` 브랜치 진행 현황 (2026-09-30 검증 후 반영)
+
+> 아래는 브랜치에 **커밋만 되어 있고 아직 배포되지 않았다**. 이 문서 본문(특히 DORO_AGENT_GUIDE 의 §2·§4·§6·§9)은 배포 전 코드(main) 기준이다. 병합·배포되면 본문을 갱신할 것.
+
+| 영역 | 반영된 내용 | 상태 |
+|---|---|---|
+| Phase 1 인프라 | 내부 포트 127.0.0.1 바인딩, Redis `requirepass`(선택), DB 비밀번호 필수화, `/loki/` 쓰기 차단, `web/Dockerfile` 빌드 단계 복구, CI 실패 시 exit 1·`.env` 없으면 중단 | 코드 반영, 서버 미적용 |
+| Phase 2 auth | C-1·C-2(소유자 검증 + 인증 필수, `SessionRevocationService`), N1(authorize 인증·형식 검증), N3(원자적 회전, 선택적 유예), N5(원자적 실패 카운트), N6(OTP 실패 합산·±1 스텝·재사용 방지), N7(비밀번호 변경 시 세션 종료), N11(민감값 마스킹·400), N13(만료 세션 정리), actuator 제한 | 반영·테스트 통과 |
+| Phase 3 SDK | S1·S2·S3·S4·S6(`exp` 필수, RS256, `iss` 선택 검증)·S7, (c) 쿠키 토큰 소스(`doro.iam.cookie-name`), (d) 기본 예외 핸들러(401/403/503), S8/S10 `…OrThrow` | 반영·테스트 통과 |
+| Phase 4 Guard | G2(잘린 평가는 캐시 안 함·차집합 fail-closed), G3(커밋 후 무효화·세대 검사·스키마 변경 시 무효화), G5(배치 중복 제거·`ON CONFLICT`·V2 정리·PG 부분 유니크 V3), G9·G10(예외·gRPC Status 매핑), G1(서비스 토큰 OFF/WARN/ENFORCE, 기본 OFF) | 반영·테스트 통과, V2/V3 는 PostgreSQL 에서 별도 검증 |
+
+**아직 하지 않은 것 (결정 필요)**: 액세스 토큰 TTL 단축과 킬스위치 SDK 연동(Phase 5), 로그 뷰어 보호(`/loki/` 읽기), Guard 서비스 토큰 ENFORCE 전환, 스키마 서비스 단위 등록 API(G-a), OAuth/SSO(Phase 6), `/auth/**` 전체 `permitAll` 정리와 `2fa/disable` 재인증, 이메일 소문자 정규화(기존 중복 데이터 확인 필요), CORS Origin 목록, Flyway `repair()` 제거.
+
+**배포 순서 권장**: (1) 서버 `.env` 에 `REDIS_PASSWORD`·`GRAFANA_ADMIN_PASSWORD` 추가 → (2) 브랜치 병합·배포(Guard V2 가 중복 튜플을 `relation_tuples_duplicates_backup` 로 옮기고 정리함) → (3) 모든 호출자에 `DORO_GUARD_SERVICE_TOKEN` 배포 후 Guard 를 `WARN` → 로그 확인 → `ENFORCE`.
