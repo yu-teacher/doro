@@ -43,7 +43,12 @@ public class OAuth2Service {
     @Value("${doro.iam.jwt.access-token-validity-seconds:900}")
     private long accessTokenValiditySeconds;
 
+    /** 인가 코드를 발급할 수 있는 redirect_uri 허용 목록(정확히 일치). 비어 있으면 모든 요청을 거부한다. */
+    @Value("${doro.oauth.allowed-redirect-uris:}")
+    private List<String> allowedRedirectUris = List.of();
+
     public String generateAuthorizationCode(String clientId, String redirectUri, UUID userId, String codeChallenge) {
+        requireAllowedRedirectUri(redirectUri);
         byte[] bytes = new byte[32];
         secureRandom.nextBytes(bytes);
         String code = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
@@ -52,6 +57,16 @@ public class OAuth2Service {
         authCodeStore.put(code, new AuthCodeEntry(code, clientId, redirectUri, userId, codeChallenge, expiresAt));
 
         return code;
+    }
+
+    private void requireAllowedRedirectUri(String redirectUri) {
+        boolean allowed = redirectUri != null && allowedRedirectUris.stream()
+                .map(String::trim)
+                .anyMatch(redirectUri::equals);
+        if (!allowed) {
+            log.warn("Rejected authorization request with a redirect_uri that is not on the allowlist");
+            throw new AuthException(ErrorCode.INVALID_INPUT, "허용되지 않은 redirect_uri 입니다.");
+        }
     }
 
     public TokenResponse exchangeCode(OAuth2TokenRequest request) {

@@ -23,6 +23,8 @@ spring:
     enabled: false
 
 doro:
+  oauth:
+    allowed-redirect-uris: http://localhost:3000/callback,https://app-a.com/cb,https://app.doro.local/callback
   cors:
     allowed-origin-patterns: http://localhost:*,http://127.0.0.1:*
   iam:

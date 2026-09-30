@@ -41,6 +41,9 @@ spring:
       timeout: 3000ms
 
 doro:
+  oauth:
+    # 인가 코드를 발급할 redirect_uri 허용 목록(쉼표 구분, 정확히 일치). 비워 두면 OAuth 인가 요청이 모두 거부된다.
+    allowed-redirect-uris: ${DORO_OAUTH_ALLOWED_REDIRECT_URIS:}
   cors:
     # 브라우저에서 IAM 을 직접 호출할 수 있는 Origin 패턴 (쉼표 구분). 와일드카드(*) 전체 허용은 사용하지 않는다.
     allowed-origin-patterns: ${DORO_CORS_ALLOWED_ORIGIN_PATTERNS:https://varen05.asuscomm.com,http://192.168.0.101:*,http://localhost:*,http://127.0.0.1:*}

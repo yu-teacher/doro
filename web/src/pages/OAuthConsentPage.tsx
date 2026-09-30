@@ -1,7 +1,14 @@
-import React, { useState } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import React, { useMemo, useState } from 'react';
+import { Link, useSearchParams, useNavigate } from 'react-router-dom';
+import { isAxiosError } from 'axios';
 import { useAuthStore } from '../store/authStore';
-import { Shield, Check, CheckCircle2 } from 'lucide-react';
+import { apiClient } from '../api/client';
+import { buildAuthorizationRedirect, parseConsentRequest } from '../utils/oauthConsent';
+import { Shield, Check, CheckCircle2, AlertTriangle } from 'lucide-react';
+
+interface AuthorizeResponse {
+  data?: { code?: string; state?: string };
+}
 
 export const OAuthConsentPage: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -9,22 +16,69 @@ export const OAuthConsentPage: React.FC = () => {
   const { getActiveAccount } = useAuthStore();
   const activeAccount = getActiveAccount();
 
-  const clientId = searchParams.get('client_id') || 'doro-docs-app';
-  const redirectUri = searchParams.get('redirect_uri') || 'https://docs.doro.local/callback';
+  const parsed = useMemo(() => parseConsentRequest(searchParams), [searchParams]);
 
   const [approved, setApproved] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const handleApprove = () => {
-    setApproved(true);
-    setTimeout(() => {
-      // 실제 OAuth 2.1 인가 코드 리다이렉트 시뮬레이션
-      window.location.href = `${redirectUri}?code=doro_auth_code_sample_123&state=state123`;
-    }, 1500);
+  const handleApprove = async () => {
+    if (!parsed.ok || submitting) return;
+    const { clientId, redirectUri, codeChallenge, state } = parsed.request;
+    setSubmitting(true);
+    setErrorMessage(null);
+    try {
+      // 실제 인가 서버를 호출한다. redirect_uri 허용 여부는 서버가 판정하며, 허용되지 않으면 코드를 발급하지 않는다.
+      const response = await apiClient.get<AuthorizeResponse>('/oauth2/authorize', {
+        params: {
+          client_id: clientId,
+          redirect_uri: redirectUri,
+          response_type: 'code',
+          code_challenge: codeChallenge,
+          ...(state ? { state } : {}),
+        },
+      });
+      const code = response.data?.data?.code;
+      if (!code) {
+        setErrorMessage('인가 코드를 받지 못했습니다. 잠시 후 다시 시도해 주세요.');
+        return;
+      }
+      setApproved(true);
+      window.location.assign(buildAuthorizationRedirect(redirectUri, code, state));
+    } catch (error) {
+      const rejected = isAxiosError(error) && error.response?.status === 400;
+      setErrorMessage(rejected ? '허용되지 않은 요청입니다. 앱 관리자에게 문의해 주세요.' : '승인 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleDeny = () => {
     navigate('/account');
   };
+
+  if (!parsed.ok || !activeAccount) {
+    return (
+      <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4">
+        <div className="w-full max-w-md glass-card google-card-shadow rounded-3xl p-8 text-center">
+          <div className="inline-flex w-12 h-12 rounded-2xl bg-amber-100 text-amber-600 items-center justify-center mb-4">
+            <AlertTriangle className="w-6 h-6" />
+          </div>
+          <h1 className="text-lg font-extrabold text-slate-900">
+            {parsed.ok ? '로그인이 필요합니다' : '잘못된 요청입니다'}
+          </h1>
+          <p className="text-xs text-slate-500 mt-2">
+            {parsed.ok ? 'Doro 계정으로 로그인한 뒤 다시 시도해 주세요.' : parsed.reason}
+          </p>
+          <Link to={parsed.ok ? '/login' : '/account'} className="inline-block mt-6 py-2.5 px-5 bg-indigo-600 text-white rounded-xl text-xs font-bold">
+            {parsed.ok ? '로그인으로 이동' : '내 계정으로 돌아가기'}
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const { clientId, redirectHost } = parsed.request;
 
   return (
     <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4">
@@ -38,6 +92,7 @@ export const OAuthConsentPage: React.FC = () => {
           <p className="text-xs text-slate-500 mt-1">
             <strong className="text-indigo-600 font-bold">{clientId}</strong> 앱에서 다음 권한을 요청합니다.
           </p>
+          <p className="text-[11px] text-slate-400 mt-1">승인 후 <strong className="font-semibold text-slate-600">{redirectHost}</strong> 로 이동합니다.</p>
 
           {activeAccount && (
             <div className="mt-4 p-3 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-center gap-3">
@@ -65,6 +120,12 @@ export const OAuthConsentPage: React.FC = () => {
             </div>
           </div>
 
+          {errorMessage && (
+            <div role="alert" className="mt-4 p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs font-medium text-rose-700">
+              {errorMessage}
+            </div>
+          )}
+
           {approved ? (
             <div className="mt-6 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs font-bold text-emerald-700 flex items-center justify-center gap-2 animate-in fade-in">
               <CheckCircle2 className="w-4 h-4 text-emerald-600" /> 승인 완료! 서비스로 이동 중입니다...
@@ -79,7 +140,8 @@ export const OAuthConsentPage: React.FC = () => {
               </button>
               <button
                 onClick={handleApprove}
-                className="flex-1 py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-indigo-500/25"
+                disabled={submitting}
+                className="flex-1 disabled:opacity-60 py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-indigo-500/25"
               >
                 계속 (승인)
               </button>

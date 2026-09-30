@@ -164,7 +164,7 @@ class SessionRevocationSecurityTest {
     @DisplayName("N1: 로그인하지 않은 /oauth2/authorize 는 401")
     void authorizeRequiresLogin() throws Exception {
         mockMvc.perform(get("/oauth2/authorize")
-                        .param("client_id", "c").param("redirect_uri", "https://a.example/cb")
+                        .param("client_id", "c").param("redirect_uri", "https://app-a.com/cb")
                         .param("response_type", "code")
                         .param("code_challenge", "E9Melhoa2OwvFrGMTJguCH5rtx64FIbEIqiPQsjzkxo"))
                 .andExpect(status().isUnauthorized());
@@ -177,15 +177,15 @@ class SessionRevocationSecurityTest {
         String challenge = "E9Melhoa2OwvFrGMTJguCH5rtx64FIbEIqiPQsjzkxo";
 
         mockMvc.perform(get("/oauth2/authorize").header("Authorization", "Bearer " + me.accessToken())
-                        .param("client_id", "c").param("redirect_uri", "https://a.example/cb")
+                        .param("client_id", "c").param("redirect_uri", "https://app-a.com/cb")
                         .param("response_type", "token").param("code_challenge", challenge))
                 .andExpect(status().isBadRequest());
         mockMvc.perform(get("/oauth2/authorize").header("Authorization", "Bearer " + me.accessToken())
-                        .param("client_id", "c").param("redirect_uri", "https://a.example/cb")
+                        .param("client_id", "c").param("redirect_uri", "https://app-a.com/cb")
                         .param("response_type", "code").param("code_challenge", "short"))
                 .andExpect(status().isBadRequest());
         mockMvc.perform(get("/oauth2/authorize").header("Authorization", "Bearer " + me.accessToken())
-                        .param("client_id", "c").param("redirect_uri", "https://a.example/cb")
+                        .param("client_id", "c").param("redirect_uri", "https://app-a.com/cb")
                         .param("response_type", "code").param("code_challenge", challenge))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.code").isNotEmpty());
@@ -209,5 +209,24 @@ class SessionRevocationSecurityTest {
                 .andExpect(status().isBadRequest());
         mockMvc.perform(post("/api/v1/auth/token/refresh").contentType(MediaType.APPLICATION_JSON).content(""))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("OAuth: 허용 목록에 없거나 위험한 redirect_uri 로는 인가 코드를 발급하지 않는다")
+    void authorizeRejectsRedirectUrisOutsideAllowlist() throws Exception {
+        Login me = signupAndLogin(uniqueEmail());
+        String challenge = "E9Melhoa2OwvFrGMTJguCH5rtx64FIbEIqiPQsjzkxo";
+
+        for (String bad : new String[]{"https://evil.example/cb", "javascript:alert(1)", "https://app-a.com/cb/../evil", "https://app-a.com/cb?x=1", "https://user@app-a.com/cb"}) {
+            mockMvc.perform(get("/oauth2/authorize").header("Authorization", "Bearer " + me.accessToken())
+                            .param("client_id", "c").param("redirect_uri", bad)
+                            .param("response_type", "code").param("code_challenge", challenge))
+                    .andExpect(status().isBadRequest());
+        }
+        mockMvc.perform(get("/oauth2/authorize").header("Authorization", "Bearer " + me.accessToken())
+                        .param("client_id", "c").param("redirect_uri", "https://app-a.com/cb")
+                        .param("response_type", "code").param("code_challenge", challenge))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.code").isNotEmpty());
     }
 }
