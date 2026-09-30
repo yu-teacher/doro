@@ -24,7 +24,7 @@ public class JwtTokenProvider {
     @Value("${doro.iam.issuer:https://auth.doro.local}")
     private String issuer;
 
-    @Value("${doro.iam.jwt.access-token-validity-seconds:86400}")
+    @Value("${doro.iam.jwt.access-token-validity-seconds:900}")
     private long accessTokenValiditySeconds;
 
     /**

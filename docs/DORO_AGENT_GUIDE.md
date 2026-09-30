@@ -454,3 +454,9 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST localhost:8081/api/v1/guard/che
 **아직 하지 않은 것 (결정 필요)**: 액세스 토큰 TTL 단축과 킬스위치 SDK 연동(Phase 5), 로그 뷰어 보호(`/loki/` 읽기), Guard 서비스 토큰 ENFORCE 전환, 스키마 서비스 단위 등록 API(G-a), OAuth/SSO(Phase 6), `/auth/**` 전체 `permitAll` 정리와 `2fa/disable` 재인증, 이메일 소문자 정규화(기존 중복 데이터 확인 필요), CORS Origin 목록, Flyway `repair()` 제거.
 
 **배포 순서 권장**: (1) 서버 `.env` 에 `REDIS_PASSWORD`·`GRAFANA_ADMIN_PASSWORD` 추가 → (2) 브랜치 병합·배포(Guard V2 가 중복 튜플을 `relation_tuples_duplicates_backup` 로 옮기고 정리함) → (3) 모든 호출자에 `DORO_GUARD_SERVICE_TOKEN` 배포 후 Guard 를 `WARN` → 로그 확인 → `ENFORCE`.
+
+### 추가 반영 (토큰 수명 / CORS / 프런트 갱신)
+- **액세스 토큰 수명**: 기본 15분(`DORO_IAM_ACCESS_TOKEN_TTL_SECONDS`, 기본값 900). 로그인 유지는 30일 리프레시 토큰(회전 시 30일 연장)이 담당한다. 본문 §3 의 "24시간" 은 배포 전 기준이다.
+- **CORS**: IAM 은 `doro.cors.allowed-origin-patterns`(`DORO_CORS_ALLOWED_ORIGIN_PATTERNS`) 목록만 허용하고 `*` 는 기동 시 거부한다. Guard 는 브라우저용 CORS 를 제공하지 않는다.
+- **프런트 갱신 규칙**: 리프레시 실패를 `refreshed / rejected / unavailable` 로 구분해 **서버가 거부(400/401/403/404)한 경우에만 로그아웃**한다. 네트워크 오류·5xx 는 로그인 상태 유지. 여러 탭은 Web Locks 로 직렬화한다.
+- **포털과 서브서비스의 토큰 공유 주의**: 서브서비스가 포털의 저장된 계정 토큰(`doro_auth_accounts`)으로 로그인하면 같은 리프레시 토큰 계열을 쓴다. 한쪽이 회전하면 다른 쪽 토큰은 폐기되어 재사용 공격으로 판정되므로, 갱신 전에 공유 저장소의 더 최근 토큰을 사용하고 갱신 후 공유 저장소에 되돌려 써야 한다. (`doro-blog/web/src/api/tokenRefresh.ts` 참고)

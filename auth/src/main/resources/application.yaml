@@ -41,10 +41,13 @@ spring:
       timeout: 3000ms
 
 doro:
+  cors:
+    # 브라우저에서 IAM 을 직접 호출할 수 있는 Origin 패턴 (쉼표 구분). 와일드카드(*) 전체 허용은 사용하지 않는다.
+    allowed-origin-patterns: ${DORO_CORS_ALLOWED_ORIGIN_PATTERNS:https://varen05.asuscomm.com,http://192.168.0.101:*,http://localhost:*,http://127.0.0.1:*}
   iam:
     issuer: https://auth.doro.local
     jwt:
-      access-token-validity-seconds: 86400 # 24시간 (하루)
+      access-token-validity-seconds: ${DORO_IAM_ACCESS_TOKEN_TTL_SECONDS:900} # 기본 15분. 로그인 유지는 30일 리프레시 토큰(회전)이 담당한다
       refresh-token-validity-seconds: 2592000 # 30일 (1달)
     session:
       max-active-sessions-per-user: 10

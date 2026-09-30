@@ -9,6 +9,11 @@ interface AuthState {
   addAccount: (account: AuthAccount) => void;
   switchAccount: (index: number) => void;
   updateActiveToken: (accessToken: string, refreshToken?: string) => void;
+  /** 특정 계정(이메일)의 토큰만 갱신한다. 갱신 도중 활성 계정이 바뀌어도 다른 계정을 건드리지 않는다. */
+  updateAccountToken: (email: string, accessToken: string, refreshToken?: string) => void;
+  removeAccountByEmail: (email: string) => void;
+  /** 다른 탭이 localStorage 에 기록한 최신 계정/토큰을 메모리로 다시 읽는다. */
+  syncFromStorage: () => void;
   updateActiveProfile: (fullName?: string, profileImageUrl?: string | null, role?: UserRole) => void;
   removeAccount: (index: number) => void;
   logoutAll: () => void;
@@ -100,6 +105,31 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedAccounts));
       return { accounts: updatedAccounts };
     });
+  },
+
+  updateAccountToken: (email: string, accessToken: string, refreshToken?: string) => {
+    set((state) => {
+      const updatedAccounts = state.accounts.map((acc) =>
+        acc.email === email
+          ? { ...acc, accessToken, refreshToken: refreshToken || acc.refreshToken }
+          : acc
+      );
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedAccounts));
+      return { accounts: updatedAccounts };
+    });
+  },
+
+  removeAccountByEmail: (email: string) => {
+    const index = get().accounts.findIndex((acc) => acc.email === email);
+    if (index >= 0) {
+      get().removeAccount(index);
+    }
+  },
+
+  syncFromStorage: () => {
+    const accounts = loadAccounts();
+    const activeAccountIndex = Math.min(loadActiveIndex(), Math.max(0, accounts.length - 1));
+    set({ accounts, activeAccountIndex });
   },
 
   updateActiveProfile: (fullName?: string, profileImageUrl?: string | null, role?: UserRole) => {

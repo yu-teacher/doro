@@ -24,6 +24,16 @@ class CorsAndSwaggerHealthTest {
     private MockMvc mockMvc;
 
     @Test
+    @DisplayName("CORS: 허용 목록에 없는 Origin 의 preflight 는 거부된다")
+    void testCorsRejectsUnknownOrigin() throws Exception {
+        mockMvc.perform(options("/api/v1/auth/login")
+                        .header(HttpHeaders.ORIGIN, "https://evil.example")
+                        .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST"))
+                .andExpect(status().isForbidden())
+                .andExpect(header().doesNotExist(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN));
+    }
+
+    @Test
     @DisplayName("CORS Preflight 검증: OPTIONS 요청 시 Access-Control-Allow 헤더 정상 반환")
     void testCorsPreflightHeaders() throws Exception {
         mockMvc.perform(options("/api/v1/auth/login")

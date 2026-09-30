@@ -24,14 +24,12 @@ class GuardCorsAndSwaggerHealthTest {
     private MockMvc mockMvc;
 
     @Test
-    @DisplayName("Guard CORS Preflight 검증: OPTIONS 요청 시 Access-Control-Allow 헤더 정상 반환")
-    void testCorsPreflightHeaders() throws Exception {
-        mockMvc.perform(options("/api/v1/tuples/check")
+    @DisplayName("Guard 는 브라우저용 CORS 를 허용하지 않는다: preflight 응답에 Access-Control-Allow-Origin 이 없다")
+    void testCorsIsNotEnabled() throws Exception {
+        mockMvc.perform(options("/api/v1/guard/check")
                         .header(HttpHeaders.ORIGIN, "http://localhost:3000")
                         .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST"))
-                .andExpect(status().isOk())
-                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "http://localhost:3000"))
-                .andExpect(header().exists(HttpHeaders.ACCESS_CONTROL_ALLOW_METHODS));
+                .andExpect(header().doesNotExist(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN));
     }
 
     @Test

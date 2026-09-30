@@ -23,6 +23,8 @@ spring:
     enabled: false
 
 doro:
+  cors:
+    allowed-origin-patterns: http://localhost:*,http://127.0.0.1:*
   iam:
     issuer: https://auth.doro.local
     jwt:

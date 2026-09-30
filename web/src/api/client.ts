@@ -1,5 +1,6 @@
-import axios from 'axios';
+import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { useAuthStore } from '../store/authStore';
+import { refreshAccessToken } from './tokenRefresh';
 
 export const apiClient = axios.create({
   baseURL: '',
@@ -9,70 +10,77 @@ export const apiClient = axios.create({
   timeout: 10000,
 });
 
+// 토큰 갱신 대상이 아닌(자격 증명을 다루는) 공개 인증 엔드포인트
+const PUBLIC_AUTH_PATHS = [
+  '/api/v1/auth/login',
+  '/api/v1/auth/2fa/login',
+  '/api/v1/auth/signup',
+  '/api/v1/auth/lookup',
+  '/api/v1/auth/token/refresh',
+];
+
+const LOGIN_PATH = '/login';
+
+type RetriableRequest = InternalAxiosRequestConfig & { _retry?: boolean };
+
+function setBearer(config: InternalAxiosRequestConfig, accessToken: string): void {
+  if (config.headers.set) {
+    config.headers.set('Authorization', `Bearer ${accessToken}`);
+  } else {
+    config.headers.Authorization = `Bearer ${accessToken}`;
+  }
+}
+
+function bearerOf(config: InternalAxiosRequestConfig): string | null {
+  const header = config.headers.get ? config.headers.get('Authorization') : config.headers.Authorization;
+  return typeof header === 'string' && header.startsWith('Bearer ') ? header.slice('Bearer '.length) : null;
+}
+
+function isPublicAuthPath(url: string | undefined): boolean {
+  return !!url && PUBLIC_AUTH_PATHS.some((path) => url.startsWith(path));
+}
+
+function endSession(email: string): void {
+  useAuthStore.getState().removeAccountByEmail(email);
+  window.location.href = LOGIN_PATH;
+}
+
 apiClient.interceptors.request.use((config) => {
   const activeAccount = useAuthStore.getState().getActiveAccount();
   if (activeAccount && activeAccount.accessToken) {
-    if (config.headers.set) {
-      config.headers.set('Authorization', `Bearer ${activeAccount.accessToken}`);
-    } else {
-      config.headers.Authorization = `Bearer ${activeAccount.accessToken}`;
-    }
+    setBearer(config, activeAccount.accessToken);
   }
   return config;
 });
 
-let activeRefreshPromise: Promise<string | null> | null = null;
-
 apiClient.interceptors.response.use(
   (response) => response,
-  async (error) => {
-    const originalRequest = error.config;
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true;
-      const activeAccount = useAuthStore.getState().getActiveAccount();
-
-      if (activeAccount && activeAccount.refreshToken) {
-        if (!activeRefreshPromise) {
-          activeRefreshPromise = (async () => {
-            try {
-              const res = await axios.post('/api/v1/auth/token/refresh', {
-                refreshToken: activeAccount.refreshToken,
-              });
-
-              const tokenData = res.data?.data || res.data;
-              if (tokenData && tokenData.accessToken) {
-                useAuthStore.getState().updateActiveToken(tokenData.accessToken, tokenData.refreshToken);
-                return tokenData.accessToken as string;
-              }
-              return null;
-            } catch {
-              return null;
-            } finally {
-              activeRefreshPromise = null;
-            }
-          })();
-        }
-
-        const newAccessToken = await activeRefreshPromise;
-        if (newAccessToken) {
-          if (originalRequest.headers.set) {
-            originalRequest.headers.set('Authorization', `Bearer ${newAccessToken}`);
-          } else {
-            originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
-          }
-          return apiClient(originalRequest);
-        } else {
-          // 토큰 갱신 실패 시 만료된 계정 세션 정리 후 로그인 페이지로 안내
-          const activeIndex = useAuthStore.getState().activeAccountIndex;
-          useAuthStore.getState().removeAccount(activeIndex);
-          window.location.href = '/login';
-        }
-      } else if (activeAccount) {
-        const activeIndex = useAuthStore.getState().activeAccountIndex;
-        useAuthStore.getState().removeAccount(activeIndex);
-        window.location.href = '/login';
-      }
+  async (error: AxiosError) => {
+    const originalRequest = error.config as RetriableRequest | undefined;
+    if (error.response?.status !== 401 || !originalRequest || originalRequest._retry || isPublicAuthPath(originalRequest.url)) {
+      return Promise.reject(error);
     }
+    originalRequest._retry = true;
+
+    const account = useAuthStore.getState().getActiveAccount();
+    if (!account) {
+      return Promise.reject(error);
+    }
+    if (!account.refreshToken) {
+      endSession(account.email);
+      return Promise.reject(error);
+    }
+
+    const result = await refreshAccessToken(account.email, bearerOf(originalRequest));
+    if (result.kind === 'refreshed') {
+      setBearer(originalRequest, result.accessToken);
+      return apiClient(originalRequest);
+    }
+    if (result.kind === 'rejected') {
+      // 서버가 리프레시 토큰을 거부한 경우에만 세션을 정리한다.
+      endSession(account.email);
+    }
+    // unavailable(네트워크/5xx): 로그인 상태를 유지한 채 원래 오류를 전달한다.
     return Promise.reject(error);
   }
 );

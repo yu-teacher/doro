@@ -40,7 +40,7 @@ public class OAuth2Service {
     @Value("${doro.iam.issuer:https://auth.doro.local}")
     private String issuer;
 
-    @Value("${doro.iam.jwt.access-token-validity-seconds:86400}")
+    @Value("${doro.iam.jwt.access-token-validity-seconds:900}")
     private long accessTokenValiditySeconds;
 
     public String generateAuthorizationCode(String clientId, String redirectUri, UUID userId, String codeChallenge) {
