@@ -83,13 +83,16 @@ tar xzf "$B/config.tgz" -C ~          # ~/doro/.env, ~/doro-blog/.env, compose, 
 ```
 인증서 개인키는 백업하지 않는다. 필요하면 certbot 으로 재발급한다.
 
-## 5. 오프사이트 사본 (아직 설정 전)
+## 5. 오프사이트 사본 (Raspberry Pi)
 
-지금 백업은 **같은 디스크**에만 있다. 디스크 고장, 서버 분실, 랜섬웨어에는 전부 잃는다. `OFFSITE_TARGET` 에 rsync/ssh 대상을 지정하면 백업 직후 자동 복사한다.
-```
-OFFSITE_TARGET=backup@192.168.0.102:/srv/doro-backups
-```
-대상 서버에는 mini 의 전용 SSH 키만 허용하고(`restrict`), 가능하면 `rrsync` 로 해당 디렉터리에만 쓰기 권한을 준다. 설정되면 `status` 의 오프사이트 경고가 사라진다.
+백업 직후 `rsync -aH`(삭제 전파 없음)로 pi 의 `~/doro-backups/` 에 복사한다. 설정은 `scripts/setup-offsite-backup.sh`(Mac 에서 실행, 여러 번 실행해도 안전, `--check` 는 상태만 점검).
+
+- mini 전용 키 `~/.ssh/pi_backup_ed25519` → pi `authorized_keys` 에 `restrict,command="/usr/bin/rrsync /home/ysm/doro-backups"` 로 등록. 셸 접속·포트 포워딩·디렉터리 밖 접근 불가(설정 시 검증함).
+- mini 의 `~/ops/backup.env` 에 `OFFSITE_TARGET=pi-backup:./` (연결 별칭 `pi-backup`은 `~/.ssh/config`).
+- 삭제가 전파되지 않으므로 mini 가 침해되어도 pi 의 과거 사본은 지워지지 않는다. 오래된 세대는 pi 의 cron(`~/ops/prune-doro-backups.sh`, 매일 06:30)이 일 30 / 주 12 / 월 12 개만 남기고 정리한다.
+- 오프사이트 복사가 실패하거나 사본이 오래되면 `status` 가 경고한다.
+- pi 에서 복원할 때: `rsync -a pi:doro-backups/daily/<타임스탬프>/ ~/restore/` 후 4장 절차를 따른다. 체크섬은 `sha256sum -c SHA256SUMS`.
+- 한계: pi 도 같은 집 안에 있다. 화재/도난/정전 같은 장소 단위 사고에는 여전히 약하다. 클라우드 등 다른 장소 사본은 아직 없다.
 
 ## 6. 알아둘 한계
 - 백업은 하루 한 번이라 최대 24시간치 변경을 잃을 수 있다.

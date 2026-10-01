@@ -10,6 +10,11 @@
 set -Eeuo pipefail
 umask 077
 
+# 비밀이 아닌 설정(예: OFFSITE_TARGET)은 ~/ops/backup.env 에서 읽는다. cron 줄을 바꾸지 않고 설정할 수 있다.
+BACKUP_ENV_FILE="${BACKUP_ENV_FILE:-$HOME/ops/backup.env}"
+# shellcheck disable=SC1090
+[ -f "$BACKUP_ENV_FILE" ] && . "$BACKUP_ENV_FILE"
+
 ROOT="${BACKUP_ROOT:-$HOME/backups/auto}"
 KEEP_DAILY="${KEEP_DAILY:-7}"
 KEEP_WEEKLY="${KEEP_WEEKLY:-4}"
@@ -25,7 +30,7 @@ DORO_DIR="${DORO_DIR:-$HOME/doro}"
 BLOG_DIR="${BLOG_DIR:-$HOME/doro-blog}"
 TOOLBOX_IMAGE="${TOOLBOX_IMAGE:-postgres:16-alpine}"   # tar/gzip 와 pg 클라이언트가 들어 있는 이미 있는 이미지
 REDIS_IMAGE="${REDIS_IMAGE:-redis:7-alpine}"
-# 같은 디스크 밖의 사본 위치. 예: backup@192.168.0.4:/srv/doro-backups (ssh 키 필요). 비어 있으면 오프사이트 복사를 건너뛴다.
+# 같은 디스크 밖의 사본 위치(rsync/ssh). 예: pi-backup:./  비어 있으면 오프사이트 복사를 건너뛴다. ~/ops/backup.env 로도 지정할 수 있다.
 OFFSITE_TARGET="${OFFSITE_TARGET:-}"
 
 STATUS_FILE="$ROOT/STATUS"
@@ -168,7 +173,9 @@ offsite_copy() {
     log "오프사이트 복사: 설정되지 않음 (OFFSITE_TARGET 비어 있음). 같은 디스크에만 보관 중이다."
     return 0
   fi
-  if rsync -a --delete -e 'ssh -o BatchMode=yes -o ConnectTimeout=10' --exclude '.lock' "$ROOT/" "$OFFSITE_TARGET/"; then
+  # --delete 를 쓰지 않는다: 로컬 백업이 실수/랜섬웨어로 지워져도 오프사이트 사본은 남아야 한다.
+  # 오래된 세대의 정리는 받는 쪽(pi)이 자체 보관 정책으로 한다. -H 는 주간/월간 하드링크를 보존한다.
+  if rsync -aH --exclude '.lock' -e 'ssh -o BatchMode=yes -o ConnectTimeout=15' "$ROOT/" "$OFFSITE_TARGET/"; then
     set_status offsite "OK $(date +%FT%T%z)"
     log "오프사이트 복사 완료: $OFFSITE_TARGET"
   else
@@ -247,7 +254,10 @@ do_status() {
   if [ "$ok_age" -gt "$STALE_HOURS" ]; then echo "WARN: 백업이 ${STALE_HOURS}시간보다 오래되었다"; rc=1; fi
   case "$(get_status last_restore_test)" in OK*) ;; *) echo "WARN: 복원 테스트가 성공한 기록이 없다"; rc=1 ;; esac
   if [ "$restore_age" -gt $((RESTORE_STALE_DAYS * 24)) ]; then echo "WARN: 복원 테스트가 ${RESTORE_STALE_DAYS}일보다 오래되었다"; rc=1; fi
-  case "$(get_status offsite)" in OK*) ;; *) echo "WARN: 오프사이트 사본이 없다 ($(get_status offsite)). 디스크 장애에 취약하다"; rc=1 ;; esac
+  case "$(get_status offsite)" in
+    OK*) if [ "$(age_hours "$(get_status offsite)")" -gt "$STALE_HOURS" ]; then echo "WARN: 오프사이트 사본이 ${STALE_HOURS}시간보다 오래되었다"; rc=1; fi ;;
+    *)   echo "WARN: 오프사이트 사본이 없다 ($(get_status offsite)). 디스크 장애에 취약하다"; rc=1 ;;
+  esac
   echo "보관: daily $(ls -1d "$ROOT"/daily/[0-9]* 2>/dev/null | wc -l)/$KEEP_DAILY, weekly $(ls -1d "$ROOT"/weekly/[0-9]* 2>/dev/null | wc -l)/$KEEP_WEEKLY, monthly $(ls -1d "$ROOT"/monthly/[0-9]* 2>/dev/null | wc -l)/$KEEP_MONTHLY"
   exit $rc
 }
