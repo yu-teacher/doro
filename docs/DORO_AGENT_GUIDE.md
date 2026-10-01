@@ -475,3 +475,8 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST localhost:8081/api/v1/guard/che
 - 세 앱(blog/portal/menu)의 GA4 인라인 초기화 스크립트는 내용이 같아 `script-src` 해시 하나(`'sha256-yLKa…'`)로 허용한다. index.html 의 인라인 스크립트를 바꾸면 해시도 바꿔야 하며, `scripts/check-csp-hash.sh` 가 CI(`deploy.yml`)에서 검증한다. (blog/menu 는 `scripts/check-csp-hash.sh web/index.html ../doro-blog/web/index.html ../doro-menu/index.html` 로 수동 확인)
 - 새 외부 리소스(폰트/스크립트/API)를 쓰면 CSP 에 출처를 추가해야 한다. 게이트웨이 설정은 CI 로 갱신되지 않으므로 서버 `~/doro/gateway/nginx.conf` 에 반영 후 `nginx -t && nginx -s reload`.
 - **XSS 점검 결과**: 블로그 마크다운은 `react-markdown` 기본(HTML 이스케이프, 링크 스킴 필터)이고 `dangerouslySetInnerHTML`/`rehype-raw` 는 없다. React 19 는 `javascript:` href 를 차단한다. 심층 방어로 프로필/썸네일 URL 은 백엔드가 http(s)(이미지는 `/media` 경로 포함)만 허용하고, 프런트는 `safeHttpUrl()` 로 렌더링한다.
+
+### 클라이언트 IP 신뢰 범위 / 직접 포트 정리 (2026-10-01)
+- auth 는 `X-Real-IP` 를 **신뢰 프록시(`doro.iam.trusted-proxies`, 기본 루프백 + 도커 브리지 172.16.0.0/12)** 에서 온 연결에서만 사용한다. LAN(192.168/16, 10/8) 기기나 인터넷 클라이언트가 보낸 헤더는 위조 가능하므로 무시한다. 요청 제한·세션 기록·로그(`clientIp`)가 모두 같은 규칙(`ClientIpResolver`)을 쓴다. 게이트웨이는 `X-Real-IP`/`X-Forwarded-For` 를 클라이언트 값 이어붙이기가 아니라 **실제 접속 주소로 덮어쓴다**. (공인 도메인으로 접속한 LAN 사용자는 라우터 주소 192.168.0.1 로 보여 한도를 함께 쓴다.)
+- 외부에는 22(SSH), 80/443(게이트웨이)만 열고, 서비스 직접 포트(포털 3000, auth 8080, blog 웹 3002, blog 백엔드 8082, 메뉴 3003)는 `127.0.0.1` 로만 바인딩한다. Doro 스택은 `~/doro/.env` 의 `AUTH_BIND`/`WEB_BIND`, blog 는 서버 `docker-compose.prod.yml` 의 `127.0.0.1:` 접두어로 제어한다. 게이트웨이와 서비스 간 통신은 도커 네트워크 이름으로 하므로 호스트 포트가 필요 없다.
+- `doro-menu` 는 compose 밖에서 실행된다: `docker run -d --name doro-menu --restart always --network doro_doro-network -p 127.0.0.1:3003:80 doro-menu:latest` (이미지 `doro-menu:latest`, 환경변수·볼륨 없음).

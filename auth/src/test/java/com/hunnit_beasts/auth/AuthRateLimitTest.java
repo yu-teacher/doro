@@ -12,6 +12,8 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -70,22 +72,45 @@ class AuthRateLimitTest {
                 .andExpect(status().isTooManyRequests());
     }
 
+    private final ClientIpResolver resolver = new ClientIpResolver(List.of("127.0.0.0/8", "::1/128", "172.16.0.0/12"));
+
+    private MockHttpServletRequest request(String remote, String realIpHeader) {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr(remote);
+        if (realIpHeader != null) {
+            request.addHeader("X-Real-IP", realIpHeader);
+        }
+        return request;
+    }
+
     @Test
-    @DisplayName("사설망/루프백 프록시가 준 X-Real-IP 만 신뢰하고, 공인 IP 에서 온 요청의 헤더는 무시한다")
-    void clientIpResolutionTrustsOnlyInternalProxies() {
-        MockHttpServletRequest viaProxy = new MockHttpServletRequest();
-        viaProxy.setRemoteAddr("172.18.0.5");
-        viaProxy.addHeader("X-Real-IP", "198.51.100.7");
-        assertThat(ClientIpResolver.resolve(viaProxy)).isEqualTo("198.51.100.7");
+    @DisplayName("신뢰 프록시(도커 브리지/루프백)가 준 X-Real-IP 만 사용한다")
+    void trustedProxyHeaderIsHonoured() {
+        assertThat(resolver.resolve(request("172.18.0.13", "198.51.100.7"))).isEqualTo("198.51.100.7");
+        assertThat(resolver.resolve(request("127.0.0.1", "198.51.100.7"))).isEqualTo("198.51.100.7");
+        assertThat(resolver.resolve(request("0:0:0:0:0:0:0:1", "198.51.100.7"))).isEqualTo("198.51.100.7");
+    }
 
-        MockHttpServletRequest spoofed = new MockHttpServletRequest();
-        spoofed.setRemoteAddr("198.51.100.99");
-        spoofed.addHeader("X-Real-IP", "1.2.3.4");
-        assertThat(ClientIpResolver.resolve(spoofed)).isEqualTo("198.51.100.99");
+    @Test
+    @DisplayName("LAN 기기와 인터넷 클라이언트가 보낸 X-Real-IP 는 위조일 수 있어 무시한다")
+    void headersFromUntrustedPeersAreIgnored() {
+        assertThat(resolver.resolve(request("192.168.0.25", "1.2.3.4"))).isEqualTo("192.168.0.25");
+        assertThat(resolver.resolve(request("10.0.0.8", "1.2.3.4"))).isEqualTo("10.0.0.8");
+        assertThat(resolver.resolve(request("198.51.100.99", "1.2.3.4"))).isEqualTo("198.51.100.99");
+    }
 
-        MockHttpServletRequest garbage = new MockHttpServletRequest();
-        garbage.setRemoteAddr("127.0.0.1");
-        garbage.addHeader("X-Real-IP", "not-an-ip; DROP TABLE");
-        assertThat(ClientIpResolver.resolve(garbage)).isEqualTo("127.0.0.1");
+    @Test
+    @DisplayName("신뢰 프록시여도 IP 형식이 아닌 헤더 값은 무시한다")
+    void malformedHeaderIsIgnored() {
+        assertThat(resolver.resolve(request("172.18.0.13", "not-an-ip; DROP TABLE"))).isEqualTo("172.18.0.13");
+        assertThat(resolver.resolve(request("172.18.0.13", null))).isEqualTo("172.18.0.13");
+    }
+
+    @Test
+    @DisplayName("신뢰 프록시 목록은 설정으로 바꿀 수 있다")
+    void trustedProxiesAreConfigurable() {
+        ClientIpResolver lanProxy = new ClientIpResolver(List.of("192.168.0.2/32"));
+        assertThat(lanProxy.resolve(request("192.168.0.2", "198.51.100.7"))).isEqualTo("198.51.100.7");
+        assertThat(lanProxy.resolve(request("192.168.0.3", "198.51.100.7"))).isEqualTo("192.168.0.3");
     }
 }

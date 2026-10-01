@@ -42,7 +42,10 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     private final int signupMax;
     private final long signupWindowSeconds;
 
+    private final ClientIpResolver clientIpResolver;
+
     public AuthRateLimitFilter(
+            ClientIpResolver clientIpResolver,
             @Value("${doro.iam.rate-limit.enabled:true}") boolean enabled,
             @Value("${doro.iam.rate-limit.login-max:20}") int loginMax,
             @Value("${doro.iam.rate-limit.login-window-seconds:600}") long loginWindowSeconds,
@@ -50,6 +53,7 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             @Value("${doro.iam.rate-limit.lookup-window-seconds:600}") long lookupWindowSeconds,
             @Value("${doro.iam.rate-limit.signup-max:10}") int signupMax,
             @Value("${doro.iam.rate-limit.signup-window-seconds:3600}") long signupWindowSeconds) {
+        this.clientIpResolver = clientIpResolver;
         this.enabled = enabled;
         this.loginMax = loginMax;
         this.loginWindowSeconds = loginWindowSeconds;
@@ -68,7 +72,7 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
         Bucket bucket = bucketOf(request.getRequestURI());
-        String ip = ClientIpResolver.resolve(request);
+        String ip = clientIpResolver.resolve(request);
         long retryAfter = tryAcquire(bucket, ip, Instant.now().getEpochSecond());
         if (retryAfter > 0) {
             log.warn("Rate limit exceeded: bucket={}, ip={}, retryAfterSeconds={}", bucket, ip, retryAfter);

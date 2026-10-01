@@ -25,6 +25,7 @@ import java.util.UUID;
 public class AuthController {
 
     private final AuthService authService;
+    private final ClientIpResolver clientIpResolver;
 
     @PostMapping("/signup")
     public ResponseEntity<ApiResponse<Map<String, UUID>>> signup(@Valid @RequestBody SignUpRequest request) {
@@ -46,7 +47,7 @@ public class AuthController {
             @Valid @RequestBody LoginRequest request,
             HttpServletRequest servletRequest) {
 
-        String ipAddress = ClientIpResolver.resolve(servletRequest);
+        String ipAddress = clientIpResolver.resolve(servletRequest);
         String userAgent = servletRequest.getHeader("User-Agent");
 
         LoginResponse loginResponse = authService.login(request, ipAddress, userAgent);
@@ -90,7 +91,7 @@ public class AuthController {
             @Valid @RequestBody TotpLoginRequest request,
             HttpServletRequest servletRequest) {
 
-        String ipAddress = ClientIpResolver.resolve(servletRequest);
+        String ipAddress = clientIpResolver.resolve(servletRequest);
         String userAgent = servletRequest.getHeader("User-Agent");
 
         TokenResponse tokenResponse = authService.loginWithTotp(request, ipAddress, userAgent);

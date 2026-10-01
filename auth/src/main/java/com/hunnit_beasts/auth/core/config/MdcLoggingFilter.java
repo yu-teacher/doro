@@ -1,5 +1,6 @@
 package com.hunnit_beasts.auth.core.config;
 
+import com.hunnit_beasts.auth.common.web.ClientIpResolver;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -12,10 +13,19 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class MdcLoggingFilter extends OncePerRequestFilter {
+
+    private static final Pattern SAFE_TRACE_ID = Pattern.compile("^[A-Za-z0-9._-]{1,64}$");
+
+    private final ClientIpResolver clientIpResolver;
+
+    public MdcLoggingFilter(ClientIpResolver clientIpResolver) {
+        this.clientIpResolver = clientIpResolver;
+    }
 
     public static final String TRACE_ID_HEADER = "X-Trace-Id";
     public static final String TRACE_ID_MDC_KEY = "traceId";
@@ -26,11 +36,11 @@ public class MdcLoggingFilter extends OncePerRequestFilter {
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
         String traceId = request.getHeader(TRACE_ID_HEADER);
-        if (traceId == null || traceId.isBlank()) {
+        if (traceId == null || !SAFE_TRACE_ID.matcher(traceId).matches()) {
             traceId = UUID.randomUUID().toString();
         }
 
-        String clientIp = extractClientIp(request);
+        String clientIp = clientIpResolver.resolve(request);
 
         MDC.put(TRACE_ID_MDC_KEY, traceId);
         MDC.put(CLIENT_IP_MDC_KEY, clientIp);
@@ -41,13 +51,5 @@ public class MdcLoggingFilter extends OncePerRequestFilter {
         } finally {
             MDC.clear();
         }
-    }
-
-    private String extractClientIp(HttpServletRequest request) {
-        String xff = request.getHeader("X-Forwarded-For");
-        if (xff != null && !xff.isBlank()) {
-            return xff.split(",")[0].trim();
-        }
-        return request.getRemoteAddr() != null ? request.getRemoteAddr() : "UNKNOWN";
     }
 }

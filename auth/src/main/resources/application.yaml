@@ -52,6 +52,8 @@ doro:
     jwt:
       access-token-validity-seconds: ${DORO_IAM_ACCESS_TOKEN_TTL_SECONDS:900} # 기본 15분. 로그인 유지는 30일 리프레시 토큰(회전)이 담당한다
       refresh-token-validity-seconds: 2592000 # 30일 (1달)
+    # X-Real-IP 를 믿을 프록시(CIDR, 쉼표 구분). 기본: 루프백 + 도커 브리지(게이트웨이). LAN 전체는 신뢰하지 않는다.
+    trusted-proxies: ${DORO_IAM_TRUSTED_PROXIES:127.0.0.0/8,::1/128,172.16.0.0/12}
     rate-limit:
       # 공개 인증 엔드포인트의 IP 단위 요청 제한 (고정 윈도우)
       enabled: ${DORO_IAM_RATE_LIMIT_ENABLED:true}
