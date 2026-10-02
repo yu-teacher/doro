@@ -11,6 +11,8 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
@@ -23,6 +25,18 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final CorsConfig corsConfig;
+
+    /**
+     * 이 서비스의 인증은 JWT 필터가 전담하고 폼/Basic 로그인은 꺼 두었다. UserDetailsService 가 하나도 없으면
+     * Spring Boot 가 기본 사용자를 자동 생성하고 "Using generated security password" 로 비밀번호를 로그에 남기므로,
+     * 어떤 사용자도 찾지 않는 빈을 등록해 자동 생성을 막는다.
+     */
+    @Bean
+    public UserDetailsService noUserDetailsService() {
+        return username -> {
+            throw new UsernameNotFoundException("Password-based user lookup is not used by this service");
+        };
+    }
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
