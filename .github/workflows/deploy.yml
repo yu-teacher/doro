@@ -4,10 +4,41 @@ on:
   push:
     branches: [ "main" ]
   workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: "테스트를 건너뛰고 배포한다 (긴급 복구용. 평소에는 끈다)"
+        type: boolean
+        default: false
+
+# 배포가 겹치면 같은 컨테이너/이미지를 동시에 건드리므로 순서대로 하나씩 실행한다.
+concurrency:
+  group: doro-deploy
+  cancel-in-progress: false
 
 jobs:
+  # 테스트가 통과해야 배포한다. 러너에는 Java 25/Node 가 없어서 Docker 컨테이너 안에서 실행한다 (scripts/ci-test.sh).
+  # 운영 서비스와 같은 호스트이므로 CPU/메모리를 제한한다.
+  test:
+    name: Test (backend + web)
+    runs-on: self-hosted
+    if: ${{ !inputs.skip_tests }}
+    timeout-minutes: 30
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🧪 Backend tests (auth, guard, sdk)
+        run: scripts/ci-test.sh backend
+
+      - name: 🧪 Web tests and type check
+        run: scripts/ci-test.sh web
+
   deploy:
     name: Build & Deploy on Mini Server
+    needs: test
+    # test 가 성공했거나(또는 수동 실행에서 의도적으로 건너뛴 경우)에만 배포한다. 실패/취소면 배포하지 않는다.
+    if: ${{ always() && (needs.test.result == 'success' || needs.test.result == 'skipped') }}
     runs-on: self-hosted
 
     steps:
