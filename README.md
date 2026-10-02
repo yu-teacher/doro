@@ -179,7 +179,7 @@ sequenceDiagram
 - **토큰 엔드포인트**: `application/x-www-form-urlencoded`(RFC 6749 snake_case, RFC 응답·오류 형식, `Cache-Control: no-store`)와 기존 `application/json`(camelCase, `ApiResponse`) 둘 다 받습니다. grant는 `authorization_code`와 **`refresh_token`**(리프레시 회전·재사용 감지, 해당 클라이언트의 세션에만 허용). 인가 코드는 1회용·기본 5분이고 `client_id`·`redirect_uri`·PKCE에 묶이며, 검증 실패 시에도 소비됩니다.
 - **OIDC**: `openid` 스코프면 `id_token`(RS256, `aud`=클라이언트, `nonce`, `email`/`name` 등 스코프별 클레임; `picture`는 http(s) URL만), `GET /oauth2/userinfo`, `/.well-known/openid-configuration`.
 - **코드 저장소**: Redis(`doro:oauth:code:<sha256>`, 원본 코드는 저장하지 않음)를 쓰고, Redis가 없으면 인메모리로 폴백합니다(`DORO_OAUTH_CODE_STORE=auto|redis|memory`).
-- **토큰 격리(중요)**: OAuth로 발급한 액세스 토큰에는 `cid`(클라이언트)가 표시되고 **`role`은 항상 `USER`**입니다(사용자의 관리자 권한이 클라이언트로 넘어가지 않음). 이런 토큰은 IAM에서 `/oauth2/userinfo`와 `/api/v1/sessions/current`에서만 인증으로 인정되고 다른 IAM API(프로필·세션·2FA·관리자)에서는 거부됩니다. `id_token`(`aud` 있음)은 IAM에서 어떤 API에도, SDK에서는 `doro.iam.audience`를 설정하지 않는 한 액세스 토큰으로 인정되지 않습니다.
+- **토큰 격리(중요)**: OAuth로 발급한 액세스 토큰에는 `cid`(클라이언트)가 표시되고 **`role`은 항상 `USER`**입니다(사용자의 관리자 권한이 클라이언트로 넘어가지 않음). 이런 토큰은 IAM에서 `/oauth2/userinfo`와 `/api/v1/sessions/current`에서만 인증으로 인정되고 다른 IAM API(프로필·세션·2FA·관리자)에서는 거부됩니다. OAuth 세션의 **리프레시 토큰도 일반 갱신 엔드포인트(`/api/v1/auth/token/refresh`)에서는 거부**됩니다(회전 전에 확인하므로 정상 클라이언트의 토큰이 소모되지도 않음). 그렇지 않으면 클라이언트가 사용자의 실제 권한이 담긴 일반 로그인 토큰을 받을 수 있습니다. `id_token`(`aud` 있음)은 IAM에서 어떤 API에도, SDK에서는 `doro.iam.audience`를 설정하지 않는 한 액세스 토큰으로 인정되지 않습니다.
 - **세션**: OAuth 세션은 클라이언트별로 만들어져 같은 클라이언트의 이전 세션만 교체됩니다. 토큰 엔드포인트와 인증 없는 인가 요청에는 IP 단위 요청 제한이 있습니다.
 - **공개 클라이언트 전용**(`token_endpoint_auth_methods_supported: none`)이며, 브라우저 앱이 다른 origin에서 토큰 엔드포인트를 부르려면 `DORO_CORS_ALLOWED_ORIGIN_PATTERNS`에 그 origin을 추가해야 합니다. 게이트웨이의 `/oauth2/consent` 라우트는 `gateway/nginx.conf` 반영이 필요합니다.
 
@@ -398,7 +398,7 @@ public PostResponse update(@PathVariable Long postId, @CurrentDoroUser DoroUser 
 - 401을 받으면 리프레시 토큰으로 한 번 갱신합니다. 갱신 결과를 `refreshed / rejected / unavailable`로 구분해 **서버가 거부(400/401/403/404)한 경우에만** 로그아웃하고, 네트워크 오류·5xx에서는 로그인을 유지합니다. 여러 탭의 동시 갱신은 Web Locks로 직렬화합니다.
 
 ### 게이트웨이 (`gateway/nginx.conf`)
-- 모든 서비스를 **같은 origin(443)**으로 묶습니다: IAM(`/api/v1/auth`, `/sessions`, `/admin/users`, `/oauth2`, `/.well-known`), 포털, 블로그, 메뉴 등. Guard는 **프록시하지 않습니다.**
+- 모든 서비스를 **같은 origin(443)**으로 묶습니다: IAM(`/api/v1/auth`, `/sessions`, `/admin/users`, `/admin/oauth/`, `/oauth2`, `/.well-known`), 포털, 블로그, 메뉴 등. OAuth 동의 화면은 정확 일치 라우트 `= /oauth2/consent`가 `/oauth2/` 접두사보다 먼저 포털로 보냅니다. Guard는 **프록시하지 않습니다.**
 - TLS 1.2/1.3, HSTS, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`와 **강제 모드 CSP**(인라인 스크립트는 해시 허용, 위반은 `/csp-report`로 수집해 Loki에 기록).
 - 업로드 미디어(`/media/`)는 `default-src 'none'; sandbox` CSP로 격리합니다.
 - `/loki/`는 IAM의 `GET /admin/authz`(관리자 + Guard `system:doro#admin`)를 `auth_request`로 통과해야 합니다.
