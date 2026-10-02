@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { authApi } from '../api/authApi';
 import { useAuthStore } from '../store/authStore';
 import {
@@ -17,6 +17,16 @@ import {
 } from 'lucide-react';
 import { getErrorMessage } from '../utils/errorUtils';
 import { parseJwtPayload } from '../utils/jwtUtils';
+import { clearConsentReturn, peekConsentReturnPath } from '../utils/consentReturn';
+
+const DEFAULT_AFTER_LOGIN_PATH = '/account';
+
+/** 다른 화면(예: 전체 로그아웃)이 로그인 화면에 넘기는 안내 문구 */
+function readNotice(state: unknown): string | null {
+  if (typeof state !== 'object' || state === null) return null;
+  const notice = (state as Record<string, unknown>).notice;
+  return typeof notice === 'string' && notice ? notice : null;
+}
 
 type LoginStep = 'email' | 'password' | '2fa';
 
@@ -24,12 +34,17 @@ export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const { accounts, activeAccountIndex, addAccount } = useAuthStore();
   const activeAccount = accounts[activeAccountIndex] || accounts[0];
+  const location = useLocation();
+  const notice = readNotice(location.state);
+  // 동의 화면에서 로그인으로 넘어온 경우 로그인 후 그 요청으로 복귀한다 (앱 내부 상대 경로만, 마운트 시점 1회 확정)
+  const [afterLoginPath] = useState<string>(() => peekConsentReturnPath() ?? DEFAULT_AFTER_LOGIN_PATH);
 
   useEffect(() => {
     if (activeAccount) {
-      navigate('/account', { replace: true });
+      clearConsentReturn();
+      navigate(afterLoginPath, { replace: true });
     }
-  }, [activeAccount, navigate]);
+  }, [activeAccount, afterLoginPath, navigate]);
 
   // Step state
   const [step, setStep] = useState<LoginStep>('email');
@@ -93,7 +108,7 @@ export const LoginPage: React.FC = () => {
           sessionId: res.tokens.sessionId,
           userIndex: res.tokens.userIndex ?? 0,
         });
-        navigate('/account');
+        // 로그인 성공 후 이동은 activeAccount 변화를 감지하는 effect 가 담당한다.
       } else if (res.requires2fa && res.tempTicket) {
         setTempTicket(res.tempTicket);
         setStep('2fa');
@@ -129,7 +144,7 @@ export const LoginPage: React.FC = () => {
           sessionId: res.sessionId,
           userIndex: res.userIndex ?? 0,
         });
-        navigate('/account');
+        // 로그인 성공 후 이동은 activeAccount 변화를 감지하는 effect 가 담당한다.
       } else {
         setError('2FA 인증에 실패했습니다.');
       }
@@ -211,6 +226,12 @@ export const LoginPage: React.FC = () => {
             )}
           </div>
 
+          {notice && !error && (
+            <div role="status" className="mb-6 p-3.5 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-800">
+              {notice}
+            </div>
+          )}
+
           {/* Error Banner */}
           {error && (
             <div className="mb-6 p-3.5 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-3 text-xs text-red-700 animate-in fade-in duration-200">
@@ -235,11 +256,6 @@ export const LoginPage: React.FC = () => {
                     placeholder="user@doro.local"
                     className="w-full pl-10 pr-4 py-3 bg-slate-50/80 border border-slate-200 rounded-xl text-sm focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-medium"
                   />
-                </div>
-                <div className="mt-2 text-left">
-                  <span className="text-[11px] text-indigo-600 hover:text-indigo-700 font-semibold cursor-pointer">
-                    이메일을 잊으셨나요?
-                  </span>
                 </div>
               </div>
 
@@ -297,9 +313,6 @@ export const LoginPage: React.FC = () => {
                     />
                     <span className="text-xs text-slate-600 font-medium">비밀번호 표시</span>
                   </label>
-                  <span className="text-[11px] text-indigo-600 hover:text-indigo-700 font-semibold cursor-pointer">
-                    비밀번호를 잊으셨나요?
-                  </span>
                 </div>
               </div>
 
@@ -367,13 +380,6 @@ export const LoginPage: React.FC = () => {
               </div>
             </form>
           )}
-
-          {/* Bottom Security notice */}
-          <div className="mt-8 pt-6 border-t border-slate-100 text-center">
-            <p className="text-[11px] text-slate-400">
-              내 컴퓨터가 아닌 경우 게스트 모드를 사용하여 비공개로 로그인하세요.
-            </p>
-          </div>
         </div>
       </div>
     </div>

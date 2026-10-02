@@ -1,4 +1,5 @@
 import { apiClient } from './client';
+import { escapeLogQlString } from '../utils/logqlUtils';
 
 export interface ParsedLogEntry {
   id: string;
@@ -101,12 +102,12 @@ export const logApi = {
     // LogQL 쿼리 스트림 구성
     let streamSelector = '{service=~".+"}';
     if (service && service !== 'all') {
-      streamSelector = `{service="${service}"}`;
+      streamSelector = `{service="${escapeLogQlString(service)}"}`;
     }
 
     let query = streamSelector;
     if (search && search.trim()) {
-      query += ` |= "${search.trim()}"`;
+      query += ` |= "${escapeLogQlString(search.trim())}"`;
     }
 
     try {

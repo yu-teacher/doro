@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { isAxiosError } from 'axios';
 import { useAuthStore } from '../store/authStore';
 import { apiClient } from '../api/client';
 import { buildAuthorizationRedirect, parseConsentRequest } from '../utils/oauthConsent';
+import { saveConsentReturn } from '../utils/consentReturn';
 import { Shield, Check, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 interface AuthorizeResponse {
@@ -21,6 +22,14 @@ export const OAuthConsentPage: React.FC = () => {
   const [approved, setApproved] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // 로그인 전이라면 검증된 동의 요청을 보관해 두었다가, 로그인 직후 이 화면으로 돌아오게 한다.
+  const needsLogin = parsed.ok && !activeAccount;
+  useEffect(() => {
+    if (needsLogin) {
+      saveConsentReturn(searchParams);
+    }
+  }, [needsLogin, searchParams]);
 
   const handleApprove = async () => {
     if (!parsed.ok || submitting) return;

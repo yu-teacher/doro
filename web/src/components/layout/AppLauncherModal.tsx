@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAuthStore } from '../../store/authStore';
 import { BookOpen, Shield, Terminal, ExternalLink, X, Utensils } from 'lucide-react';
-import { getBlogUrl, getMenuUrl } from '../../utils/urlUtils';
+import { getBlogUrl, getGuardDocsUrl, getIamDocsUrl, getMenuUrl } from '../../utils/urlUtils';
 import { trackEvent } from '../../utils/analytics';
 
 interface AppLauncherModalProps {
@@ -33,8 +33,14 @@ export const AppLauncherModal: React.FC<AppLauncherModalProps> = ({ isOpen, onCl
     },
   ];
 
+  // 문서 URL 은 환경변수(VITE_GUARD_DOCS_URL / VITE_IAM_DOCS_URL)로만 주입하며, 미설정이면 항목을 숨긴다.
+  const guardDocsUrl = getGuardDocsUrl();
+  const iamDocsUrl = getIamDocsUrl();
+
   const adminApps = [
-    { name: 'Doro Guard', desc: 'Zanzibar ReBAC API', icon: Shield, color: 'text-indigo-500 bg-indigo-50', link: 'http://localhost:28081/swagger-ui.html' },
+    ...(guardDocsUrl
+      ? [{ name: 'Doro Guard', desc: 'Zanzibar ReBAC API', icon: Shield, color: 'text-indigo-500 bg-indigo-50', link: guardDocsUrl }]
+      : []),
     { name: 'Doro Ops Logs', desc: '시스템 관제 로그', icon: Terminal, color: 'text-indigo-500 bg-indigo-50', link: '/logs' },
   ];
 
@@ -80,10 +86,10 @@ export const AppLauncherModal: React.FC<AppLauncherModalProps> = ({ isOpen, onCl
           })}
         </div>
 
-        {isAdmin && (
+        {isAdmin && iamDocsUrl && (
           <div className="mt-4 pt-3 border-t border-slate-100 text-center">
             <a
-              href="http://localhost:28080/swagger-ui.html"
+              href={iamDocsUrl}
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 gap-1"

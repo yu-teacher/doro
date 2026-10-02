@@ -32,3 +32,28 @@ export const getMenuUrl = (): string => {
   return '/menu/';
 };
 
+
+const ALLOWED_DOCS_PROTOCOLS = new Set(['http:', 'https:']);
+
+/**
+ * 선택적 외부 문서 URL 을 검증한다. 비어 있거나 http(s) 절대 URL 이 아니면 null 을 반환한다.
+ * (javascript: 등 임의 스킴이 링크로 렌더링되는 것을 막는다)
+ */
+export const resolveOptionalHttpUrl = (value: string | undefined | null): string | null => {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return null;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    return ALLOWED_DOCS_PROTOCOLS.has(parsed.protocol) ? trimmed : null;
+  } catch {
+    return null;
+  }
+};
+
+/** Doro Guard OpenAPI 문서 URL (VITE_GUARD_DOCS_URL). 미설정이면 null */
+export const getGuardDocsUrl = (): string | null => resolveOptionalHttpUrl(import.meta.env.VITE_GUARD_DOCS_URL);
+
+/** Doro IAM OpenAPI 문서 URL (VITE_IAM_DOCS_URL). 미설정이면 null */
+export const getIamDocsUrl = (): string | null => resolveOptionalHttpUrl(import.meta.env.VITE_IAM_DOCS_URL);

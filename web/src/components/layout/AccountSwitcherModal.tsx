@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { UserPlus, LogOut, Settings, X } from 'lucide-react';
-import { authApi } from '../../api/authApi';
+import { describeLogoutFailures, revokeAllServerSessions } from '../../api/logoutAll';
 
 interface AccountSwitcherModalProps {
   isOpen: boolean;
@@ -18,6 +18,7 @@ export const AccountSwitcherModal: React.FC<AccountSwitcherModalProps> = ({
   const navigate = useNavigate();
   const { accounts, activeAccountIndex, switchAccount, logoutAll } = useAuthStore();
   const [switchingIndex, setSwitchingIndex] = useState<number | null>(null);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   if (!isOpen) return null;
 
@@ -32,16 +33,15 @@ export const AccountSwitcherModal: React.FC<AccountSwitcherModalProps> = ({
   };
 
   const handleLogoutAll = async () => {
-    if (activeAccount?.sessionId) {
-      try {
-        await authApi.logout(activeAccount.sessionId);
-      } catch {
-        // ignore
-      }
-    }
+    if (loggingOut) return;
+    setLoggingOut(true);
+    // 저장된 모든 계정의 서버 세션을 각자의 토큰으로 종료한다. 실패해도 로컬 정리는 계속한다.
+    const failures = await revokeAllServerSessions(accounts);
     logoutAll();
     onClose();
-    navigate('/login');
+    setLoggingOut(false);
+    const notice = describeLogoutFailures(failures);
+    navigate('/login', notice ? { state: { notice } } : undefined);
   };
 
   return (
@@ -138,6 +138,7 @@ export const AccountSwitcherModal: React.FC<AccountSwitcherModalProps> = ({
 
           <button
             onClick={handleLogoutAll}
+            disabled={loggingOut}
             className="w-full py-2.5 px-3 rounded-xl hover:bg-red-50 text-red-600 text-xs font-semibold flex items-center gap-2 transition-colors"
           >
             <LogOut className="w-4 h-4 text-red-500" />
