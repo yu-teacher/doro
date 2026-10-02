@@ -18,13 +18,13 @@ public class TupleController {
     private final TupleService tupleService;
 
     @PostMapping
-    public ApiResponse<Map<String, Integer>> writeTuples(@Valid @RequestBody List<TupleDto> tuples) {
+    public ApiResponse<Map<String, Integer>> writeTuples(@RequestBody List<@Valid TupleDto> tuples) {
         int written = tupleService.writeTuples(tuples);
         return ApiResponse.success(Map.of("writtenCount", written));
     }
 
     @DeleteMapping
-    public ApiResponse<Map<String, Integer>> deleteTuples(@Valid @RequestBody List<TupleDto> tuples) {
+    public ApiResponse<Map<String, Integer>> deleteTuples(@RequestBody List<@Valid TupleDto> tuples) {
         int deleted = tupleService.deleteTuples(tuples);
         return ApiResponse.success(Map.of("deletedCount", deleted));
     }
