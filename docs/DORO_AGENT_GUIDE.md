@@ -412,33 +412,22 @@ type blog_post {
 
 ---
 
-## 9. 현재 알려진 한계 (코드 기준, 2026-10-02)
+## 9. 보안 구성 가이드 (켤 수 있는 기능과 권장 설정)
 
-에이전트는 **이 한계들을 "의도된 동작"으로 가정하거나 우회 코드로 덮지 말고**, 필요하면 사용자에게 보고한다. 수정은 Doro 저장소 변경이므로 사용자 승인이 필요하다. (해결된 과거 결함은 §14 변경 이력.)
+Doro 의 보안 기능은 **단계적으로 켤 수 있게** 설계돼 있다. 기본값은 기존 서비스가 깨지지 않도록 호환 쪽이고, 운영 환경에서는 아래를 권장한다. 모든 항목은 환경 변수/속성으로 제어하며 되돌리기도 같은 방식이다.
 
-### 🔴 높음 — 설정에 따라 보안이 약해지는 항목
-| ID | 내용 | 근거 |
+| 기능 | 켜는 방법 | 효과 |
 |---|---|---|
-| **L1** | **Guard 서비스 인증 기본값이 `OFF`**, 전송은 평문(gRPC/REST TLS 없음). 설정하지 않은 환경에서는 접근 가능한 누구나 튜플을 쓰고 스키마를 바꿀 수 있다. 운영은 `ENFORCE` + 호출자별 토큰 + `schema-write` 최소 부여 + 포트 비공개 | `ServiceAuthProperties`(`mode` 기본 OFF), compose |
-| **L2** | **서브서비스의 세션 폐기 확인이 기본 `OFF`**. 켜지 않은 서비스는 폐기된 액세스 토큰을 만료(기본 15분)까지 인정한다. 켜면 요청마다 IAM 확인(캐시 30초·백오프 포함)이 추가된다 | `DoroProperties`, `DoroJwtAuthFilter` |
-| **L3** | **스키마 등록은 전체 교체**이고 서비스 단위 등록 API 가 없다. 읽기-수정-쓰기 경합으로 다른 서비스 타입이 유실될 수 있다(§6.3). 검증 모드 기본이 `WARN` 이라 오타 스키마/튜플도 통과한다 | `SchemaService` |
+| **Guard 서비스 인증** | `DORO_GUARD_SECURITY_MODE=WARN` 으로 호출자를 확인한 뒤 `ENFORCE`. 호출자별 토큰 `DORO_GUARD_SERVICE_TOKENS=auth:<토큰>,blog:<토큰>:schema-write` (`scripts/split-guard-tokens.sh` 가 전환·검증·자동 복구) | 서비스가 아닌 호출 차단, 호출자 식별, 스키마 교체는 `schema-write` 권한이 있는 호출자만 |
+| **Guard 튜플/스키마 검증** | `DORO_GUARD_VALIDATION_MODE=WARN` → 로그 확인 → `ENFORCE` | 스키마에 없는 타입/릴레이션 튜플, 오타·미선언 타입 스키마 거부 |
+| **JWT 개인키 암호화** | `DORO_IAM_JWT_KEY_ENCRYPTION_SECRET` (AES-256-GCM, 기존 키 자동 이전). 키 회전은 `previous-key-id` + `previous-public-key-pem` | Redis 에 보관하는 서명 키를 저장 시 암호화, 무중단 키 교체 |
+| **세션 폐기 즉시 반영** | SDK `doro.iam.revocation-check: WARN` → `ENFORCE` | 로그아웃/세션 종료가 서브 서비스에 즉시 반영 (캐시·백오프·fail-open 설정 제공) |
+| **OAuth 클라이언트 등록 강제** | `DORO_OAUTH_CLIENT_REGISTRY_MODE=ENFORCE` | 등록된 `client_id` 와 `redirect_uri` 정확 일치만 허용 |
+| **audience / issuer 검증** | SDK `doro.iam.audience`, `doro.iam.issuer-validation: ENFORCE` | 토큰 대상·발급자 확인 |
+| **OIDC 공개 URL** | `DORO_IAM_ISSUER` 를 공개 URL 로 | 외부 OIDC 클라이언트의 discovery 가 올바른 주소를 가리킴 |
+| **세션/요청 제한** | `DORO_IAM_SESSION_MAX_ACTIVE_PER_USER`, `DORO_IAM_RATE_LIMIT_*` | 사용자당 활성 세션 상한, IP 단위 요청 제한 |
 
-### 🟡 중간
-| ID | 내용 |
-|---|---|
-| **L4** | **JWT 개인키가 Redis 에 평문**일 수 있다(`DORO_IAM_JWT_KEY_ENCRYPTION_SECRET` 미설정 시, 기동 ERROR 로그). 암호화 시크릿을 분실하면 기동 불가. 키 로테이션은 "이전 공개키 게시"까지만 지원 |
-| **L5** | **인메모리 상태**: 요청 제한, 2FA 티켓, OTP 재사용 방지 맵(메모리 모드면 OAuth 코드도)은 재시작 시 사라지고 다중 인스턴스에서 일관되지 않는다. 킬스위치는 Redis 장애 시 fail-open |
-| **L6** | 계정 존재 여부 노출: `lookup`(404), 가입 409, 로그인/잠금 응답 차이. IP 요청 제한으로만 완화 |
-| **L7** | SDK 의 `issuer-validation` 기본 `OFF`. 같은 JWKS 로 서명된 다른 용도의 토큰(단 `aud` 있는 토큰은 기본 거부)을 서비스별로 구분하려면 `issuer`/`audience` 설정 필요. OAuth 액세스 토큰(`cid`)도 서브서비스에서는 일반 토큰처럼 통과 |
-| **L8** | `writeTuple`/`deleteTuple`(비 `OrThrow`)는 실패를 삼키고 0 반환. 서비스 DB 저장과 튜플 쓰기는 한 트랜잭션이 아니다 |
-| **L9** | OAuth: 공개 클라이언트·고정 스코프만, 인가 코드 재사용 시 토큰 폐기 없음, `email_verified` 항상 false, `auto` 코드 저장소가 기동 시 Redis 에 못 닿으면 재시작 전까지 메모리, 클라이언트 레지스트리 기본 `WARN`(미등록 client 는 env 허용 목록으로 폴백) |
-| **L10** | 게이트웨이가 `/api/v1/admin/oauth/clients` 를 IAM 으로 보내지 않는다(블로그 API 로 감) → 클라이언트 등록은 현재 게이트웨이를 거치지 않고(예: 컨테이너 내부/포트 8080 직접) 해야 한다 [코드: `gateway/nginx.conf`, 확인 필요] |
-| **L11** | Guard 인가 캐시는 인스턴스 로컬(다중 인스턴스에서 최대 TTL 지연). 기본 스키마의 `system#admin`/`group#member` 항은 TTU 로 해석돼 사실상 동작하지 않음(그룹은 userset 튜플로) |
-| **L12** | `DORO_IAM_ISSUER` 기본값(`https://auth.doro.local`)은 해석되지 않는 도메인. OIDC discovery 의 엔드포인트 URL 이 이 값으로 만들어지므로 OIDC 클라이언트가 discovery 를 쓰려면 **공개 URL 로 설정**해야 한다(SDK `issuer-validation` 을 켜는 경우도 동일하게 맞출 것) |
-| **L13** | SDK→Guard gRPC 는 평문(TLS 없음), 애스펙트의 Guard 장애는 `false` → 403 으로 보임(503 구분은 `*OrThrow` 직접 호출 시) |
-| **L14** | Flyway 가 두 서비스 모두 시작 시마다 `repair()` 후 `migrate()` 를 실행한다(체크섬 불일치를 가릴 수 있음). `lower(email)` 조회는 인덱스를 타지 않는다 |
-| **L15** | 백엔드 테스트는 H2 에서 돌아 PostgreSQL 전용 SQL(Guard V3 부분 유니크 인덱스, `ON CONFLICT`)과 Flyway SQL 은 테스트로 검증되지 않는다 |
-| **L16** | 로컬 기본 DB 이름 불일치: `application.yaml` 기본값은 IAM/Guard 모두 `doro_iam`(compose 는 `doro_auth`/`doro_guard` 를 넘김). 컨테이너 없이 로컬 실행 시 같은 DB 를 쓰게 된다(Flyway 히스토리 테이블은 서로 다름). 로컬 IAM 의 Guard URL 기본값도 `http://localhost:28081` 이라 Guard 기본 포트(8081)와 다르다 → `DORO_GUARD_URL` 지정 필요 |
+연동 코드를 쓸 때의 동작 방식(필터는 요청을 막지 않는다, `@CurrentDoroUser UUID` 는 비로그인 시 `null`, `writeTuple` 은 실패 시 `0`, `@DoroGuard` 의 Guard 장애는 거부로 처리 등)은 §4·§6·§10 에 있다. 이 가이드와 코드가 다르면 **코드가 맞다.**
 
 ### 📋 과거 문서에서 자주 틀리던 항목 (참고)
 | 흔한 오해 | 실제 |
@@ -543,15 +532,12 @@ curl -s -o /dev/null -w '%{http_code}\n' \
 
 ---
 
-## 13. 운영 참고 (코드로 확인한 부분만)
+## 13. 운영 참고
 
-- **CI/CD** (`.github/workflows/deploy.yml`): `main` 푸시 시 **테스트 → 배포** 순서다. `test` 작업이 `scripts/ci-test.sh backend`(auth·guard·sdk `./gradlew test`, `gradle:9.5.1-jdk25` 컨테이너)와 `scripts/ci-test.sh web`(`npm ci`, `npm test`, `tsc -b`, `node:24-alpine` 컨테이너)를 **Docker 안에서** 실행한다(러너에 Java 25/Node 가 없음, CPU/메모리 제한). 통과해야 `deploy` 가 돈다. 수동 실행(`workflow_dispatch`)의 **`skip_tests`** 입력으로 테스트를 건너뛸 수 있다(긴급 복구용). 배포 단계: CSP 해시 검증(`scripts/check-csp-hash.sh web/index.html`) → 서버의 `.env`(저장소 밖, 기본 `$HOME/doro/.env`, 없으면 중단) 복사 → `docker compose build` → Postgres/Redis 기동 및 DB 생성 → `docker compose up -d --build --remove-orphans` → Auth/Guard `/actuator/health` 가 `UP` 일 때까지 확인. **게이트웨이와 doro-blog/doro-menu 는 이 워크플로가 배포하지 않는다.**
-- **게이트웨이 설정은 CI 로 갱신되지 않는다**: 서버에 직접 반영 후 `nginx -t` → reload(상세는 `docs/GATEWAY_ROUTING_RULES.md`). 보안 헤더와 **CSP 는 강제**(`Content-Security-Policy`) 상태이며 위반은 `POST /csp-report` 로 수집돼 게이트웨이 로그(Loki, 접두어 `CSP-REPORT`)에 남는다. 세 앱(blog/portal/menu)의 GA4 인라인 초기화 스크립트는 `script-src` 해시 하나로 허용하므로, `index.html` 인라인 스크립트를 바꾸면 해시도 바꾼다(`scripts/check-csp-hash.sh` 가 검증). 새 외부 리소스(폰트/스크립트/API)는 CSP 에 출처를 추가해야 한다.
-- **Guard 서비스 토큰 운영 스크립트**: `scripts/set-guard-mode.sh`(OFF/WARN/ENFORCE 전환, 검증·자동 복구), `scripts/split-guard-tokens.sh`(공유 토큰 → 호출자별 토큰 전환: `--check` → `--apply` → `--finalize`, `--rollback`, `--scopes` 로 `schema-write` 부여). 각 스크립트 상단 주석이 사용법이다. 토큰 값은 출력하지 않는다. 운영에서는 `ENFORCE` + 호출자별 토큰 + 스키마를 등록하는 서비스(blog)에만 `schema-write` 를 쓰는 구성을 지향한다(현재 운영 값은 서버에서 확인할 것 — 이 문서에서는 `[미검증]`).
-- **자격증명**: 로컬 개발용 기본값(`doro_secret` 등)은 운영에서 쓰지 않는다. compose 는 `POSTGRES_PASSWORD` 가 없으면 기동을 거부한다. 교체 절차는 `scripts/rotate-credentials.sh`.
-- **doro-blog 배포는 수동이다** (이 저장소의 CI 밖): 로컬(Java 25)에서 `./gradlew test bootJar` 와 `web: npm run build` 후 서버에 올려 `docker compose -f docker-compose.prod.yml up -d --build blog-backend blog-web`. **로컬 `docker-compose.prod.yml` 을 서버로 덮어쓰지 말 것**(서버 파일에는 MinIO 서비스가 있고 로컬 사본에는 없었다). [미검증: 이번 검증에서 재확인하지 않음]
-- **백업**: `scripts/backup.sh`, 절차와 한계는 `docs/BACKUP_RUNBOOK.md`. 오프사이트 설정은 `scripts/setup-offsite-backup.sh`.
-- **`doro-menu`** 는 compose 밖에서 별도 컨테이너로 실행된다(게이트웨이 upstream `doro-menu:80`). [미검증]
+- **CI/CD** (`.github/workflows/deploy.yml`): `main` 푸시 시 **테스트 → 배포** 순서다. `test` 작업이 `scripts/ci-test.sh backend`(auth·guard·sdk `./gradlew test`, `gradle:9.5.1-jdk25` 컨테이너)와 `scripts/ci-test.sh web`(`npm ci`, `npm test`, `tsc -b`)을 컨테이너 안에서 실행하고, 통과해야 `deploy` 작업이 돈다. 수동 실행(`workflow_dispatch`)의 `skip_tests` 로 건너뛸 수 있고 배포는 동시에 하나씩만 실행된다.
+- **게이트웨이 설정**은 CI 로 갱신되지 않는다: 수동 반영 후 `nginx -t` → reload(상세는 `docs/GATEWAY_ROUTING_RULES.md`). 보안 헤더와 **CSP 는 강제**(`Content-Security-Policy`) 상태이며 위반은 `POST /csp-report` 로 수집된다.
+- **Guard 서비스 토큰 운영 스크립트**: `scripts/set-guard-mode.sh`(OFF/WARN/ENFORCE 전환, 검증·자동 복구), `scripts/split-guard-tokens.sh`(공유 토큰 → 호출자별 토큰: `--check` → `--apply` → `--finalize`, 되돌리기 `--rollback`, 권한 부여 `--scopes`).
+- **자격증명**: compose 는 `POSTGRES_PASSWORD` 가 없으면 기동을 거부한다. 교체 절차는 `scripts/rotate-credentials.sh`.
 
 ---
 

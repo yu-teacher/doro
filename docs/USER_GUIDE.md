@@ -28,7 +28,7 @@
    - [2.4 토큰 엔드포인트](#24-토큰-엔드포인트)
    - [2.5 id_token 과 userinfo 와 discovery](#25-id_token-과-userinfo-와-discovery)
    - [2.6 처음부터 끝까지 curl 예제](#26-처음부터-끝까지-curl-예제)
-   - [2.7 보안 속성과 한계](#27-보안-속성과-한계)
+   - [2.7 보안 속성](#27-보안-속성)
    - [2.8 설정과 운영](#28-설정과-운영)
 3. [Doro Guard](#3-doro-guard)
    - [3.1 개념과 표기법](#31-개념과-표기법)
@@ -329,7 +329,7 @@ curl -s $IAM/api/v1/sessions -H "Authorization: Bearer $TOKEN"
 curl -s -o /dev/null -w '%{http_code}\n' $IAM/api/v1/sessions/current -H "Authorization: Bearer $TOKEN"   # 204
 ```
 
-`GET /api/v1/sessions/current`는 **서브 서비스의 SDK가 세션 폐기를 확인할 때 호출하는 엔드포인트**입니다. OAuth 액세스 토큰으로도 호출할 수 있습니다([2.7](#27-보안-속성과-한계)).
+`GET /api/v1/sessions/current`는 **서브 서비스의 SDK가 세션 폐기를 확인할 때 호출하는 엔드포인트**입니다. OAuth 액세스 토큰으로도 호출할 수 있습니다([2.7](#27-보안-속성)).
 
 OAuth로 로그인한 세션도 이 목록에 나타나고(`deviceInfo` 가 `OAuth2 Client: <client_id>`, `ipAddress` 가 `OAuth2`) 세션 상한에도 포함됩니다.
 
@@ -805,7 +805,7 @@ curl -s -o /dev/null -w 'sessions/current  -> %{http_code}\n' $IAM/api/v1/sessio
 
 ---
 
-### 2.7 보안 속성과 한계
+### 2.7 보안 속성
 
 **보장되는 것**
 
@@ -815,18 +815,14 @@ curl -s -o /dev/null -w 'sessions/current  -> %{http_code}\n' $IAM/api/v1/sessio
 - **OAuth 액세스 토큰은 `cid=<client_id>`를 갖고 `role`은 항상 `USER`.** 관리자가 OAuth로 로그인해도 클라이언트로 관리자 권한이 넘어가지 않습니다.
 - **IAM은 OAuth 액세스 토큰(`cid` 있음)을 `GET /oauth2/userinfo`와 `GET /api/v1/sessions/current`에서만 인증으로 인정**합니다. 프로필·세션 목록·로그아웃·2FA·관리자 등 다른 IAM API에서는 `401`입니다.
 - **id_token(`aud` 있음)은 IAM의 어떤 API에서도 액세스 토큰으로 인정되지 않습니다.** (`userinfo`도 id_token이면 `401`.) SDK도 `doro.iam.audience`를 설정하지 않으면 `aud`가 있는 토큰을 인증으로 받지 않습니다([4.3](#43-필터가-하는-일과-하지-않는-일)).
-- OAuth 세션은 클라이언트별로 만들어져, 같은 클라이언트의 이전 세션만 교체됩니다. 리프레시 토큰은 해당 클라이언트의 세션에만 쓸 수 있습니다.
+- OAuth 세션은 클라이언트별로 만들어져, 같은 클라이언트의 이전 세션만 교체됩니다. 리프레시 토큰은 해당 클라이언트의 세션에만 쓸 수 있고, **일반 갱신 엔드포인트(`POST /api/v1/auth/token/refresh`)는 OAuth 세션의 리프레시 토큰을 거부**합니다(회전 전에 확인하므로 정상 클라이언트의 토큰이 소모되지도 않음). 그래서 OAuth 클라이언트가 사용자의 실제 권한이 담긴 일반 로그인 토큰을 얻을 수 없습니다.
 - 토큰 엔드포인트와 Bearer 없는 인가 요청에는 IP 단위 요청 제한이 있습니다.
 
-**한계와 주의 (코드를 읽고 확인한 것)**
+**연동 시 알아 둘 점**
 
-- **서브 서비스에서 OAuth 액세스 토큰은 일반 토큰처럼 쓰입니다.** SDK는 `cid`/스코프를 보지 않고 `role=USER` 사용자로 취급합니다. 서비스는 `role` 클레임이 아니라 Guard로 권한을 판정하세요.
-- **스코프는 `id_token` 클레임을 정할 뿐**, 액세스 토큰에는 스코프가 실리지 않고 `userinfo`는 스코프와 무관하게 `sub`/`email`/`name`/`picture`를 돌려줍니다.
-- **인가 코드가 재사용돼도 이미 발급된 토큰을 폐기하지 않고** 경고 로그만 남깁니다(RFC 6749의 권고는 미구현).
-- **클라이언트를 비활성화해도 이미 발급된 액세스 토큰/세션은 그대로 유효**합니다(새 인가/교환/리프레시만 거부됨).
-- **`state`는 서버가 검증하지 않습니다.** 클라이언트가 직접 대조하세요.
-- **동의 이력 저장이 없습니다.** 포털 동의 화면은 요청마다 승인 버튼을 보여 줍니다.
-- ⚠ **(코드상 의심 — 테스트 없음)** `POST /api/v1/auth/token/refresh`(일반 리프레시)는 세션 종류를 구분하지 않고 `createAccessToken`으로 일반 액세스 토큰(사용자의 실제 `role`, `cid` 없음)을 발급하는 것으로 보입니다. 그렇다면 OAuth 클라이언트가 자기 OAuth 리프레시 토큰을 이 엔드포인트에 내서 위의 "토큰 격리"를 우회할 수 있습니다. 반대 방향(일반 로그인 토큰을 OAuth 리프레시에 사용)만 테스트로 막혀 있습니다. 실제 동작은 확인하지 못했습니다 `(미검증)`.
+- **서브 서비스에서 OAuth 액세스 토큰은 `role=USER` 사용자의 일반 토큰처럼 쓰입니다.** SDK는 `cid`/스코프를 보지 않으므로, 서비스는 `role` 클레임이 아니라 **Guard로 권한을 판정**하세요(이 가이드의 다른 곳에서도 같은 원칙입니다).
+- **스코프는 `id_token` 클레임을 정합니다.** 액세스 토큰에는 스코프가 실리지 않고, `userinfo`는 스코프와 무관하게 `sub`/`email`/`name`/`picture`를 돌려줍니다.
+- **`state`는 클라이언트가 직접 대조**하세요(서버는 그대로 되돌려 줄 뿐 검증하지 않습니다).
 
 ---
 
@@ -1635,11 +1631,3 @@ public class GuardTuples {
 | `DORO_GUARD_SCHEMA_REFRESH_SECONDS` | `30` | Guard | DB 활성 스키마 확인 주기(0이면 끔) |
 | `DORO_GUARD_CACHE_TTL_SECONDS` / `_CACHE_MAX_SIZE` | `60` / `50000` | Guard | 인가 캐시 |
 | `DORO_GUARD_EXPAND_MAX_NODES` | `5000` | Guard | Expand 노드 상한 |
-
-### 7.4 알려진 한계 (코드 기준)
-
-- **Guard 기본 설정은 열려 있습니다.** `DORO_GUARD_SECURITY_MODE=OFF`(기본)에서는 REST/gRPC에 인증이 없고 누구나 스키마까지 바꿀 수 있습니다. 외부에 노출하지 말고, 운영에서는 `ENFORCE` + 호출자별 토큰을 쓰세요.
-- 2FA 임시 티켓, TOTP 재사용 방지, IP 요청 제한은 **IAM 프로세스 메모리**에 있어 재시작하면 초기화되고 다중 인스턴스에서는 공유되지 않습니다.
-- Guard와의 gRPC는 **평문**입니다(신뢰할 수 있는 내부 네트워크에서만).
-- SDK의 폐기 확인은 기본 꺼져 있고, 켜도 "유효" 캐시(30초)와 fail-open 기본값 때문에 즉시성/가용성 사이의 선택이 필요합니다.
-- OAuth는 공개 클라이언트·기본 스코프만 지원하고(시크릿 인증, 스코프별 `userinfo`, 동의 이력 없음), 위 [2.7](#27-보안-속성과-한계)의 한계가 있습니다.

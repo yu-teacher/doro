@@ -38,3 +38,9 @@ dist/
 # Logs
 *.log
 logs/
+
+# 비공개 메모: 알려진 한계/TODO, 서버 운영 정보. GitHub 에 올리지 않는다.
+.private/
+
+# Claude Code 작업 폴더(에이전트 worktree 등)
+.claude/
