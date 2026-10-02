@@ -2,9 +2,11 @@ package com.hunnit_beasts.auth.domain.session.service;
 
 import com.hunnit_beasts.auth.common.exception.AuthException;
 import com.hunnit_beasts.auth.common.exception.ErrorCode;
+import com.hunnit_beasts.auth.domain.session.dto.SessionLiveness;
 import com.hunnit_beasts.auth.domain.session.dto.SessionResponse;
 import com.hunnit_beasts.auth.domain.session.entity.UserSession;
 import com.hunnit_beasts.auth.domain.session.repository.UserSessionRepository;
+import com.hunnit_beasts.auth.domain.user.entity.UserStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -140,5 +142,24 @@ public class SessionService {
         else if (userAgent.contains("Firefox")) browser = "Firefox";
 
         return os + " (" + browser + ")";
+    }
+
+    /**
+     * 서브 서비스(SDK)의 폐기 확인용. DB(원본 진실)만 단일 쿼리로 조회하며 세션을 갱신하지 않는다.
+     * 세션이 없거나 비활성/만료면 SESSION_EXPIRED(401), 소유 사용자가 ACTIVE 가 아니면 ACCOUNT_SUSPENDED(403).
+     */
+    @Transactional(readOnly = true)
+    public void assertSessionLive(UUID sessionId) {
+        if (sessionId == null) {
+            throw new AuthException(ErrorCode.UNAUTHORIZED, "토큰에 세션 식별자가 없습니다.");
+        }
+        SessionLiveness liveness = sessionRepository.findLivenessById(sessionId)
+                .orElseThrow(() -> new AuthException(ErrorCode.SESSION_EXPIRED));
+        if (!liveness.active() || !liveness.expiresAt().isAfter(Instant.now())) {
+            throw new AuthException(ErrorCode.SESSION_EXPIRED);
+        }
+        if (liveness.userStatus() != UserStatus.ACTIVE) {
+            throw new AuthException(ErrorCode.ACCOUNT_SUSPENDED);
+        }
     }
 }

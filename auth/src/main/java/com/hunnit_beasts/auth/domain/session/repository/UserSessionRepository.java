@@ -1,5 +1,6 @@
 package com.hunnit_beasts.auth.domain.session.repository;
 
+import com.hunnit_beasts.auth.domain.session.dto.SessionLiveness;
 import com.hunnit_beasts.auth.domain.session.entity.UserSession;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -31,4 +32,12 @@ public interface UserSessionRepository extends JpaRepository<UserSession, UUID> 
     @Modifying
     @Query("UPDATE UserSession s SET s.isActive = false WHERE s.expiresAt < :now AND s.isActive = true")
     int deactivateExpiredSessions(@Param("now") Instant now);
+
+    /**
+     * 세션 생존 여부 판정에 필요한 컬럼만 단일 쿼리(세션 + 소유 사용자 조인)로 읽는다.
+     * 엔티티를 로드하지 않으므로 세션을 갱신(touch)하지 않는다.
+     */
+    @Query("SELECT new com.hunnit_beasts.auth.domain.session.dto.SessionLiveness(s.isActive, s.expiresAt, u.status) "
+            + "FROM UserSession s JOIN User u ON u.id = s.userId WHERE s.id = :sessionId")
+    Optional<SessionLiveness> findLivenessById(@Param("sessionId") UUID sessionId);
 }
