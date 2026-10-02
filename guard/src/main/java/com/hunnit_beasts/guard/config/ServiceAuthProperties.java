@@ -7,8 +7,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -19,9 +21,13 @@ import java.util.regex.Pattern;
  * <p>토큰은 두 종류를 받는다.
  * <ul>
  *   <li>{@code service-token}: 모든 호출자가 같이 쓰는 공유 토큰 (이전 방식, 전환 기간에만 둔다)</li>
- *   <li>{@code service-tokens}: {@code auth:토큰,blog:토큰} 형식의 호출자별 토큰. 하나가 유출돼도
+ *   <li>{@code service-tokens}: {@code auth:토큰,blog:토큰:schema-write} 형식의 호출자별 토큰. 하나가 유출돼도
  *       그 호출자의 토큰만 교체하면 되고, 어느 호출자의 요청인지 식별할 수 있다.</li>
  * </ul>
+ *
+ * <p>호출자별 토큰에는 선택적으로 권한(scope)을 붙인다({@code 이름:토큰:권한+권한}). 권한이 없으면 조회/체크/튜플 쓰기만 되고,
+ * 활성 스키마 전체를 교체하는 {@code POST /api/v1/guard/schema} 는 {@code schema-write} 가 있는 호출자만 쓸 수 있다.
+ * 공유 토큰은 이전 방식과의 호환을 위해 모든 권한을 갖는다.
  */
 @Getter
 @Setter
@@ -38,6 +44,10 @@ public class ServiceAuthProperties {
     /** 운영 스크립트(split-guard-tokens.sh)가 이 문구로 공유 토큰 사용 여부를 확인한다. 바꾸면 스크립트도 바꿔야 한다. */
     public static final String SHARED_TOKEN_WARNING = "Guard call with the deprecated shared service token";
 
+    /** 활성 스키마를 통째로 교체할 수 있는 권한. 잘못 호출하면 다른 서비스와 IAM 의 타입이 사라진다. */
+    public static final String SCOPE_SCHEMA_WRITE = "schema-write";
+    private static final Set<String> KNOWN_SCOPES = Set.of(SCOPE_SCHEMA_WRITE);
+
     static final int MIN_CALLER_TOKEN_LENGTH = 32;
     private static final Pattern CALLER_NAME = Pattern.compile("[a-z][a-z0-9-]{0,31}");
 
@@ -45,6 +55,8 @@ public class ServiceAuthProperties {
     private String serviceToken = "";
     @Setter(AccessLevel.NONE)
     private Map<String, String> callerTokens = Map.of();
+    @Setter(AccessLevel.NONE)
+    private Map<String, Set<String>> callerScopes = Map.of();
 
     public boolean isActive() {
         return mode != Mode.OFF;
@@ -56,11 +68,13 @@ public class ServiceAuthProperties {
      */
     public void setServiceTokens(String spec) {
         Map<String, String> parsed = new LinkedHashMap<>();
+        Map<String, Set<String>> scopes = new LinkedHashMap<>();
         if (spec != null && !spec.isBlank()) {
             for (String entry : spec.split(",")) {
-                int sep = entry.indexOf(':');
-                String name = sep < 0 ? "" : entry.substring(0, sep).trim();
-                String token = sep < 0 ? "" : entry.substring(sep + 1).trim();
+                String[] parts = entry.split(":", 3);
+                String name = parts[0].trim();
+                String token = parts.length > 1 ? parts[1].trim() : "";
+                Set<String> callerScope = parts.length > 2 ? parseScopes(name, parts[2]) : Set.of();
                 if (!CALLER_NAME.matcher(name).matches()) {
                     throw new IllegalArgumentException("service-tokens: invalid caller name (expected name:token)");
                 }
@@ -71,12 +85,34 @@ public class ServiceAuthProperties {
                 if (SHARED_CALLER.equals(name) || parsed.put(name, token) != null) {
                     throw new IllegalArgumentException("service-tokens: caller '" + name + "' is reserved or duplicated");
                 }
+                scopes.put(name, callerScope);
             }
             if (parsed.values().stream().distinct().count() != parsed.size()) {
                 throw new IllegalArgumentException("service-tokens: callers must not share a token");
             }
         }
         this.callerTokens = Map.copyOf(parsed);
+        this.callerScopes = Map.copyOf(scopes);
+    }
+
+    private static Set<String> parseScopes(String caller, String spec) {
+        Set<String> result = new LinkedHashSet<>();
+        for (String scope : spec.split("\\+")) {
+            String trimmed = scope.trim();
+            if (!KNOWN_SCOPES.contains(trimmed)) {
+                throw new IllegalArgumentException("service-tokens: unknown scope for '" + caller + "' (known: " + KNOWN_SCOPES + ")");
+            }
+            result.add(trimmed);
+        }
+        return Set.copyOf(result);
+    }
+
+    /** 호출자가 권한을 갖는지. 공유 토큰은 모든 권한을 갖고, 호출자별 토큰은 명시된 권한만 갖는다. */
+    public boolean hasScope(String caller, String scope) {
+        if (SHARED_CALLER.equals(caller)) {
+            return true;
+        }
+        return callerScopes.getOrDefault(caller, Set.of()).contains(scope);
     }
 
     /** 제시된 토큰의 호출자 이름. 어떤 토큰과도 맞지 않으면 비어 있다. 모든 후보와 상수 시간으로 비교한다. */

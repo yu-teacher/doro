@@ -32,8 +32,12 @@ class ServiceTokenAuthTest {
     }
 
     private int callRest(ServiceAuthProperties properties, String path, String token) throws Exception {
+        return callRest(properties, "POST", path, token);
+    }
+
+    private int callRest(ServiceAuthProperties properties, String method, String path, String token) throws Exception {
         ServiceTokenFilter filter = new ServiceTokenFilter(properties);
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", path);
+        MockHttpServletRequest request = new MockHttpServletRequest(method, path);
         request.setRequestURI(path);
         if (token != null) {
             request.addHeader(ServiceAuthProperties.HEADER_NAME, token);
@@ -195,5 +199,60 @@ class ServiceTokenAuthTest {
                 .isInstanceOf(IllegalArgumentException.class);
         properties.setServiceTokens("");
         assertThat(properties.getCallerTokens()).isEmpty();
+    }
+
+    private ServiceAuthProperties withScopes(ServiceAuthProperties.Mode mode) {
+        ServiceAuthProperties properties = new ServiceAuthProperties();
+        properties.setMode(mode);
+        properties.setServiceToken(TOKEN);
+        properties.setServiceTokens("auth:" + AUTH_TOKEN + ", blog:" + BLOG_TOKEN + ":schema-write");
+        return properties;
+    }
+
+    @Test
+    @DisplayName("스키마 교체(POST /schema)는 schema-write 권한이 있는 호출자만: 없으면 403, 있으면 통과")
+    void schemaWriteRequiresScope() throws Exception {
+        ServiceAuthProperties enforce = withScopes(ServiceAuthProperties.Mode.ENFORCE);
+        assertThat(callRest(enforce, "POST", "/api/v1/guard/schema", AUTH_TOKEN)).isEqualTo(403);
+        assertThat(callRest(enforce, "POST", "/api/v1/guard/schema", BLOG_TOKEN)).isEqualTo(200);
+        assertThat(callRest(enforce, "PUT", "/api/v1/guard/schema", AUTH_TOKEN)).isEqualTo(403);
+        assertThat(callRest(enforce, "DELETE", "/api/v1/guard/schema/anything", AUTH_TOKEN)).isEqualTo(403);
+    }
+
+    @Test
+    @DisplayName("스키마 조회(GET)와 다른 가드 API 는 권한 없는 호출자도 사용한다")
+    void readsAndOtherEndpointsDoNotNeedTheScope() throws Exception {
+        ServiceAuthProperties enforce = withScopes(ServiceAuthProperties.Mode.ENFORCE);
+        assertThat(callRest(enforce, "GET", "/api/v1/guard/schema", AUTH_TOKEN)).isEqualTo(200);
+        assertThat(callRest(enforce, "POST", "/api/v1/guard/check", AUTH_TOKEN)).isEqualTo(200);
+        assertThat(callRest(enforce, "POST", "/api/v1/guard/tuples", AUTH_TOKEN)).isEqualTo(200);
+    }
+
+    @Test
+    @DisplayName("공유 토큰은 이전과 같이 모든 권한을 갖고, 토큰이 없거나 틀리면 스키마 요청도 401")
+    void sharedTokenKeepsEveryScopeAndAnonymousIsStill401() throws Exception {
+        ServiceAuthProperties enforce = withScopes(ServiceAuthProperties.Mode.ENFORCE);
+        assertThat(callRest(enforce, "POST", "/api/v1/guard/schema", TOKEN)).isEqualTo(200);
+        assertThat(callRest(enforce, "POST", "/api/v1/guard/schema", null)).isEqualTo(401);
+        assertThat(callRest(enforce, "POST", "/api/v1/guard/schema", "wrong")).isEqualTo(401);
+    }
+
+    @Test
+    @DisplayName("WARN 은 권한이 없어도 통과시키고 기록만 한다")
+    void warnModeOnlyLogsMissingScope() throws Exception {
+        assertThat(callRest(withScopes(ServiceAuthProperties.Mode.WARN), "POST", "/api/v1/guard/schema", AUTH_TOKEN)).isEqualTo(200);
+    }
+
+    @Test
+    @DisplayName("알 수 없는 권한 이름은 기동 시점에 실패한다")
+    void unknownScopeFailsFast() {
+        ServiceAuthProperties properties = new ServiceAuthProperties();
+        assertThatThrownBy(() -> properties.setServiceTokens("blog:" + BLOG_TOKEN + ":schema-wrte"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> properties.setServiceTokens("blog:" + BLOG_TOKEN + ":"))
+                .isInstanceOf(IllegalArgumentException.class);
+        properties.setServiceTokens("blog:" + BLOG_TOKEN + ":schema-write");
+        assertThat(properties.hasScope("blog", ServiceAuthProperties.SCOPE_SCHEMA_WRITE)).isTrue();
+        assertThat(properties.hasScope("auth", ServiceAuthProperties.SCOPE_SCHEMA_WRITE)).isFalse();
     }
 }

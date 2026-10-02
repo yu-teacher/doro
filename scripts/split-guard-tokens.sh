@@ -5,6 +5,7 @@
 #   ssh mini 'bash -s -- --check'    < scripts/split-guard-tokens.sh   # 읽기 전용 점검
 #   ssh mini 'bash -s -- --apply'    < scripts/split-guard-tokens.sh   # 1단계: 호출자별 토큰 발급/적용 (공유 토큰은 유지)
 #   ssh mini 'bash -s -- --finalize' < scripts/split-guard-tokens.sh   # 2단계: 공유 토큰 제거 (적용 후 10분 이상 지난 뒤)
+#   ssh mini 'bash -s -- --scopes'   < scripts/split-guard-tokens.sh   # 이미 나눈 토큰에 blog 의 schema-write 권한을 붙임 (토큰 값 유지)
 #   ssh mini 'bash -s -- --rollback' < scripts/split-guard-tokens.sh   # 분리 이전(공유 토큰만 쓰던) .env 로 되돌리고 guard/auth/blog 재생성
 #
 # 선행 조건: 호출자별 토큰을 받을 수 있는 Guard(코드 커밋 "per-caller service tokens")가 이미 배포돼 있어야 한다.
@@ -18,6 +19,9 @@
 #   4) guard-api 를 먼저 다시 만들어 새 토큰 둘과 기존 공유 토큰이 모두 통과하는지 확인하고,
 #      그 다음 auth-api, blog-backend 를 다시 만들어 각 컨테이너가 자기 토큰을 갖고 있는지 확인한다.
 #   어느 단계든 실패하면 두 .env 를 되돌리고 세 컨테이너를 다시 만든다.
+# 권한 (--scopes)
+#   스키마 전체 교체(POST /api/v1/guard/schema)는 schema-write 권한이 있는 호출자만 쓸 수 있다. blog 만 갖고 auth 는 갖지 않는다.
+#   Guard 만 다시 만들고, blog 토큰은 통과(요청 검증 오류 400), auth 토큰은 거부(403)되는지를 스키마를 건드리지 않는 빈 본문으로 확인한다.
 # 단계 2 (--finalize)
 #   Guard 로그에서 공유 토큰 사용 경고가 없는지 확인한 뒤, Guard 의 공유 토큰을 비운다.
 #   이후 예전 공유 토큰은 거부된다. 실패하면 되돌린다.
@@ -35,6 +39,7 @@ GUARD=doro-guard-api; AUTH=doro-auth-api; BLOG=doro-blog-backend
 GRACE_MIN="${GRACE_MIN:-10}"
 SHARED_WARNING="Guard call with the deprecated shared service token"   # guard ServiceAuthProperties.SHARED_TOKEN_WARNING 과 같아야 한다
 GUARD_CHECK_URL="http://127.0.0.1:8081/api/v1/guard/check"
+GUARD_SCHEMA_URL="http://127.0.0.1:8081/api/v1/guard/schema"
 CHECK_BODY='{"namespace":"system","objectId":"doro","relation":"admin","subjectNamespace":"user","subjectId":"00000000-0000-0000-0000-000000000000"}'
 
 log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
@@ -54,6 +59,20 @@ drop_var() { local file="$1" key="$2" tmp; tmp="$(mktemp "$file.XXXXXX")"; grep 
 healthy() { [ "$(docker inspect "$1" --format '{{.State.Health.Status}}' 2>/dev/null)" = "healthy" ]; }
 wait_healthy() { local i; for i in $(seq 1 50); do healthy "$1" && return 0; sleep 3; done; return 1; }
 code_with() { curl -s -m 8 -o /dev/null -w '%{http_code}' -X POST "$GUARD_CHECK_URL" -H 'Content-Type: application/json' ${1:+-H "X-Doro-Service-Token: $1"} -d "$CHECK_BODY"; }
+
+# 스키마 교체 엔드포인트에 빈 본문({})을 보낸다. 권한이 있으면 요청 검증에서 400 으로 끝나 스키마는 바뀌지 않는다.
+schema_code_with() { curl -s -m 8 -o /dev/null -w '%{http_code}' -X POST "$GUARD_SCHEMA_URL" -H 'Content-Type: application/json' ${1:+-H "X-Doro-Service-Token: $1"} -d '{}'; }
+# 스키마 권한 검증: blog(권한 있음)는 400, auth(권한 없음)는 ENFORCE 에서 403, 토큰 없음은 ENFORCE 에서 401.
+verify_schema_scope() {
+  local blog_token="$1" auth_token="$2" b a n
+  b="$(schema_code_with "$blog_token")"; a="$(schema_code_with "$auth_token")"; n="$(schema_code_with "")"
+  log "  스키마 교체 요청: blog 토큰 $b / auth 토큰 $a / 토큰 없음 $n"
+  [ "$b" = 400 ] || die "blog 토큰이 스키마 권한 검사를 통과하지 못했다($b)"
+  if [ "$GUARD_MODE" = ENFORCE ]; then
+    [ "$a" = 403 ] || die "auth 토큰이 스키마 교체를 할 수 없어야 하는데 $a 이다"
+    [ "$n" = 401 ] || die "토큰 없는 스키마 교체가 401 이 아니다($n)"
+  fi
+}
 
 recreate_guard_auth() { ( cd "$RUNNER_DIR" && cp "$ENV_FILE" .env && chmod 600 .env && docker compose up -d --no-build --no-deps "$@" ) >/dev/null; }
 recreate_blog() { ( cd "$BLOG_DIR" && docker compose -f "$BLOG_COMPOSE" up -d --no-build --no-deps blog-backend ) >/dev/null; }
@@ -76,7 +95,7 @@ describe() {
 
 case "$MODE_ARG" in
   --check) describe; exit 0 ;;
-  --apply|--finalize) ;;
+  --apply|--finalize|--scopes) ;;
   --rollback)
     # 호출자별 토큰이 들어가기 전(DORO_GUARD_SERVICE_TOKENS 가 없거나 비어 있음)의 가장 최근 백업으로 되돌린다.
     # 백업 시각은 .env 와 blog .env 가 같은 접미사를 쓴다.
@@ -92,7 +111,7 @@ case "$MODE_ARG" in
     recreate_guard_auth guard-api auth-api; recreate_blog
     for c in $GUARD $AUTH $BLOG; do wait_healthy "$c" || die "$c 가 healthy 로 돌아오지 않았다"; done
     log "완료. 이전 상태로 되돌렸다."; exit 0 ;;
-  *) echo "사용법: bash -s -- --check|--apply|--finalize|--rollback" >&2; exit 2 ;;
+  *) echo "사용법: bash -s -- --check|--apply|--finalize|--scopes|--rollback" >&2; exit 2 ;;
 esac
 
 for c in $GUARD $AUTH $BLOG; do healthy "$c" || die "$c 가 healthy 가 아니다. 먼저 정상으로 만든 뒤 실행한다"; done
@@ -127,7 +146,7 @@ if [ "$MODE_ARG" = "--apply" ]; then
 
   STARTED=true
   set_var "$ENV_FILE" DORO_GUARD_AUTH_TOKEN "$AUTH_TOKEN"
-  set_var "$ENV_FILE" DORO_GUARD_SERVICE_TOKENS "auth:$AUTH_TOKEN,blog:$BLOG_TOKEN"
+  set_var "$ENV_FILE" DORO_GUARD_SERVICE_TOKENS "auth:$AUTH_TOKEN,blog:$BLOG_TOKEN:schema-write"
   set_var "$BLOG_ENV" DORO_GUARD_SERVICE_TOKEN "$BLOG_TOKEN"
 
   log "1/3 guard-api 재생성 (공유 토큰 유지 + 호출자별 토큰 추가)"
@@ -138,6 +157,7 @@ if [ "$MODE_ARG" = "--apply" ]; then
   [ "$r_auth" = 200 ] && [ "$r_blog" = 200 ] || die "새 토큰이 Guard 에서 통과하지 않는다"
   if [ -n "$SHARED" ]; then [ "$r_old" = 200 ] || die "전환 기간인데 기존 공유 토큰이 거부된다"; fi
   [ "$r_none" = "$(expect_no_token)" ] && [ "$r_bad" = "$(expect_no_token)" ] || die "토큰 없음/틀린 토큰의 응답이 모드($GUARD_MODE)와 맞지 않는다"
+  verify_schema_scope "$BLOG_TOKEN" "$AUTH_TOKEN"
 
   log "2/3 auth-api, blog-backend 재생성 (각자 자기 토큰 사용)"
   recreate_guard_auth auth-api
@@ -159,6 +179,31 @@ if [ "$MODE_ARG" = "--apply" ]; then
   log "완료. 이제 호출자별 토큰이 쓰이고, 기존 공유 토큰은 아직 Guard 에서 통과한다."
   log "로그인/글쓰기 등 평소 흐름을 써 본 뒤 ${GRACE_MIN}분 이상 지나면: ssh mini 'bash -s -- --finalize' < scripts/split-guard-tokens.sh"
   log "문제가 생기면 즉시: ssh mini 'bash -s -- --rollback' < scripts/split-guard-tokens.sh"
+  exit 0
+fi
+
+# ------------------------------------------------------------ --scopes
+if [ "$MODE_ARG" = "--scopes" ]; then
+  $HAVE_SPLIT || die "호출자별 토큰이 아직 없다. 먼저 --apply 를 실행한다"
+  SPEC="$(get_var "$ENV_FILE" DORO_GUARD_SERVICE_TOKENS)"
+  case ",$SPEC," in *,blog:*:schema-write,*) log "blog 에 이미 schema-write 권한이 있다. 변경하지 않는다."; exit 0 ;; esac
+  NEW_SPEC="$(printf '%s' "$SPEC" | awk -F, '{ for (i = 1; i <= NF; i++) { n = split($i, p, ":"); if (p[1] == "blog" && n == 2) $i = $i ":schema-write"; out = out (i > 1 ? "," : "") $i } print out }')"
+  [ "$NEW_SPEC" != "$SPEC" ] || die "blog 항목(blog:<토큰>)을 찾지 못했다. DORO_GUARD_SERVICE_TOKENS 를 확인한다"
+  BLOG_TOKEN="$(get_var "$BLOG_ENV" DORO_GUARD_SERVICE_TOKEN)"; AUTH_TOKEN="$(get_var "$ENV_FILE" DORO_GUARD_AUTH_TOKEN)"
+  [ -n "$BLOG_TOKEN" ] && [ -n "$AUTH_TOKEN" ] || die "blog/auth 토큰을 읽지 못했다"
+  take_backups
+  STARTED=true
+  set_var "$ENV_FILE" DORO_GUARD_SERVICE_TOKENS "$NEW_SPEC"
+  log "guard-api 재생성 (blog 에 schema-write 권한 추가, 토큰 값은 그대로)"
+  recreate_guard_auth guard-api
+  wait_healthy "$GUARD" || die "guard 가 healthy 로 돌아오지 않았다 (권한을 지원하지 않는 버전이면 토큰 형식 오류로 기동에 실패한다)"
+  [ "$(code_with "$AUTH_TOKEN")" = 200 ] && [ "$(code_with "$BLOG_TOKEN")" = 200 ] || die "호출자 토큰이 Guard 에서 통과하지 않는다"
+  verify_schema_scope "$BLOG_TOKEN" "$AUTH_TOKEN"
+  for pair in "auth:8080" "blog:8082"; do
+    [ "$(curl -s -m 8 -o /dev/null -w '%{http_code}' "http://127.0.0.1:${pair#*:}/actuator/health")" = 200 ] || die "${pair%%:*} 헬스 실패"
+  done
+  STARTED=false
+  log "완료. 이제 스키마 교체는 blog 토큰만 할 수 있다. (되돌리기: ssh mini 'bash -s -- --rollback' < scripts/split-guard-tokens.sh 는 분리 이전으로 돌아간다. 권한만 되돌리려면 백업 $ENV_BAK)"
   exit 0
 fi
 
