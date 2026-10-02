@@ -223,6 +223,37 @@ public class DoroGuardClient {
         }
     }
 
+    /**
+     * 관계 전개(Expand) 트리를 JSON 문자열로 조회한다. 어떤 오류에서도 예외를 던지지 않고 null 을 반환한다(fail-closed).
+     */
+    public String expand(String namespace, String objectId, String relation) {
+        try {
+            return expandInternal(namespace, objectId, relation);
+        } catch (Exception e) {
+            log.error("DoroGuardClient expand failed for {}:{}#{}: {}", namespace, objectId, relation, e.getMessage());
+            return null;
+        }
+    }
+
+    /** expand 의 예외 전파 버전. 실패하면 DoroGuardUnavailableException 을 던진다. */
+    public String expandOrThrow(String namespace, String objectId, String relation) {
+        try {
+            return expandInternal(namespace, objectId, relation);
+        } catch (Exception e) {
+            log.error("DoroGuardClient expandOrThrow failed: {}", e.getMessage());
+            throw new DoroGuardUnavailableException("Doro Guard 를 사용할 수 없습니다.", e);
+        }
+    }
+
+    private String expandInternal(String namespace, String objectId, String relation) {
+        ExpandRequest request = ExpandRequest.newBuilder()
+                .setNamespace(namespace)
+                .setObjectId(objectId)
+                .setRelation(relation)
+                .build();
+        return getStub().expand(request).getTreeJson();
+    }
+
     public void shutdown() {
         if (channel != null && !channel.isShutdown()) {
             try {

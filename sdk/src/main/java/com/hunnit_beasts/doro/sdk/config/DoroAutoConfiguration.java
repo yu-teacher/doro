@@ -6,6 +6,7 @@ import com.hunnit_beasts.doro.sdk.security.filter.DoroJwtAuthFilter;
 import com.hunnit_beasts.doro.sdk.security.jwks.JwksKeyProvider;
 import com.hunnit_beasts.doro.sdk.web.CurrentDoroUserArgumentResolver;
 import com.hunnit_beasts.doro.sdk.web.DoroExceptionHandlerAdvice;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -21,6 +22,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 import java.util.List;
 
+@Slf4j
 @AutoConfiguration
 @EnableAspectJAutoProxy
 @EnableConfigurationProperties(DoroProperties.class)
@@ -29,7 +31,11 @@ public class DoroAutoConfiguration implements WebMvcConfigurer {
     @Bean
     @ConditionalOnMissingBean
     public JwksKeyProvider jwksKeyProvider(DoroProperties properties) {
-        return new JwksKeyProvider(properties.getIam().getJwksUri());
+        JwksKeyProvider provider = new JwksKeyProvider(properties.getIam().getJwksUri());
+        if (properties.getIam().isJwksPrefetch()) {
+            provider.prefetchAsync();
+        }
+        return provider;
     }
 
     @Bean
@@ -43,7 +49,12 @@ public class DoroAutoConfiguration implements WebMvcConfigurer {
                 iam.getIssuer(),
                 iam.getIssuerValidation(),
                 iam.getCookieName(),
-                iam.getClockSkewSeconds());
+                iam.getClockSkewSeconds(),
+                iam.getAudience());
+        log.info("Doro JWT validation: issuer-validation={}, audience-check={}, cookie-auth={}",
+                iam.getIssuerValidation(),
+                iam.getAudience() != null && !iam.getAudience().isBlank() ? "ENFORCE" : "OFF",
+                iam.getCookieName() != null && !iam.getCookieName().isBlank());
         FilterRegistrationBean<DoroJwtAuthFilter> registration = new FilterRegistrationBean<>(filter);
         registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
         return registration;

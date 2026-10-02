@@ -18,6 +18,7 @@ import org.slf4j.MDC;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
@@ -34,6 +35,7 @@ public class DoroJwtAuthFilter extends OncePerRequestFilter {
     private final String expectedIssuer;
     private final IssuerValidation issuerValidation;
     private final String cookieName;
+    private final String requiredAudience;
     private final JwtParser parser;
 
     public DoroJwtAuthFilter(JwksKeyProvider jwksKeyProvider) {
@@ -45,6 +47,17 @@ public class DoroJwtAuthFilter extends OncePerRequestFilter {
                              IssuerValidation issuerValidation,
                              String cookieName,
                              long clockSkewSeconds) {
+        this(jwksKeyProvider, expectedIssuer, issuerValidation, cookieName, clockSkewSeconds, "");
+    }
+
+    /** requiredAudience 가 비어 있지 않으면 aud 클레임에 해당 값이 없는 토큰을 거부한다. */
+    public DoroJwtAuthFilter(JwksKeyProvider jwksKeyProvider,
+                             String expectedIssuer,
+                             IssuerValidation issuerValidation,
+                             String cookieName,
+                             long clockSkewSeconds,
+                             String requiredAudience) {
+        this.requiredAudience = requiredAudience != null ? requiredAudience.trim() : "";
         this.expectedIssuer = expectedIssuer;
         this.issuerValidation = issuerValidation != null ? issuerValidation : IssuerValidation.OFF;
         this.cookieName = cookieName != null ? cookieName.trim() : "";
@@ -126,6 +139,7 @@ public class DoroJwtAuthFilter extends OncePerRequestFilter {
             throw new IllegalStateException("JWT without exp claim is rejected");
         }
         verifyIssuer(claims);
+        verifyAudience(claims);
 
         String sub = claims.getSubject();
         String email = claims.get("email", String.class);
@@ -151,5 +165,15 @@ public class DoroJwtAuthFilter extends OncePerRequestFilter {
             throw new IllegalStateException("JWT issuer mismatch");
         }
         log.warn("JWT issuer mismatch (mode=WARN): expected={}, actual={}", expectedIssuer, claims.getIssuer());
+    }
+
+    private void verifyAudience(Claims claims) {
+        if (requiredAudience.isEmpty()) {
+            return;
+        }
+        Set<String> audience = claims.getAudience();
+        if (audience == null || !audience.contains(requiredAudience)) {
+            throw new IllegalStateException("JWT audience mismatch");
+        }
     }
 }
