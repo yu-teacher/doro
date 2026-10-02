@@ -127,13 +127,14 @@ sequenceDiagram
 | 클레임 | `iss`, `sub`(사용자 UUID), `email`, `sid`(세션 UUID), `uidx`(활성 세션 순번), `role`, `iat`, `exp` — `aud`/`jti`/`nbf` 없음 |
 | 헤더 | `kid`(기본 `doro-iam-key-2026-v1`) |
 | 리프레시 토큰 | 30일, 불투명 랜덤값(48바이트). **SHA-256 해시만** DB에 저장 |
-| 서명 키 | 설정된 PEM → 없으면 Redis의 키쌍 → 없으면 RSA-2048 생성 후 Redis 저장 |
-| 공개키 | `GET /.well-known/jwks.json` (단일 키) |
+| 서명 키 | 설정된 PEM → 없으면 Redis의 키쌍 → 없으면 RSA-2048 생성 후 Redis 저장. Redis의 개인키는 `DORO_IAM_JWT_KEY_ENCRYPTION_SECRET`을 설정하면 **AES-256-GCM(PBKDF2 파생)으로 암호화**해 저장합니다(기존 평문 키는 자동 이전, 시크릿이 틀리면 키를 덮어쓰지 않고 기동 중단). 설정하지 않으면 평문 + 기동 시 ERROR 로그 |
+| 공개키 | `GET /.well-known/jwks.json`. `n`/`e`는 최소 길이 unsigned 형식(RFC 7518). **키 회전**: `previous-key-id` + `previous-public-key-pem`을 지정하면 이전 공개키를 JWKS에 함께 게시하고 이전 `kid` 토큰도 검증합니다 |
 
 **리프레시 토큰 회전(RTR)**: 갱신할 때마다 새 토큰을 발급하고 이전 토큰은 폐기합니다. 이미 폐기된 토큰이 다시 오면 **재사용 공격으로 판정**해 그 토큰 계열(family)과 세션 전체를 종료하고 `400 TOKEN_REUSE_DETECTED`를 반환합니다. 동시 갱신은 조건부 UPDATE로 직렬화되어 한 요청만 성공합니다. (네트워크 지연을 감안한 유예 시간은 `refresh-reuse-grace-seconds`로 선택 가능, 기본 0.)
 
 ### 세션과 폐기
-- 로그인마다 `user_sessions` 행이 생기고, 같은 IP+User-Agent의 이전 활성 세션은 비활성화됩니다.
+- 로그인마다 `user_sessions` 행이 생기고, 같은 IP+User-Agent의 이전 활성 세션은 **폐기**됩니다(리프레시 토큰 폐기 + 킬스위치 포함).
+- 사용자당 활성 세션 수는 `DORO_IAM_SESSION_MAX_ACTIVE_PER_USER`(기본 10, 0 이하는 무제한)로 제한되며, 넘으면 가장 오래된 세션부터 폐기합니다. 세션 만료는 **슬라이딩**입니다: 리프레시할 때마다 마지막 활동 + 30일로 연장됩니다.
 - 폐기 경로(로그아웃, 개별 세션 종료, 다른 기기 로그아웃, 비밀번호 변경, 역할 변경, 재사용 감지)는 모두 `SessionRevocationService` 한 곳을 지나며 **DB 상태 + 리프레시 토큰 폐기 + Redis 킬스위치**를 함께 처리합니다.
 - 세션 종료 API는 **소유자 검사**를 합니다(남의 세션은 404).
 - IAM 자신의 필터는 Redis 세션 블랙리스트를 확인합니다. 하지만 **SDK 필터는 확인하지 않으므로** 서브 서비스에서는 폐기된 액세스 토큰이 만료(기본 15분)까지 유효합니다.
@@ -141,8 +142,8 @@ sequenceDiagram
 ### 관리자 인가와 Guard 동기화
 - 관리자 API는 JWT 역할 + **Guard 재검사**를 함께 요구합니다.
   - `GET /admin/users`: `system:doro#admin`
-  - `PATCH /admin/users/{id}/role`: `system:doro#manage_roles` → 성공 시 대상의 모든 세션 종료
-  - `DELETE /admin/users/{id}/2fa`: `user:{대상}#can_reset_2fa`
+  - `PATCH /admin/users/{id}/role`: `system:doro#manage_roles` → 성공 시 대상의 모든 세션 종료. 잘못된 역할 값·자기 자신의 역할 변경은 `400`
+  - `DELETE /admin/users/{id}/2fa`: `user:{대상}#can_reset_2fa` → 대기 시크릿까지 지우고 대상의 모든 세션 종료
 - 가입·역할 변경·기동 시 `UserRelationSyncService`가 역할을 Guard 튜플로 동기화합니다.
 
   | 역할 | 쓰는 튜플 |
@@ -245,7 +246,9 @@ type blog_post {
 4. 안전장치: 최대 깊이 **32**(`doro.guard.engine.max-depth`), 경로별 방문 집합으로 **순환 차단**. 초과·순환은 해당 가지를 `false`로 취급하고, **차집합의 빼는 쪽이 잘리면 전체를 거부(fail-closed)**, 잘린 결과는 캐시하지 않습니다.
 5. 스키마가 없거나 타입/릴레이션이 없으면 **거부**. 예외는 허용으로 이어지지 않습니다.
 
-**캐시**: Caffeine L1(최대 5만 건, 60초, 허용·거부 모두 캐시, 최상위 결과만). 튜플이 실제로 바뀐 경우(커밋 후)와 스키마 변경 시 무효화하고, 평가 도중 무효화가 겹치면 그 결과는 캐시하지 않습니다(세대 카운터). **인스턴스 로컬**이므로 다중 인스턴스에서는 최대 60초 낡을 수 있습니다.
+**`depth`**: 응답의 `depth`는 평가 중 실제로 도달한 최대 재귀 깊이입니다(계산 릴레이션·TTU 한 단계가 각각 1).
+
+**캐시**: Caffeine L1(기본 최대 5만 건·60초 — `DORO_GUARD_CACHE_MAX_SIZE`/`DORO_GUARD_CACHE_TTL_SECONDS`, 0 이하면 캐시 끔. 허용·거부 모두 캐시, 최상위 결과만). 튜플이 실제로 바뀐 경우(커밋 후)와 스키마 변경 시 무효화하고, 평가 도중 무효화가 겹치면 그 결과는 캐시하지 않습니다(세대 카운터). **인스턴스 로컬**이므로 다른 인스턴스에서 튜플이 바뀌면 최대 TTL(60초)만큼 낡을 수 있습니다. 스키마는 `DORO_GUARD_SCHEMA_REFRESH_SECONDS`(기본 30초, 0이면 끔)마다 DB의 활성 버전과 비교해 **더 높은 버전만** 적용하고 캐시를 비웁니다(다른 인스턴스의 등록 반영, 기동 시 DB 오류로 기본 스키마로 폴백했을 때의 복구).
 
 ### 스키마 등록은 "전체 교체"입니다
 `POST /api/v1/guard/schema`는 보낸 DSL로 활성 스키마를 **통째로 교체**합니다(버전 +1, 이전 버전은 `is_active=false`로 보존). **자기 타입만 보내면 다른 서비스와 IAM의 타입이 사라집니다.** 올바른 절차:
@@ -254,7 +257,9 @@ type blog_post {
 2. 자기 타입이 이미 있는지 확인한다.
 3. 없으면 `기존 DSL + 내 DSL`을 `POST {"dsl": "..."}`한다. (참조 구현: doro-blog `BlogSchemaInitializer`)
 
-ENFORCE 모드에서는 이 POST에 `schema-write` 권한이 있는 호출자 토큰이 필요합니다(아래).
+ENFORCE 모드에서는 이 POST에 `schema-write` 권한이 있는 호출자 토큰이 필요합니다(아래). 동시 등록으로 버전이 충돌하면 최대 3회 재시도하고 `409 SCHEMA_CONFLICT`로 알립니다.
+
+**검증 모드** (`DORO_GUARD_VALIDATION_MODE`, 기본 `WARN`): 스키마 등록 시 이해하지 못한 줄(번호 포함)과 선언되지 않은 타입을 가리키는 항(오타·뒤에 선언된 릴레이션 참조)을, 튜플 쓰기 시 스키마에 없는 타입/릴레이션을 검사합니다. `WARN`은 로그만, `ENFORCE`는 거부(`400`), `OFF`는 검사 안 함. 저장된 스키마를 읽어 오는 경로는 항상 관대하게 파싱하므로 기동이 이 검사 때문에 실패하지 않습니다.
 
 ### 기본 스키마 (`schema.doro`)
 `user`(manager, super_manager, can_reset_2fa) · `group`(member) · `system`(super_admin, admin, auditor, manage_roles) · `folder`(parent, owner, editor, viewer) · `document`(parent, owner, editor, viewer)
@@ -271,7 +276,9 @@ ENFORCE 모드에서는 이 POST에 `schema-write` 권한이 있는 호출자 �
 | `GET /schema` | — | 활성 DSL 문자열 |
 | `POST /schema` | `{"dsl": "..."}` | `{version, dsl, active}` |
 
-**gRPC** (`doro.guard.v1.GuardService`, 9090, 평문): `Check`, `WriteTuples`, `DeleteTuples` (+ proto에 `Expand`가 선언돼 있으나 **서버 미구현** → `UNIMPLEMENTED`). 서비스 SDK는 gRPC를 사용합니다.
+**gRPC** (`doro.guard.v1.GuardService`, 9090, 평문): `Check`, `WriteTuples`, `DeleteTuples`, `Expand`. 서비스 SDK는 gRPC를 사용합니다. 잘못된 입력(빈 값·길이 초과)은 `INVALID_ARGUMENT`입니다.
+
+**Expand**: `object#relation`에 접근할 수 있는 주체를 트리로 돌려줍니다(`tree_json`). 노드는 `{object, type(leaf/union/intersection/difference/computed/ttu), subjects[], children[]}`이고, 직접 튜플의 주체는 `subjects`에, userset·계산 릴레이션·TTU는 `children`으로 전개됩니다. 최대 깊이와 경로별 순환 방지, 노드 상한(`DORO_GUARD_EXPAND_MAX_NODES`, 기본 5000)이 있으며 잘리면 루트에 `"truncated":true`가 붙습니다.
 
 ### 서비스 인증 (호출자 토큰)
 Guard에는 사용자 로그인이 없고, **호출하는 서비스**를 `X-Doro-Service-Token` 헤더(gRPC는 같은 이름의 메타데이터)로 식별합니다.
@@ -321,6 +328,8 @@ doro:
     issuer-validation: OFF          # OFF | WARN | ENFORCE  (iss 검증)
     cookie-name: ""                 # 비어 있으면 쿠키를 읽지 않음
     clock-skew-seconds: 5
+    audience: ""                   # 비어 있지 않으면 aud 클레임에 이 값이 없는 토큰 거부
+    jwks-prefetch: true             # 시작 시 JWKS 백그라운드 사전 조회
   guard:
     grpc-host: guard-api            # 기본 localhost
     grpc-port: 9090
@@ -340,17 +349,17 @@ public PostResponse update(@PathVariable Long postId, @CurrentDoroUser DoroUser 
 - `#`로 시작하는 표현식만 SpEL로 평가하고 나머지는 리터럴입니다. 변수: 파라미터 이름, `#p0/#a0`, `#args`.
 - 클래스 레벨 `@DoroGuard`도 가능하고, 메서드 레벨이 우선합니다.
 - `@CurrentDoroUser`는 `DoroUser`, `UUID`, `String`을 지원합니다. 비로그인이면 `DoroUser`는 `anonymous`, **`UUID`/`String`은 `null`**입니다.
-- 튜플은 `DoroGuardClient`로 씁니다: `writeTuple`/`deleteTuple`(실패 시 `0` 반환), **`writeTupleOrThrow`/`deleteTupleOrThrow`**(실패 시 예외), `check`(실패 시 `false`), `checkOrThrow`.
+- 튜플은 `DoroGuardClient`로 씁니다: `writeTuple`/`deleteTuple`(실패 시 `0` 반환), **`writeTupleOrThrow`/`deleteTupleOrThrow`**(실패 시 예외), `check`(실패 시 `false`), `checkOrThrow`, `expand`(실패 시 `null`)/`expandOrThrow`.
 
 ### 동작 보장과 비보장 — 꼭 읽어 주세요
 
 | 항목 | 동작 |
 |---|---|
-| JWT 검증 | RS256 고정, `exp` 필수, `kid`로 키 선택, 시계 오차 허용. `iss`는 `issuer-validation`에 따라 선택 검증. **`aud`·세션 폐기(킬스위치)는 검사하지 않음** |
+| JWT 검증 | RS256 고정, `exp` 필수, `kid`로 키 선택, 시계 오차 허용. `iss`는 `issuer-validation`에 따라, `aud`는 `doro.iam.audience`가 설정된 경우에만 검증(기본 꺼짐). **세션 폐기(킬스위치)는 검사하지 않음** |
 | **필터는 요청을 막지 않음** | 토큰이 없거나 틀려도 **익명으로 통과**합니다. 인증 강제는 `@DoroGuard` 또는 컨트롤러의 `isAuthenticated()` 확인으로 해야 합니다. |
 | 기본 예외 처리 | `DoroAccessDeniedException` → 비로그인 `401 UNAUTHORIZED` / 로그인 `403 ACCESS_DENIED`, Guard 장애(`checkOrThrow`) → `503 GUARD_UNAVAILABLE`. 본문은 `{success:false, code, message, status}`. 서비스가 자체 핸들러를 정의하면 그것이 우선합니다. |
 | Fail-closed | Guard가 응답하지 않으면 `check`는 `false`(거부)입니다. `@DoroGuard` 경로에서는 이것이 403으로 나타납니다(503 아님). 호출당 3초 데드라인, 재시도 없음. |
-| JWKS 캐시 | 첫 요청 때 가져오고(시작 시 아님), 10분 후 갱신, 미지의 `kid`는 30초 쿨다운으로 재조회. 한 번 받은 `kid`는 프로세스가 사는 동안 유지됩니다. |
+| JWKS 캐시 | 시작 시 백그라운드로 미리 가져오고(`doro.iam.jwks-prefetch`), 10분 TTL 갱신은 **요청을 막지 않고 백그라운드**로 합니다. 미지의 `kid`는 30초 쿨다운으로 동기 재조회. JWKS에서 사라진 `kid`는 성공한 조회 뒤에 캐시에서 제거되고, 조회 실패·빈 JWKS는 기존 키를 유지합니다. |
 | 스레드 | 사용자 정보는 `ThreadLocal`이라 비동기 스레드로 전파되지 않습니다. |
 | 전송 | Guard와의 gRPC는 평문(TLS 없음) — 신뢰할 수 있는 내부 네트워크에서만 사용 |
 
@@ -359,8 +368,8 @@ public PostResponse update(@PathVariable Long postId, @CurrentDoroUser DoroUser 
 ## 🌐 웹 포털과 게이트웨이
 
 ### 포털 (`web/`, React 19 · Vite · zustand · Tailwind)
-- 로그인(이메일 → 비밀번호 → TOTP 3단계), 가입, **내 계정**(정보 수정, 비밀번호 변경, 2FA 설정/해제, 세션 목록·원격 종료, 앱 목록), **관리자 탭**(사용자 목록, 역할 변경, 2FA 초기화), OAuth 동의 화면, 관리자 전용 로그 뷰어(Loki).
-- **여러 계정 전환은 클라이언트 전용**입니다(서버 API 없음). 토큰은 `localStorage`에 계정별로 저장됩니다.
+- 로그인(이메일 → 비밀번호 → TOTP 3단계), 가입, **내 계정**(정보 수정, 비밀번호 변경, 2FA 설정/해제, 세션 목록·원격 종료, 앱 목록), **관리자 탭**(사용자 목록, 역할 변경, 2FA 초기화), OAuth 동의 화면, 관리자 전용 로그 뷰어(Loki, 검색어는 LogQL 이스케이프). 관리자 런처의 Swagger 링크는 `VITE_GUARD_DOCS_URL`/`VITE_IAM_DOCS_URL`이 설정된 경우에만 표시됩니다.
+- **여러 계정 전환은 클라이언트 전용**입니다(서버 API 없음). 토큰은 `localStorage`에 계정별로 저장되고, "모든 계정에서 로그아웃"은 저장된 **모든 계정의 서버 세션**을 각자의 토큰으로 종료합니다. OAuth 동의 요청은 로그인 화면을 거쳐도 유지됩니다(검증된 파라미터만, 10분).
 - 401을 받으면 리프레시 토큰으로 한 번 갱신합니다. 갱신 결과를 `refreshed / rejected / unavailable`로 구분해 **서버가 거부(400/401/403/404)한 경우에만** 로그아웃하고, 네트워크 오류·5xx에서는 로그인을 유지합니다. 여러 탭의 동시 갱신은 Web Locks로 직렬화합니다.
 
 ### 게이트웨이 (`gateway/nginx.conf`)
@@ -421,6 +430,14 @@ docker compose up -d            # postgres, redis, auth-api, guard-api, web, lok
 | `DORO_GUARD_SERVICE_TOKEN` | 비어 있음 | 공유 토큰(호환용) |
 | `DORO_GUARD_SERVICE_TOKENS` | 비어 있음 | `auth:<토큰>,blog:<토큰>:schema-write` |
 | `DORO_GUARD_AUTH_TOKEN` | 비어 있음 | IAM이 Guard 호출에 쓰는 토큰(없으면 공유 토큰) |
+| `DORO_IAM_JWT_KEY_ENCRYPTION_SECRET` | 비어 있음 | Redis에 보관하는 JWT 개인키 암호화 시크릿(긴 무작위 값 권장) |
+| `DORO_IAM_JWT_PREVIOUS_KEY_ID` / `_PUBLIC_KEY_PEM` | 비어 있음 | 키 회전 중 이전 공개키 게시 |
+| `DORO_IAM_SESSION_MAX_ACTIVE_PER_USER` | `10` | 사용자당 활성 세션 상한(0 이하 무제한) |
+| `DORO_GUARD_VALIDATION_MODE` | `WARN` | 튜플/스키마 검증 `OFF`/`WARN`/`ENFORCE` |
+| `DORO_GUARD_SCHEMA_REFRESH_SECONDS` | `30` | DB 활성 스키마 확인 주기(0이면 끔) |
+| `DORO_GUARD_CACHE_TTL_SECONDS` / `_CACHE_MAX_SIZE` | `60` / `50000` | 인가 캐시 |
+| `DORO_GUARD_EXPAND_MAX_NODES` | `5000` | Expand 노드 상한 |
+| `DORO_LOG_LEVEL` | `INFO` | 앱 로그 레벨 |
 
 JWT 서명 키를 고정하려면 `doro.iam.jwt.private-key-pem` / `public-key-pem`(PEM 텍스트)을 설정합니다. 설정이 없으면 Redis에 생성·저장합니다.
 
@@ -456,34 +473,27 @@ JWT 서명 키를 고정하려면 `doro.iam.jwt.private-key-pem` / `public-key-p
 문서가 코드와 어긋나지 않도록, 현재 코드에서 확인한 한계를 그대로 적습니다. 대부분은 단일 인스턴스·내부 네트워크 운영을 전제로 한 선택입니다.
 
 **인증(IAM)**
-- **JWT 개인키가 PEM 설정이 없으면 Redis에 평문(무기한)으로 저장**됩니다. Redis에 접근할 수 있으면 토큰을 위조할 수 있으므로 PEM을 설정하세요. 키 **회전 기능은 없습니다**(`kid` 하나, JWKS 키 하나). 또한 `application-secret.yaml.example`의 `private-key-path`는 코드가 읽지 않습니다(읽는 속성은 `private-key-pem`).
-- **인메모리 상태**: 요청 제한, 2FA 티켓, OAuth 인가 코드, TOTP 재사용 방지 맵은 프로세스 메모리에 있어 **재시작 시 사라지고 다중 인스턴스에서 일관되지 않습니다.** 사용되지 않은 티켓/코드는 청소되지 않습니다.
-- **세션 상한 미구현**: `max-active-sessions-per-user`는 설정값만 있고 적용되지 않습니다. 세션 만료는 로그인 후 30일의 절대값입니다(활동으로 연장되지 않음).
-- 같은 IP+UA 세션 정리 경로는 킬스위치를 발행하지 않습니다(해당 세션의 리프레시는 막히지만 이미 발급된 액세스 토큰은 만료까지 유효).
-- 킬스위치는 Redis에 의존하며 Redis 장애 시 **fail-open**입니다. 구독자(`KillSwitchSubscriber`)는 로그만 남기고 아무 동작도 하지 않습니다.
+- **JWT 개인키 보호는 선택 사항입니다.** `DORO_IAM_JWT_KEY_ENCRYPTION_SECRET`을 설정하지 않으면 PEM 설정이 없는 경우 개인키가 Redis에 **평문(무기한)**으로 남습니다(기동 시 ERROR 로그로 알림). 키 회전은 이전 공개키 게시까지만 지원하며, Redis에 있는 키를 교체하는 도구는 없습니다(절차는 `application.yaml` 주석).
+- **인메모리 상태**: 요청 제한, 2FA 티켓, OAuth 인가 코드, TOTP 재사용 방지 맵은 프로세스 메모리에 있어 **재시작 시 사라지고 다중 인스턴스에서 일관되지 않습니다.** (만료된 항목은 주기적으로 청소하고 개수 상한이 있습니다.)
+- **OAuth/OIDC는 미완성**입니다: `client_id` 등록소 없음, `/authorize`가 JSON 반환, 인가 코드 인메모리, `refresh_token` grant·`id_token`·`userinfo`·`scope` 없음.
+- 킬스위치는 Redis에 의존하며 Redis 장애 시 **fail-open**입니다. 세션 상한·같은 기기 정리는 동시 로그인에서 잠깐 초과할 수 있습니다(직렬화하지 않음).
 - Guard 튜플 쓰기는 실패해도 DB 변경이 성공으로 처리됩니다(삭제 후 쓰기 사이 장애 시 관리자 튜플이 일시 사라질 수 있음 → 기동 시 전체 재동기화로 복구).
-- 이메일은 대소문자를 정규화하지 않습니다. 가입은 확인 후 삽입이라 동시 가입 경합이 있습니다. `lookup`·가입 409·로그인 오류 구분으로 **계정 존재 여부가 노출**됩니다(요청 제한으로 완화).
-- `PATCH /users/me`에 `name`만 보내면 `profileImageUrl`이 null이 됩니다. 사용자 상태(`LOCKED`/`SUSPENDED`)를 바꾸는 API가 없습니다. 잘못된 `role` 값은 500이 됩니다.
-- 일부 로그에 이메일이 그대로 남습니다(마스킹은 검증 오류 값에만 적용).
-- JWKS의 `n`은 선행 0x00 바이트가 붙을 수 있어 엄격한 JWT 라이브러리에서 실패할 수 있습니다(SDK는 처리).
+- `lookup`·가입 409·로그인 오류 구분으로 **계정 존재 여부가 노출**됩니다(요청 제한으로 완화). 이메일은 새 가입부터 소문자로 저장하고 조회는 대소문자를 무시하지만, `lower(email)` 조회는 인덱스를 타지 않습니다(DB 함수형 인덱스는 별도 Flyway 스크립트 필요).
+- 사용자 상태(`LOCKED`/`SUSPENDED`)를 바꾸는 API와 첫 관리자 부트스트랩 API가 없습니다.
 - Flyway는 시작할 때마다 `repair()` 후 `migrate()`를 실행합니다(체크섬 불일치를 가릴 수 있음).
 
 **인가(Guard)**
-- **`Expand` RPC는 선언만 되어 있고 구현되지 않았습니다.** `check` 응답의 `depth`는 항상 0입니다.
-- **튜플·스키마 쓰기에 타입 검증이 없습니다.** 오타가 조용히 저장되고, 직접 튜플은 스키마 없이도 일치합니다.
-- 기본 스키마의 `system#admin`, `group#member` 같은 항은 TTU로 해석되어 **사실상 동작하지 않습니다.** 그룹 멤버십은 `…@group:eng#member` 형태의 **userset 튜플**이 처리합니다.
-- **다중 인스턴스**: 스키마는 시작 시에만 DB에서 읽고 등록한 인스턴스만 갱신합니다. 캐시도 인스턴스 로컬(최대 60초). Redis는 의존성·설정만 있고 **코드에서 쓰지 않습니다.**
-- 스키마 등록은 전체 교체이며 동시 등록 시 `version` 유일 제약 충돌(500)이 가능합니다. 기동 시 DB 오류가 나면 DB의 활성 스키마 대신 클래스패스 기본 스키마로 조용히 폴백합니다.
-- `doro.guard.engine.cache-ttl-seconds`는 읽는 코드가 없고(TTL 60초 하드코딩), gRPC 입력은 REST와 달리 빈 값 검증이 없으며, gRPC는 TLS가 없습니다.
-- 기본 모드가 `OFF`라서 설정 없이는 **인증이 없습니다.** 운영에서는 `ENFORCE`로 두세요.
-- 서비스 토큰 경고 로그의 키에 요청 경로가 들어가 인증 없는 임의 경로 요청이 많으면 메모리가 늘 수 있습니다.
+- **검증 모드 기본값이 `WARN`입니다.** 스키마에 없는 타입/릴레이션 튜플과 오타 있는 스키마를 로그로만 알리고 통과시킵니다. 로그를 확인한 뒤 `ENFORCE`로 올리세요. 직접 튜플은 스키마 없이도 일치하는 평가 규칙 자체는 그대로입니다.
+- 기본 스키마의 `system#admin`, `group#member` 같은 항은 TTU로 해석되어 **사실상 동작하지 않습니다.** 그룹 멤버십은 `…@group:eng#member` 형태의 **userset 튜플**이 처리합니다(Expand는 이런 빈 TTU 항을 트리에서 생략).
+- **인가 캐시는 인스턴스 로컬**이라 다른 인스턴스의 튜플 변경이 최대 TTL만큼 늦게 보입니다. 스키마 등록은 전체 교체입니다.
+- gRPC는 TLS가 없습니다. 기본 모드가 `OFF`라서 설정 없이는 **서비스 인증이 없습니다**(운영에서는 `ENFORCE`).
+- Guard에는 Redis 의존성이 없습니다(이전의 미사용 Redis 설정 제거).
 
 **SDK·포털·인프라**
-- SDK는 세션 폐기를 확인하지 않고 `aud`를 검증하지 않으며, `issuer-validation` 기본은 OFF입니다.
-- 포털은 모든 계정의 액세스/리프레시 토큰을 `localStorage`에 보관합니다(XSS가 있으면 유출 — 게이트웨이 CSP가 주된 완화책). "모든 계정에서 로그아웃"은 서버에서는 활성 계정의 세션만 종료합니다.
-- 개발자 편의 링크(`localhost:28080/28081` Swagger)가 관리자 앱 런처에 하드코딩돼 있습니다.
+- SDK는 **세션 폐기(킬스위치)를 확인하지 않습니다.** 폐기된 액세스 토큰이 서브 서비스에서는 만료(기본 15분)까지 유효합니다. 확인하려면 IAM 쪽 조회 수단이 먼저 필요합니다. `issuer-validation` 기본은 OFF이고, Guard와의 gRPC는 평문입니다.
+- 포털은 모든 계정의 액세스/리프레시 토큰을 `localStorage`에 보관합니다(XSS가 있으면 유출 — 게이트웨이 CSP가 주된 완화책).
 - Loki는 보존 기간 설정이 없고 root로 실행되며, Promtail은 호스트의 **모든** 컨테이너 로그를 수집합니다. CI는 테스트를 실행하지 않고 배포합니다.
-- 액추에이터 `prometheus` 엔드포인트는 노출 목록에 있지만 Micrometer Prometheus 레지스트리 의존성이 없습니다.
+- 백엔드 테스트는 H2에서 돌아 PostgreSQL 전용 SQL(Guard V3 부분 유니크 인덱스, `ON CONFLICT`)은 테스트로 검증되지 않습니다.
 
 ---
 
