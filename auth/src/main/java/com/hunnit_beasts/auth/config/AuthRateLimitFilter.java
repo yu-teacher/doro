@@ -1,6 +1,7 @@
 package com.hunnit_beasts.auth.config;
 
 import com.hunnit_beasts.auth.common.web.ClientIpResolver;
+import com.hunnit_beasts.auth.common.web.RequestPaths;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -111,7 +112,8 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     }
 
     private static Bucket bucketOf(HttpServletRequest request) {
-        String uri = request.getRequestURI();
+        // 컨트롤러 매핑과 같은 경로로 판단한다 (원시 URI 는 /log%69n 같은 인코딩으로 빗나간다)
+        String uri = RequestPaths.canonical(request);
         if ("POST".equals(request.getMethod())) {
             return switch (uri) {
                 case "/api/v1/auth/login", "/api/v1/auth/2fa/login" -> Bucket.LOGIN;

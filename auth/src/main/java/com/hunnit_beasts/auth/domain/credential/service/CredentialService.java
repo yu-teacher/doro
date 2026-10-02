@@ -21,7 +21,7 @@ public class CredentialService {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void recordFailedAttempt(UUID userId) {
-        if (credentialRepository.incrementFailedAttempts(userId) == 0) {
+        if (credentialRepository.incrementFailedAttempts(userId, Instant.now()) == 0) {
             return;
         }
         Instant lockedUntil = Instant.now().plus(Credential.LOCK_DURATION_MINUTES, ChronoUnit.MINUTES);
