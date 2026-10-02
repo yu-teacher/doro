@@ -6,7 +6,7 @@
 > 서비스는 로그인·세션·2FA·권한 판정을 직접 만들지 않고, Doro SDK 한 줄로 위임합니다.
 
 이 문서는 **소스 코드를 직접 읽고** 작성했습니다. 구현되지 않았거나 한계가 있는 부분은 숨기지 않고 [알려진 한계](#-알려진-한계와-설계-메모)에 적었습니다.
-(`docs/USER_GUIDE.md`는 코드와 여러 곳이 다르니 이 README와 [`docs/DORO_AGENT_GUIDE.md`](docs/DORO_AGENT_GUIDE.md)를 기준으로 삼으세요.)
+(이 README는 개요이고, 따라 하기 좋은 예제는 [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md), 연동 시 주의점과 검증 명령은 [`docs/DORO_AGENT_GUIDE.md`](docs/DORO_AGENT_GUIDE.md)에 있습니다. 문서가 코드와 다르면 **코드가 맞습니다.**)
 
 ---
 
@@ -538,10 +538,10 @@ cd web && npm test          # 포털 단위 테스트 (vitest)
 
 | 문서 | 내용 |
 |---|---|
-| [`docs/DORO_AGENT_GUIDE.md`](docs/DORO_AGENT_GUIDE.md) | 코드 검증 기반 연동 가이드(본문은 보안 강화 이전 기준이라 부록과 함께 읽을 것) |
+| [`docs/DORO_AGENT_GUIDE.md`](docs/DORO_AGENT_GUIDE.md) | 코드 검증 기반 연동 가이드: 실제 동작, 하지 말아야 할 것, 검증 명령, 알려진 한계 |
 | [`docs/BACKUP_RUNBOOK.md`](docs/BACKUP_RUNBOOK.md) | 백업·복원·오프사이트 |
-| [`docs/GATEWAY_ROUTING_RULES.md`](docs/GATEWAY_ROUTING_RULES.md) | 게이트웨이 라우팅 규칙(일부 낡음) |
-| [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) | ⚠ 코드와 다른 부분이 많음 — 참고만 |
+| [`docs/GATEWAY_ROUTING_RULES.md`](docs/GATEWAY_ROUTING_RULES.md) | 게이트웨이 라우팅 규칙(매칭 순서, 새 서비스 추가, 수동 반영 절차) |
+| [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) | 사용자 가이드: IAM, OAuth/OIDC, Guard, SDK, 새 서비스 5단계, 문제 해결(코드 기준으로 재작성) |
 | [`AGENTS.md`](AGENTS.md) | 엔지니어링 룰(Zanzibar 위임 원칙, 서비스 추가 절차, 관측성 표준) |
 
 **엔지니어링 원칙 요약**: 권한 분기문 하드코딩 금지(판정은 Guard에 위임) · DB 변경은 Flyway 버전 스크립트만(`ddl-auto: validate`) · 비밀번호는 `CustomArgon2PasswordEncoder` · 세션 DB 상태와 Redis 무효화는 한 흐름에서 동기화 · 로그는 stdout + `traceId` 전파 · 시크릿·토큰·세션 ID는 로그에 남기지 않음.

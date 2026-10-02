@@ -1,49 +1,196 @@
-# 🛡️ DORO Platform & Blog 배포 및 게이트웨이 라우팅 규칙 (AGENTS.md)
+# 🛡️ DORO 게이트웨이 라우팅 규칙
 
-본 문서는 DORO 플랫폼 마이크로서비스 생태계에서 서비스 추가, API 개발 및 서버 배포 시 발생하는 라우팅 충돌 및 누락을 원천 차단하기 위한 에이전트 필수 준수 규칙입니다.
+본 문서는 DORO 플랫폼의 게이트웨이(nginx)에 서비스를 추가하거나 API 경로를 바꿀 때 생기는 라우팅 충돌·누락을 막기 위한 에이전트/개발자 필수 규칙이다. **기준은 `gateway/nginx.conf`(게이트웨이)와 `web/nginx.conf`(포털 컨테이너 내부)이며, 이 문서와 설정이 다르면 설정이 맞다.**
 
----
-
-## 1. 🌐 게이트웨이(Nginx) 라우팅 검증 필수 원칙
-
-### ① 단일 게이트웨이(Port 80) 라우팅 우선순위 엄수
-- 모든 서브 서비스(Blog, Portal 등)는 `doro-gateway`(포트 80)를 통해 단일 진입점으로 통합됩니다.
-- Nginx의 `location` 블록 평가 우선순위(정확 매칭 `=` > 프리픽스 매칭 > 일반 매칭)를 고려하여, 광범위한 와일드카드(`/api/v1/`, `/`) 앞에 **특수 목적 API를 반드시 명시적으로 선언**해야 합니다.
-  - **DORO IAM 전용 API**:
-    - `/api/v1/auth/` (로그인, 회원가입, 2FA 등) -> `iam_upstream`
-    - `/api/v1/sessions/` (세션 관리, 킬스위치) -> `iam_upstream`
-    - `/api/v1/admin/users/` (IAM 유저 관리) -> `iam_upstream`
-    - `= /api/v1/users/me/password` (비밀번호 변경) -> `iam_upstream`
-  - **중앙 관제 및 스토리지 API**:
-    - `/loki/` (Loki 중앙 로그 쿼리) -> `loki_upstream` (누락 시 중앙 관제 로그 빈 화면 발생)
-    - `/media/` (MinIO 이미지/미디어 서빙) -> `minio_upstream`
-  - **DORO Blog 전용 API**:
-    - `/api/v1/` (포스트, 시리즈, 태그, 블로그 작가 프로필 등) -> `blog_api_upstream`
-
-### ② 배포 시 게이트웨이 동기화 체크리스트
-새로운 기능이나 서브 서비스를 배포할 때는 반드시 아래를 점검합니다:
-1. `mini:/home/ysm/doro/gateway/nginx.conf`에 해당 서비스의 `upstream`과 `location` 프록시가 정의되어 있는가?
-2. `nginx -t` 검사를 수행하고 무중단 리로드(`docker exec doro-gateway nginx -s reload`)가 정상 완료되었는가?
-3. 외부 IP(`http://112.156.246.132/`)를 통한 실제 curl 호출 시 404/502/500 없이 의도한 서비스로 정확히 전달되는가?
+- 검증 기준 커밋: `12d6582` (2026-10-02), 설정 파일을 전부 읽고 작성. 실제 서버에 배포된 설정과의 일치 여부는 `[미검증]`(§8 참고).
+- 인증·인가 연동 사실은 `docs/DORO_AGENT_GUIDE.md` 를 본다.
 
 ---
 
-## 2. 🔌 백엔드 API 메서드 호환성 및 예외 처리 원칙
+## 1. 진입점과 서버 구조
 
-1. **리소스 수정(PUT/PATCH) 유연성 확보**:
-   - 사용자/엔티티 정보 수정 엔드포인트는 클라이언트 및 중앙 포털 라이브러리(Axios 등)에 따라 `PUT` 또는 `PATCH`로 호출될 수 있습니다.
-   - 단일 메서드만 허용하지 말고, `@RequestMapping(value = "/me", method = {RequestMethod.PUT, RequestMethod.PATCH})`와 같이 상호 호환되도록 매핑합니다.
-2. **글로벌 예외 처리(GlobalExceptionHandler) 표준화**:
-   - `HttpRequestMethodNotSupportedException`은 절대 500(서버 내부 오류)으로 응답해서는 안 되며, 반드시 **`405 METHOD_NOT_ALLOWED`**로 처리합니다.
-   - `HttpMessageNotReadableException`(요청 본문 누락/JSON 파싱 오류)은 **`400 BAD_REQUEST`**로 처리합니다.
+- **실제 진입점은 443(HTTPS, TLS 1.2/1.3, HTTP/2)이다.** 모든 서비스가 이 한 개의 origin 으로 묶인다.
+- **80 은 진입점이 아니다.** `/.well-known/acme-challenge/`(인증서 발급 검증, 정적 `root`)만 직접 응답하고, 나머지는 전부 `301 https://$host$request_uri` 로 리다이렉트한다.
+- 컨테이너 내부 loopback 전용 서버 `127.0.0.1:8099` 가 있다(`204` 만 반환). 외부에 노출되지 않고, `/csp-report` 의 요청 본문을 로그로 남기기 위한 프록시 대상이다.
+- 게이트웨이는 docker 네트워크 이름으로 업스트림에 접속한다(호스트 포트 불필요). 게이트웨이 컨테이너는 **compose 프로젝트 밖**이며 같은 docker 네트워크에 붙어 있어야 한다.
+- 이 서버 블록에는 `server_name` 으로 공개 도메인, `localhost`, `_`(그 외 전부)이 지정돼 있다. 인증서는 서버의 Let's Encrypt 경로를 읽는다(경로는 `gateway/nginx.conf` 참고).
+
+### 업스트림
+
+| upstream | 대상 | 용도 |
+|---|---|---|
+| `portal_upstream` | `web:80` | 포털(통합 계정 센터) SPA |
+| `iam_upstream` | `auth-api:8080` | IAM(인증, OAuth/OIDC, 관리자 API) |
+| `blog_web_upstream` | `doro-blog-web:80` | 블로그 프런트엔드(기본 메인 웹) |
+| `blog_api_upstream` | `doro-blog-backend:8082` | 블로그 백엔드 API |
+| `minio_upstream` | `doro-minio:9000` | 업로드 미디어(MinIO) |
+| `loki_upstream` | `loki:3100` | 로그 조회(Loki) |
+| `menu_upstream` | `doro-menu:80` | 도로메뉴 서브 서비스 |
+
+**Guard(`guard-api`)는 업스트림에 없다. Guard 는 게이트웨이로 프록시하지 않는다**(8081/9090 은 내부 전용, §5).
 
 ---
 
-## 3. 🖥️ 멀티 프론트엔드(SPA) 마운트 및 라우터 격리 원칙
+## 2. location 목록과 매칭 우선순위
 
-1. **하위 경로(Sub-path) 마운트 SPA의 `basename` 검증**:
-   - `/portal` 등 하위 경로에 호스팅되는 React SPA는 `BrowserRouter`에 `basename="/portal"`을 지정하여 내부 네비게이션 시 루트(`/`)로 이탈하지 않도록 방어합니다.
-2. **정적 에셋(Assets) 충돌 방지**:
-   - Vite/Webpack 빌드 시 `base` 설정과 게이트웨이의 라우팅이 일치하여 `/assets/index-*.js` 요청이 올바른 웹 컨테이너로 전달되는지 확인합니다.
-3. **인앱 액션 우선 제공**:
-   - 외부 포털 링크로 사용자를 이탈시켜 튕김을 유발하기보다, 블로그 내 모달에서 즉시 처리 가능한 원스톱 API(DORO ID 인앱 회원가입/로그인 등)를 기본 제공합니다.
+nginx 의 평가 순서(이 순서를 모르고 location 을 추가하면 반드시 충돌한다):
+
+1. 서버 수준 `rewrite ^(/api/v1/.*?)/+$ $1;` 이 **먼저** 실행된다 — `/api/v1/...` 끝의 슬래시를 제거한다(Spring 이 깔끔하게 매칭되도록).
+2. **정확 일치(`= /path`)** 가 있으면 즉시 확정.
+3. 없으면 **가장 긴 프리픽스** 를 기억해 두고(`^~` 가 아니면),
+4. **정규식 location 을 설정 파일 순서대로** 검사해 **처음 맞는 것이 프리픽스를 이긴다.** 맞는 정규식이 없으면 기억해 둔 가장 긴 프리픽스를 쓴다.
+
+즉 정규식 location(현재 1개)은 **프리픽스보다 우선**한다. 같은 종류끼리는 프리픽스는 길이, 정규식은 파일 순서가 결정한다.
+
+### 2.1 정확 일치 (`=`)
+
+| location | 동작 |
+|---|---|
+| `= /csp-report` | **POST 만 허용**(`limit_except`), 속도 제한 30회/분(burst 20), 본문 4KB 제한, 본문을 `CSP-REPORT` 접두어 로그로 stdout 에 기록 → `127.0.0.1:8099`(204). Loki 로 수집됨 |
+| `= /_auth_admin` | **`internal`**(외부 접근 불가). `/loki/` 의 `auth_request` 전용. IAM `GET /api/v1/admin/authz` 로 보내되 본문을 전달하지 않고 `Authorization` 헤더와 `X-Real-IP` 만 넘긴다 |
+| `= /api/v1/users/me/password` | → `iam_upstream` (비밀번호 변경) |
+| `= /api/v1/users/me` | → **`$users_me_upstream`**(referer/메서드 맵, §3) |
+| `= /oauth2/consent` | → **`portal_upstream`**. OAuth 동의 화면은 포털 SPA 가 렌더링한다. 정확 일치라 아래 `/oauth2/` 프리픽스(IAM)보다 우선한다. 브라우저 흐름: IAM `/oauth2/authorize` → 302 `/oauth2/consent?...` → 포털 |
+| `= /shield.svg` | → `portal_upstream/shield.svg` (포털 아이콘) |
+| `= /menu` | `301 /menu/` |
+
+### 2.2 프리픽스 (가장 긴 것이 선택됨)
+
+| location | 대상 | 비고 |
+|---|---|---|
+| `/media/` | `minio_upstream/doro-blog-media/` | 업로드 미디어. **sandbox CSP** 별도 적용(§4.3) |
+| `/loki/` | `loki_upstream/loki/` | **관리자 전용**: `auth_request /_auth_admin`, **GET/HEAD 만 허용**(`limit_except`, 나머지 메서드는 거부). 쓰기(push)는 Promtail 이 docker 네트워크로 직접 수행. 이 location 이 없으면 중앙 관제 로그 화면이 비게 된다 |
+| `/api/v1/auth` | `iam_upstream` | 로그인/가입/2FA/로그아웃/토큰 갱신 등. **끝 슬래시 없는 프리픽스**라 `/api/v1/auth` 로 *시작하는* 모든 경로가 걸린다 |
+| `/api/v1/sessions` | `iam_upstream` | 세션 관리, `sessions/current`(SDK 폐기 확인). 끝 슬래시 없음 |
+| `/api/v1/admin/users` | `iam_upstream` | 사용자 관리(목록, 역할 변경, 2FA 초기화). 끝 슬래시 없음 |
+| `/api/v1/` | `blog_api_upstream/api/v1/` | **블로그 백엔드(나머지 전부)**. 위의 IAM 전용 경로보다 짧아서 IAM 쪽이 이기고, 그 외는 여기로 온다 |
+| `/iam/` | `iam_upstream/` | `/iam` 접두어를 떼고 IAM 으로 전달(IAM 직접 접근용) |
+| `/oauth2/` | `iam_upstream/oauth2/` | OAuth/OIDC(`authorize`, `token`, `userinfo`). `= /oauth2/consent` 만 예외(포털) |
+| `/.well-known/` | `iam_upstream/.well-known/` | JWKS, OIDC discovery |
+| `/assets/` | **`$assets_upstream`**(referer 맵, §3) | 포털/블로그 빌드 산출물 구분 |
+| `/menu/` | `menu_upstream/` | 도로메뉴(`/menu` 접두어 제거) |
+| `/doro/` | `menu_upstream/doro/` | 도로메뉴 정적 자산 |
+| `/` | `blog_web_upstream` | **기본값**: 블로그 프런트엔드(메인 웹) |
+
+### 2.3 정규식 (프리픽스보다 우선)
+
+| location | 대상 | 비고 |
+|---|---|---|
+| `~ ^/(logs\|login\|signup\|account\|portal)(/.*)?$` | `portal_upstream` | 포털 SPA 라우트. 포털 SPA 의 실제 라우트는 `/login`, `/signup`, `/account`, `/logs`(+ 정확 일치 `/oauth2/consent`)이다. `/portal` 도 이 정규식에 걸려 포털로 가지만 SPA 에 전용 라우트는 없다(`*` 폴백 → 루트 리다이렉트) |
+
+위 목록에 없는 경로(예: `/swagger-ui.html`, `/v3/api-docs`, `/actuator/**`, `/health`)는 **IAM 으로 가지 않고** `/` 로 떨어져 블로그 프런트엔드가 받는다. 의도된 것이다 — 이 경로들을 게이트웨이로 노출하려면 별도 검토(인증/보안)가 필요하다.
+
+---
+
+## 3. referer 기반 맵 (두 가지)
+
+한 경로를 두 서비스가 공유하기 때문에 `Referer` 로 갈린다. **브라우저가 보내는 `Referer` 에 의존하는 규칙이므로 취약하다.**
+
+### 3.1 `/assets/` → `$assets_upstream`
+```
+default                                              → blog_web_upstream
+~*(logs|account|login|signup|oauth2|portal)         → portal_upstream   (대소문자 무시, referer 안에 해당 단어가 *어디든* 있으면)
+```
+포털과 블로그가 둘 다 Vite 빌드(`/assets/index-*.js` …)를 같은 경로로 내보내기 때문이다. **주의**: 블로그 URL 에 위 단어가 들어 있으면(예: `/posts/how-to-login`) 그 페이지의 `/assets/*` 요청이 포털로 가서 깨진다. referer 가 없는 직접 요청은 블로그로 간다.
+
+### 3.2 `= /api/v1/users/me` → `$users_me_upstream`
+키는 `"$http_referer:$request_method"` 이다.
+```
+default                                              → blog_api_upstream  (블로그 프로필)
+~*(logs|account|login|signup|oauth2|portal):         → iam_upstream       (포털에서 온 요청)
+~:PATCH$                                             → iam_upstream       (PATCH 는 항상 IAM)
+```
+**주의**: 두 번째 규칙은 referer **문자열이 해당 단어로 끝나야**(바로 뒤가 `:`) 맞는다. `/account?tab=1`, `/account/`, `/oauth2/consent?client_id=...` 처럼 쿼리나 슬래시가 붙은 referer 는 맞지 않아 블로그 API 로 간다(`GET`). 새로 `/api/v1/users/me` 를 호출하는 포털 화면을 추가하면 이 점을 확인할 것. `PUT /api/v1/users/me` 는 IAM 에 없으므로(IAM 은 `GET`/`PATCH`) 포털에서 그 경로로 PUT 을 쓰지 않는다.
+
+---
+
+## 4. 헤더·보안 규칙 (443 서버)
+
+### 4.1 클라이언트 IP 헤더는 **덮어쓴다**
+모든 프록시 location 이 `X-Real-IP $remote_addr`, `X-Forwarded-For $remote_addr`(이어붙이는 `$proxy_add_x_forwarded_for` **아님**), `X-Forwarded-Proto $scheme`, `Host $host` 를 설정한다. 클라이언트가 보낸 `X-Real-IP`/`X-Forwarded-For` 는 신뢰하지 않는다. IAM 은 신뢰 프록시(기본 루프백+도커 브리지)에서 온 연결의 `X-Real-IP` 만 클라이언트 IP 로 쓴다(요청 제한·세션 기록·로그). 새 location 에도 같은 헤더 4개를 반드시 넣는다. (`/shield.svg` 는 `Host` 만 넣는 정적 예외.)
+
+### 4.2 공통 보안 헤더 (server 수준, `always`)
+`X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `X-XSS-Protection: 0`, `Strict-Transport-Security: max-age=31536000; includeSubDomains`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy`, 그리고 **`Content-Security-Policy`(강제 모드, Report-Only 아님)**. 위반은 `report-uri /csp-report` 로 계속 수집된다.
+- CSP 는 `default-src 'self'` 기반이며, 인라인 GA4 초기화 스크립트(세 앱 공통)는 `script-src` **해시 하나**로 허용한다. `index.html` 의 인라인 스크립트를 바꾸면 해시도 바꿔야 한다 — `scripts/check-csp-hash.sh`(CI `deploy.yml` 이 `web/index.html` 을 검사. blog/menu 는 수동 인자로 검사).
+- 새 외부 출처(폰트/스크립트/API/이미지)를 쓰면 CSP 에 추가해야 한다. 문제가 생기면 임시로 헤더 이름을 `Content-Security-Policy-Report-Only` 로 되돌릴 수 있다고 설정 주석에 적혀 있다.
+- **nginx 는 `location` 안에 `add_header` 가 하나라도 있으면 server 수준 `add_header` 를 상속하지 않는다.** location 에 헤더를 추가하려면 공통 헤더를 다시 적어야 한다(`/media/` 가 그렇게 한다).
+
+### 4.3 `/media/` — 업로드 파일 격리
+업스트림(MinIO)이 붙이는 `X-Content-Type-Options`, `X-XSS-Protection`, `Strict-Transport-Security`, `Content-Security-Policy` 는 `proxy_hide_header` 로 숨기고, 공통 헤더를 다시 붙이되 CSP 는 **`default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; sandbox`** 로 덮어쓴다. 업로드된 파일(특히 SVG)이 문서로 직접 열려도 스크립트/외부 로딩이 실행되지 않게 하는 이중 방어다.
+
+### 4.4 기타
+- `client_max_body_size 30M`(전역). `/csp-report` 만 4k.
+- gzip 은 text/json/js/xml/svg 에 켜져 있다.
+- `/loki/` 는 `auth_request` 결과가 401/403 이면 그대로 거부, IAM 에 닿지 못해도 요청은 거부된다(500). IAM 의 `GET /api/v1/admin/authz` 는 JWT 역할(ADMIN 이상) + Guard `system:doro#admin` 을 모두 요구한다.
+- 업스트림 이름에 밑줄(`iam_upstream` 등)이 있으므로 `Host` 를 **반드시 `$host` 로 전달**해야 한다(밑줄 포함 Host 는 Tomcat 이 400 으로 거부). 새 location 에서도 `proxy_set_header Host $host;` 를 빼지 말 것.
+
+---
+
+## 5. 게이트웨이로 노출되지 않는 것 (의도된 것)
+
+- **Guard**(REST 8081, gRPC 9090): 프록시하지 않는다. 서비스 인증 기본이 `OFF` 이고 TLS 가 없으므로 외부에 노출하면 안 된다. `/api/v1/guard/**` 는 게이트웨이에 location 이 없어 **블로그 API(`/api/v1/`)로 흘러가므로**, Guard API 가 게이트웨이로 열린다고 오해하지 말 것.
+- **IAM 관리자 OAuth 클라이언트 API `/api/v1/admin/oauth/clients`**: 현재 location 이 없고(`/api/v1/admin/users` 만 IAM) `/api/v1/` 에 걸려 **블로그 API 로 간다.** 게이트웨이 경유로 클라이언트를 등록하려면 location(§6 규칙에 따라 `/api/v1/admin/oauth` 추가)이 필요하다. `[코드: gateway/nginx.conf — 의도인지 누락인지 확인 필요]`
+- IAM 의 `/swagger-ui.html`, `/v3/api-docs`, `/actuator/**`, `/health`, IAM `GET /api/v1/admin/authz`(내부 `auth_request` 전용).
+- 데이터 저장소(PostgreSQL, Redis, Loki, Grafana, Guard)는 compose 에서 기본 `127.0.0.1` 바인딩이다. 포털(3000)과 auth(8080)의 호스트 포트는 compose 기본이 `0.0.0.0` 이므로(`WEB_BIND`/`AUTH_BIND`) 운영에서는 `.env` 로 `127.0.0.1` 로 제한하고 외부에는 80/443 만 연다(서버 실제 값은 `[미검증]`).
+
+---
+
+## 6. 새 서비스(또는 새 API 경로) 추가 규칙
+
+1. **upstream 추가**: `http {}` 안에 `upstream {name}_upstream { server <docker 컨테이너/서비스 이름>:<포트>; }`. docker 네트워크 이름으로 접속하므로 호스트 포트는 필요 없다. 게이트웨이 컨테이너가 그 서비스와 **같은 docker 네트워크**에 있어야 한다.
+2. **location 추가**(443 서버 블록): 서비스 전용 경로 접두사를 정해 `proxy_pass` 하고 **§4.1 의 헤더 4개**(`Host $host`, `X-Real-IP $remote_addr`, `X-Forwarded-For $remote_addr`, `X-Forwarded-Proto $scheme`)를 넣는다. 서비스를 하위 경로(`/menu/` 처럼)에 올리면 `proxy_pass http://upstream/;`(끝 슬래시)로 접두어를 떼는지 유지하는지 의도를 분명히 한다.
+3. **우선순위 함정**
+   - **광범위한 프리픽스(`/api/v1/`, `/`) 보다 구체적인 경로를 쓰라.** 새 API 가 `/api/v1/` 아래에 있으면 기본으로 블로그 백엔드에 걸린다. IAM 계열처럼 다른 서비스로 보내려면 `/api/v1/<새경로>` 프리픽스(또는 정확 일치)를 **추가**해야 한다(파일 내 위치는 상관없다 — 프리픽스는 길이로 결정).
+   - **끝 슬래시 없는 프리픽스는 넓게 걸린다**: `/api/v1/auth`, `/api/v1/sessions`, `/api/v1/admin/users` 는 `...` 로 시작하는 모든 경로를 잡는다. 블로그 API 에 이 이름으로 *시작하는* 경로(`/api/v1/authors` 처럼)를 만들면 IAM 으로 가 버린다.
+   - **정규식 location 은 프리픽스보다 우선**한다. 포털 정규식이 `/logs`, `/login`, `/signup`, `/account`, `/portal` 로 시작하는 **모든** 경로를 가져가므로, 새 서비스 경로가 이 이름으로 시작하면 의도와 상관없이 포털로 간다. 새 정규식을 추가하면 파일 순서가 결정하므로 기존 규칙과 겹치지 않는지 확인한다.
+   - **정확 일치(`=`)는 항상 최우선**이다. 한 경로만 다른 곳으로 보내야 하면 `= /경로` 로 선언한다(`= /oauth2/consent` 가 그 예).
+   - **referer 맵은 새 화면에서 깨지기 쉽다**(§3). 가능하면 referer 에 의존하지 말고 경로를 분리한다. 새 포털 화면 이름을 맵의 정규식에 추가해야 하는 경우도 있다(`/assets/` 맵은 단어가 referer 어디든 있으면 맞고, `users/me` 맵은 referer 끝에서만 맞는다).
+   - 서버 `rewrite` 가 `/api/v1/...` 끝 슬래시를 제거하므로, 끝 슬래시가 의미 있는 API 경로는 영향을 받는다.
+4. **인증이 필요한 내부/관리자 경로**는 `/loki/` 처럼 `auth_request /_auth_admin;` 로 보호한다. 클라이언트가 보낸 인증 헤더가 그대로 IAM 으로 전달되는 점과, 쓰기 메서드를 `limit_except` 로 막을지 함께 결정한다.
+5. **CSP·헤더**: 새 서비스가 외부 출처(폰트, 스크립트, API, 이미지)를 쓰면 server 수준 CSP 를 수정한다. location 에 `add_header` 를 넣으면 공통 보안 헤더를 다시 적어야 한다(§4.2).
+6. **Guard 를 프록시하지 말 것.**
+7. **검증**(워크스페이스 룰 §5): 설정 반영 전 `nginx -t`, 반영 후 공개 도메인으로 실제 호출해 의도한 서비스로 가는지 확인한다(404/502/500, 엉뚱한 서비스 응답 여부). 예: `curl -sS -o /dev/null -w '%{http_code}\n' https://<공개 도메인>/<새 경로>`, 헤더 확인은 `curl -sSI`. referer 맵에 걸린 경로는 `-H 'Referer: https://<공개 도메인>/account'` 로도 시험한다.
+
+---
+
+## 7. 포털 컨테이너의 nginx (`web/nginx.conf`)
+
+게이트웨이 뒤의 포털 컨테이너(`doro-web-portal`, 호스트 3000 → 컨테이너 80)가 쓰는 설정이다. 게이트웨이 설정과 혼동하지 말 것(CI 가 이미지로 배포하는 쪽은 이 파일이다).
+
+| location | 동작 |
+|---|---|
+| `/` | 정적 `index.html`, `try_files $uri $uri/ /index.html` (SPA 폴백) |
+| `/api/` | → `auth-api:8080/api/` (IAM 전체) |
+| `= /oauth2/consent` | 프록시하지 않고 `index.html` 반환(SPA 라우트). 아래 `/oauth2/` 보다 우선 |
+| `/oauth2/` | → `auth-api:8080/oauth2/` |
+| `/.well-known/` | → `auth-api:8080/.well-known/` |
+| `= /_auth_admin` | `internal`, IAM `GET /api/v1/admin/authz` |
+| `/loki/` | `auth_request` + GET/HEAD 만 → `loki:3100/loki/` |
+| `= /50x.html` | 오류 페이지 |
+
+- 포털은 `BrowserRouter` 에 **`basename` 을 쓰지 않는다**(루트 기준 라우트). 과거 문서의 `/portal` 하위 경로 마운트·`basename="/portal"` 규칙은 현재 코드에 해당하지 않는다. Vite `base` 도 기본값이다.
+- 포털 컨테이너의 `/api/` 는 IAM 전체를 프록시하지만 **공개 게이트웨이는 그렇지 않다**(§2·§5의 경로 목록이 기준). 로컬에서 포털(3000)로 되는 호출이 게이트웨이에서는 다른 곳으로 갈 수 있으니 게이트웨이 기준으로 확인한다.
+- 포털 개발 서버(`npm run dev`, 3000)는 `/api`·`/oauth2`·`/.well-known` 을 `localhost:8080` 으로 프록시한다(`web/vite.config.ts`).
+
+---
+
+## 8. 배포·운영 — **게이트웨이는 CI 로 배포되지 않는다**
+
+- `.github/workflows/deploy.yml` 은 compose 서비스(postgres, redis, auth-api, guard-api, web, loki, promtail, grafana)만 빌드·배포한다. **`gateway/nginx.conf` 를 바꿔 커밋·푸시해도 서버의 게이트웨이에는 반영되지 않는다.** 블로그/메뉴도 이 워크플로 밖이다.
+- 반영 절차(수동):
+  1. 서버의 **현재 게이트웨이 설정을 백업**한다(실패 시 즉시 되돌릴 사본을 반드시 남긴다).
+  2. 저장소의 `gateway/nginx.conf` 를 서버의 게이트웨이 설정 위치에 복사한다.
+  3. **`nginx -t`**(게이트웨이 컨테이너 안에서)로 문법·참조 검사. 실패하면 반영하지 않고 백업으로 복구한다.
+  4. **무중단 reload**(`nginx -s reload`, 컨테이너 안에서). 컨테이너를 재시작하지 않는다.
+  5. §6-7 의 실제 호출 검증. 문제가 있으면 백업 설정으로 되돌리고 다시 reload.
+- 게이트웨이 컨테이너 이름·실행 방식은 compose 에 정의돼 있지 않아 이 저장소로는 확인할 수 없다. `[미검증]` — 서버에서 실행 중인 컨테이너를 직접 확인하고 그 이름으로 `nginx -t`/`nginx -s reload` 를 실행한다. (과거 문서는 `doro-gateway` 라는 이름을 썼다.)
+- 설정을 바꾼 커밋과 서버 반영은 별개이므로, 두 쪽이 어긋나지 않게(저장소 = 서버) 반영 후 서버 사본과 저장소 사본의 차이를 확인한다.
+- 인증서 갱신은 80 의 `/.well-known/acme-challenge/`(`/var/www/certbot`)를 통한다. 이 location 을 지우지 말 것.
+
+---
+
+## 9. 백엔드 API 호환성·예외 처리 원칙 (유지)
+
+1. **리소스 수정 메서드**: 클라이언트(Axios 등)에 따라 `PUT`/`PATCH` 가 섞일 수 있으면 둘 다 받도록 매핑한다. 단 IAM 의 `/api/v1/users/me` 는 현재 **`PATCH`**, `/api/v1/users/me/password` 는 **`PUT`** 이다(게이트웨이의 `users/me` 맵이 `PATCH` 를 IAM 으로 보내는 것도 이 때문).
+2. **`GlobalExceptionHandler` 표준화**: `HttpRequestMethodNotSupportedException` 은 **405**, `HttpMessageNotReadableException`(본문 누락/JSON 오류)은 **400** 으로 처리하고 500 으로 응답하지 않는다. (IAM·Guard 모두 이 규칙을 따른다.)
+3. **인앱 액션 우선**: 외부 포털 링크로 사용자를 이탈시키기보다 블로그 안에서 즉시 처리할 수 있는 API(DORO ID 인앱 회원가입/로그인 등)를 기본 제공한다.
