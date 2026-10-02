@@ -56,11 +56,16 @@ public class User extends BaseTimeEntity {
         this.status = newStatus;
     }
 
+    /**
+     * 부분 수정: null 필드는 변경하지 않는다. profileImageUrl 이 빈 문자열이면 이미지를 제거한다.
+     */
     public void updateProfile(String name, String profileImageUrl) {
         if (name != null && !name.isBlank()) {
             this.name = name.trim();
         }
-        this.profileImageUrl = profileImageUrl;
+        if (profileImageUrl != null) {
+            this.profileImageUrl = profileImageUrl.isEmpty() ? null : profileImageUrl;
+        }
     }
 
     public boolean isActive() {

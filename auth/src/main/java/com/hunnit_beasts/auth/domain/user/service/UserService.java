@@ -2,6 +2,8 @@ package com.hunnit_beasts.auth.domain.user.service;
 
 import com.hunnit_beasts.auth.common.exception.AuthException;
 import com.hunnit_beasts.auth.common.exception.ErrorCode;
+import com.hunnit_beasts.auth.common.exception.FieldValidationException;
+import com.hunnit_beasts.auth.common.log.LogMasking;
 import com.hunnit_beasts.auth.domain.credential.entity.Credential;
 import com.hunnit_beasts.auth.domain.credential.repository.CredentialRepository;
 import com.hunnit_beasts.auth.domain.session.service.SessionRevocationService;
@@ -12,6 +14,7 @@ import com.hunnit_beasts.auth.domain.user.entity.User;
 import com.hunnit_beasts.auth.domain.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,6 +35,10 @@ public class UserService {
     private final GuardClient guardClient;
     private final UserRelationSyncService userRelationSyncService;
     private final SessionRevocationService sessionRevocationService;
+
+    /** 프로필 이미지(data: URL 포함) 최대 길이. 포털이 보내는 아바타(약 1MB)를 수용하는 기본값. */
+    @Value("${doro.iam.profile.image-max-length:1048576}")
+    private int profileImageMaxLength;
 
     @Transactional(readOnly = true)
     public UserProfileResponse getProfile(UUID userId) {
@@ -59,9 +66,15 @@ public class UserService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new AuthException(ErrorCode.USER_NOT_FOUND));
 
-        user.updateProfile(request.name(), request.profileImageUrl());
-        log.info("User profile updated: userId={}, newName={}, hasImage={}",
-                userId, user.getName(), user.getProfileImageUrl() != null);
+        String image = request.profileImageUrl();
+        if (image != null && image.length() > profileImageMaxLength) {
+            throw new FieldValidationException("profileImageUrl",
+                    "프로필 이미지는 " + profileImageMaxLength + "자 이하여야 합니다.");
+        }
+
+        user.updateProfile(request.name(), image);
+        log.info("User profile updated: userId={}, name={}, hasImage={}",
+                userId, LogMasking.maskName(user.getName()), user.getProfileImageUrl() != null);
 
         boolean hasTotp = credentialRepository.findByUserId(userId)
                 .map(c -> c.getTotpSecret() != null && !c.getTotpSecret().isBlank())
@@ -111,6 +124,11 @@ public class UserService {
         if (!allowed) {
             log.warn("ReBAC Access Denied: adminId={} is not authorized to manage roles", adminId);
             throw new AuthException(ErrorCode.ACCESS_DENIED, "사용자 역할을 변경할 권한이 없습니다.");
+        }
+
+        // 인가(Guard)를 먼저 판정한 뒤에 입력/대상 검증을 하여, 권한 없는 호출자에게 대상 존재 여부를 노출하지 않는다.
+        if (adminId.equals(targetUserId)) {
+            throw new AuthException(ErrorCode.INVALID_INPUT, "본인의 역할은 변경할 수 없습니다.");
         }
 
         User user = userRepository.findById(targetUserId)
@@ -171,8 +189,11 @@ public class UserService {
                 .orElseThrow(() -> new AuthException(ErrorCode.USER_NOT_FOUND));
 
         credential.updateTotpSecret(null);
+        credential.clearPendingTotp();
         credential.resetFailedAttempts();
+        // 2FA 가 풀린 계정의 기존 세션(탈취 가능성 포함)을 모두 종료하여 다시 로그인하게 한다.
+        sessionRevocationService.revokeOtherSessions(targetUserId, null, "TWO_FACTOR_RESET");
         log.info("SECURITY AUDIT: 2FA disabled by Zanzibar ReBAC decision: targetUserId={}, targetEmail={}, adminId={}",
-                targetUserId, targetUser.getEmail(), adminId);
+                targetUserId, LogMasking.maskEmail(targetUser.getEmail()), adminId);
     }
 }

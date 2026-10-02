@@ -23,7 +23,6 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class SessionRevocationService {
 
-    private final SessionService sessionService;
     private final UserSessionRepository sessionRepository;
     private final RefreshTokenService refreshTokenService;
     private final KillSwitchPublisher killSwitchPublisher;
@@ -31,7 +30,7 @@ public class SessionRevocationService {
     /** 본인 소유의 활성 세션만 종료한다. 타인의 세션이면 존재 여부를 노출하지 않도록 SESSION_NOT_FOUND 로 응답한다. */
     @Transactional
     public void revokeOwnSession(UUID userId, UUID sessionId, String reason) {
-        UserSession session = sessionService.getActiveSession(sessionId);
+        UserSession session = getActiveSession(sessionId);
         if (!session.getUserId().equals(userId)) {
             log.warn("Rejected session revocation for a session not owned by the caller: userId={}, sessionId={}",
                     userId, sessionId);
@@ -44,7 +43,7 @@ public class SessionRevocationService {
     @Transactional
     public void revokeOtherSessions(UUID userId, UUID keepSessionId, String reason) {
         if (keepSessionId != null) {
-            UserSession current = sessionService.getActiveSession(keepSessionId);
+            UserSession current = getActiveSession(keepSessionId);
             if (!current.getUserId().equals(userId)) {
                 throw new AuthException(ErrorCode.SESSION_NOT_FOUND);
             }
@@ -56,6 +55,22 @@ public class SessionRevocationService {
             revoke(target, reason);
         }
         log.info("Revoked {} session(s) for user: userId={}, reason={}", targets.size(), userId, reason);
+    }
+
+    /**
+     * 이미 로드된 세션들을 종료한다. (세션 수 제한·동일 기기 재로그인 등 서비스 내부 정책용)
+     * SessionService 가 이 서비스에 의존하므로 순환을 피하려고 조회는 리포지토리를 직접 사용한다.
+     */
+    @Transactional
+    public void revokeSessions(List<UserSession> sessions, String reason) {
+        for (UserSession target : sessions) {
+            revoke(target, reason);
+        }
+    }
+
+    private UserSession getActiveSession(UUID sessionId) {
+        return sessionRepository.findByIdAndIsActiveTrue(sessionId)
+                .orElseThrow(() -> new AuthException(ErrorCode.SESSION_NOT_FOUND));
     }
 
     private void revoke(UserSession session, String reason) {

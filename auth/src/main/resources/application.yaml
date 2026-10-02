@@ -44,6 +44,8 @@ doro:
   oauth:
     # 인가 코드를 발급할 redirect_uri 허용 목록(쉼표 구분, 정확히 일치). 비워 두면 OAuth 인가 요청이 모두 거부된다.
     allowed-redirect-uris: ${DORO_OAUTH_ALLOWED_REDIRECT_URIS:}
+    # 메모리에 보관하는 미사용 인가 코드 상한. 초과하면 신규 발급을 429 로 거부한다. 0 이하는 무제한.
+    max-pending-authorization-codes: ${DORO_OAUTH_MAX_PENDING_AUTHORIZATION_CODES:10000}
   cors:
     # 브라우저에서 IAM 을 직접 호출할 수 있는 Origin 패턴 (쉼표 구분). 와일드카드(*) 전체 허용은 사용하지 않는다.
     allowed-origin-patterns: ${DORO_CORS_ALLOWED_ORIGIN_PATTERNS:https://varen05.asuscomm.com,http://192.168.0.101:*,http://localhost:*,http://127.0.0.1:*}
@@ -52,6 +54,26 @@ doro:
     jwt:
       access-token-validity-seconds: ${DORO_IAM_ACCESS_TOKEN_TTL_SECONDS:900} # 기본 15분. 로그인 유지는 30일 리프레시 토큰(회전)이 담당한다
       refresh-token-validity-seconds: 2592000 # 30일 (1달)
+      # ---------------------------------------------------------------------------------------------
+      # JWT 서명키 보관 및 로테이션
+      #  - private-key-pem / public-key-pem (PKCS#8 / X.509 PEM) 를 주입하면 그 키를 사용한다. 주입하지 않으면 최초 기동 시
+      #    RSA-2048 키를 생성해 Redis 에 보관한다. 이때 개인키는 기본적으로 평문으로 저장되므로(기동 시 ERROR 로그로 경고),
+      #    redis-key-encryption-secret 을 설정하면 AES-256-GCM(PBKDF2-SHA256 파생키, 레코드별 salt/IV)으로 암호화해 저장한다.
+      #    기존 평문 키는 시크릿 설정 후 다음 기동 때 자동으로 암호화 형식으로 재저장된다. 암호화된 키가 있는데 시크릿이
+      #    없거나 틀리면 새 키로 덮어쓰지 않고 기동을 중단한다.
+      #
+      # [키 로테이션 절차] (이전 키로 발급된 토큰이 만료될 때까지 무중단으로 유지)
+      #  1) 새 키쌍을 만든다. 새 kid(예: doro-iam-key-2027-v1)를 정한다. 이전 kid 와 반드시 달라야 한다.
+      #  2) 이전 키의 *공개키* PEM 과 이전 kid 를 previous-public-key-pem / previous-key-id 로 지정하고,
+      #     key-id 를 새 kid 로, private-key-pem / public-key-pem 을 새 키쌍으로 바꾼 뒤 IAM 을 재기동한다.
+      #     (Redis 보관 키를 쓰는 경우: 이전 공개키 PEM 을 먼저 확보하고 Redis 의 doro:iam:jwt:keypair:* 키를 삭제하면 새 키가 생성된다.)
+      #  3) JWKS(/.well-known/jwks.json)에 [새 키, 이전 키] 가 함께 게시되고, 새 토큰은 새 키로 서명되며,
+      #     이전 키로 서명된 토큰은 kid 로 이전 공개키를 찾아 만료 전까지 계속 검증된다. (SDK/Guard 는 JWKS 를 재조회해 반영)
+      #  4) access-token-validity-seconds 가 지난 뒤(리프레시로 발급되는 토큰은 새 키로 서명됨) previous-* 를 비우고 재기동한다.
+      # ---------------------------------------------------------------------------------------------
+      redis-key-encryption-secret: ${DORO_IAM_JWT_KEY_ENCRYPTION_SECRET:}
+      previous-key-id: ${DORO_IAM_JWT_PREVIOUS_KEY_ID:}
+      previous-public-key-pem: ${DORO_IAM_JWT_PREVIOUS_PUBLIC_KEY_PEM:}
     # X-Real-IP 를 믿을 프록시(CIDR, 쉼표 구분). 기본: 루프백 + 도커 브리지(게이트웨이). LAN 전체는 신뢰하지 않는다.
     trusted-proxies: ${DORO_IAM_TRUSTED_PROXIES:127.0.0.0/8,::1/128,172.16.0.0/12}
     rate-limit:
@@ -64,8 +86,16 @@ doro:
       signup-max: 10
       signup-window-seconds: 3600
     session:
-      max-active-sessions-per-user: 10
+      # 사용자당 동시 활성 세션 상한(새 세션 포함). 초과 시 가장 오래된 세션부터 종료한다. 0 이하는 무제한.
+      max-active-sessions-per-user: ${DORO_IAM_SESSION_MAX_ACTIVE_PER_USER:10}
+      # 무활동 만료. 리프레시(활동)마다 세션 만료 시각이 now + 이 값으로 연장된다(슬라이딩).
       inactivity-timeout-seconds: 2592000 # 30일 (1달)
+    two-factor:
+      # 메모리에 보관하는 2FA 임시 티켓 상한. 초과하면 신규 발급을 429 로 거부한다. 0 이하는 무제한.
+      max-pending-tickets: ${DORO_IAM_TWO_FACTOR_MAX_PENDING_TICKETS:10000}
+    profile:
+      # 프로필 이미지(data: URL 포함) 최대 길이(문자 수). 초과하면 400 INVALID_INPUT_VALUE.
+      image-max-length: ${DORO_IAM_PROFILE_IMAGE_MAX_LENGTH:1048576}
   guard:
     url: ${DORO_GUARD_URL:http://localhost:28081}
 
@@ -89,6 +119,6 @@ logging:
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} [traceId=%X{traceId:-NONE}] [userId=%X{userId:-ANON}] [clientIp=%X{clientIp:-LOCAL}] - %msg%n"
   level:
-    com.hunnit_beasts.auth: DEBUG
+    com.hunnit_beasts.auth: ${DORO_LOG_LEVEL:INFO}
     org.springframework.security: INFO
 

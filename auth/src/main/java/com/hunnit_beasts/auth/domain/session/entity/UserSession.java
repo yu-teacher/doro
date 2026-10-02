@@ -68,6 +68,15 @@ public class UserSession {
         this.lastActiveAt = Instant.now();
     }
 
+    /** 활동 시각을 갱신하고 만료 시각을 now + inactivityTimeout 으로 밀어낸다(슬라이딩 만료). */
+    public void touch(Instant now, long inactivityTimeoutSeconds) {
+        this.lastActiveAt = now;
+        Instant extended = now.plusSeconds(inactivityTimeoutSeconds);
+        if (extended.isAfter(this.expiresAt)) {
+            this.expiresAt = extended;
+        }
+    }
+
     public void deactivate() {
         this.isActive = false;
     }

@@ -21,10 +21,20 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class SessionService {
 
+    /** 동일 기기 재로그인으로 이전 세션을 대체할 때의 종료 사유 */
+    static final String REASON_REPLACED_BY_NEW_LOGIN = "REPLACED_BY_NEW_LOGIN";
+    /** 사용자별 최대 활성 세션 수를 넘겨 가장 오래된 세션을 종료할 때의 사유 */
+    static final String REASON_SESSION_LIMIT_EXCEEDED = "SESSION_LIMIT_EXCEEDED";
+
     private final UserSessionRepository sessionRepository;
+    private final SessionRevocationService sessionRevocationService;
 
     @Value("${doro.iam.session.inactivity-timeout-seconds:2592000}")
     private long inactivityTimeoutSeconds;
+
+    /** 사용자당 동시 활성 세션 상한(새 세션 포함). 0 이하이면 무제한. */
+    @Value("${doro.iam.session.max-active-sessions-per-user:10}")
+    private int maxActiveSessionsPerUser;
 
     @Transactional
     public UserSession createSession(UUID userId, String deviceInfo, String ipAddress, String userAgent) {
@@ -32,11 +42,15 @@ public class SessionService {
         if (ipAddress != null && userAgent != null) {
             List<UserSession> existingSameDeviceSessions = sessionRepository
                     .findByUserIdAndIpAddressAndUserAgentAndIsActiveTrue(userId, ipAddress, userAgent);
-            for (UserSession oldSession : existingSameDeviceSessions) {
-                oldSession.deactivate();
-                log.info("Deactivated duplicate session on the same device/browser: sessionId={}", oldSession.getId());
+            // 리프레시 토큰 폐기와 킬스위치 발행까지 한 흐름으로 처리하여 DB 와 Redis 상태를 일치시킨다.
+            sessionRevocationService.revokeSessions(existingSameDeviceSessions, REASON_REPLACED_BY_NEW_LOGIN);
+            if (!existingSameDeviceSessions.isEmpty()) {
+                log.info("Revoked {} duplicate session(s) on the same device/browser: userId={}",
+                        existingSameDeviceSessions.size(), userId);
             }
         }
+
+        enforceSessionLimit(userId);
 
         int nextIndex = sessionRepository.findMaxActiveUserIndex(userId)
                 .map(idx -> idx + 1)
@@ -58,6 +72,23 @@ public class SessionService {
                 .build();
 
         return sessionRepository.save(session);
+    }
+
+    /** 새 세션을 포함해 활성 세션이 상한 이하가 되도록 가장 오래된 세션부터 종료한다. */
+    private void enforceSessionLimit(UUID userId) {
+        if (maxActiveSessionsPerUser <= 0) {
+            return;
+        }
+        // 최신순 정렬이므로 뒤쪽이 가장 오래된 세션이다.
+        List<UserSession> active = sessionRepository.findByUserIdAndIsActiveTrueOrderByCreatedAtDesc(userId);
+        int excess = active.size() - (maxActiveSessionsPerUser - 1);
+        if (excess <= 0) {
+            return;
+        }
+        List<UserSession> oldest = active.subList(active.size() - excess, active.size());
+        sessionRevocationService.revokeSessions(List.copyOf(oldest), REASON_SESSION_LIMIT_EXCEEDED);
+        log.info("Revoked {} oldest session(s) over the per-user limit: userId={}, limit={}",
+                oldest.size(), userId, maxActiveSessionsPerUser);
     }
 
     @Transactional(readOnly = true)

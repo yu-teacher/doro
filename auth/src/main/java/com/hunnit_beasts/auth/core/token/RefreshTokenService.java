@@ -38,6 +38,10 @@ public class RefreshTokenService {
     @Value("${doro.iam.jwt.refresh-token-validity-seconds:2592000}")
     private long refreshTokenValiditySeconds;
 
+    /** 세션 무활동 만료 시간. 리프레시(활동)마다 세션 만료 시각이 now + 이 값으로 연장된다. */
+    @Value("${doro.iam.session.inactivity-timeout-seconds:2592000}")
+    private long sessionInactivityTimeoutSeconds;
+
     /**
      * 회전 직후 이 시간(초) 안에 들어온 직전 토큰은 공격이 아니라 동시 요청(다중 탭 등)으로 보고 세션을 유지한다.
      * 기본값 0 은 비활성(즉시 재사용 공격으로 판정)이며, 다중 탭 경합이 문제될 때만 켠다.
@@ -138,7 +142,7 @@ public class RefreshTokenService {
                 .build();
 
         refreshTokenRepository.save(newRefreshToken);
-        session.touch();
+        session.touch(Instant.now(), sessionInactivityTimeoutSeconds);
 
         return new RotatedTokenResult(newRawToken, session);
     }

@@ -1,6 +1,7 @@
 package com.hunnit_beasts.auth.core.totp;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.Mac;
@@ -102,6 +103,32 @@ public class TotpService {
         }
 
         return null;
+    }
+
+    /**
+     * 드리프트 창을 벗어난 스텝의 사용 기록을 정리한다. (이 스텝들은 더 이상 어떤 코드로도 재사용될 수 없다)
+     * 사용자 수에 비례해 메모리가 계속 늘지 않게 하며, 유효 사용자에게는 영향이 없다.
+     */
+    @Scheduled(fixedDelayString = "${doro.iam.totp.cleanup-interval-ms:300000}",
+            initialDelayString = "${doro.iam.totp.cleanup-initial-delay-ms:60000}")
+    public void purgeStaleUsedSteps() {
+        purgeStaleUsedSteps(Instant.now());
+    }
+
+    /** @return 제거한 항목 수 */
+    public int purgeStaleUsedSteps(Instant now) {
+        long oldestAcceptableStep = now.getEpochSecond() / TIME_STEP_SECONDS - ALLOWED_STEP_DRIFT;
+        int before = lastUsedStepByUser.size();
+        lastUsedStepByUser.values().removeIf(step -> step < oldestAcceptableStep);
+        int removed = before - lastUsedStepByUser.size();
+        if (removed > 0) {
+            log.debug("Purged {} stale TOTP replay-guard entries", removed);
+        }
+        return removed;
+    }
+
+    public int trackedUserCount() {
+        return lastUsedStepByUser.size();
     }
 
     private int generateCodeForStep(byte[] key, long step) throws NoSuchAlgorithmException, InvalidKeyException {

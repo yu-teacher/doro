@@ -18,7 +18,6 @@ public enum ErrorCode {
     TOKEN_EXPIRED(HttpStatus.UNAUTHORIZED, "AUTH_40103", "토큰이 만료되었습니다."),
     SESSION_EXPIRED(HttpStatus.UNAUTHORIZED, "AUTH_40104", "세션이 만료되었습니다."),
     INVALID_2FA_CODE(HttpStatus.UNAUTHORIZED, "AUTH_40105", "2차 인증(OTP) 코드가 올바르지 않습니다."),
-    TWO_FACTOR_REQUIRED(HttpStatus.UNAUTHORIZED, "AUTH_40106", "2차 인증(OTP)이 필요합니다."),
 
     // 403 Forbidden
     ACCESS_DENIED(HttpStatus.FORBIDDEN, "AUTH_40300", "해당 작업을 수행할 권한이 없습니다."),

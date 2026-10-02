@@ -2,6 +2,8 @@ package com.hunnit_beasts.auth.domain.auth.service;
 
 import com.hunnit_beasts.auth.common.exception.AuthException;
 import com.hunnit_beasts.auth.common.exception.ErrorCode;
+import com.hunnit_beasts.auth.common.log.LogMasking;
+import com.hunnit_beasts.auth.common.util.EmailNormalizer;
 import com.hunnit_beasts.auth.core.crypto.CustomArgon2PasswordEncoder;
 import com.hunnit_beasts.auth.core.token.JwtTokenProvider;
 import com.hunnit_beasts.auth.core.token.RefreshTokenService;
@@ -21,6 +23,7 @@ import com.hunnit_beasts.auth.domain.user.service.UserRelationSyncService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -56,14 +59,53 @@ public class AuthService {
     @Value("${doro.iam.jwt.access-token-validity-seconds:900}")
     private long accessTokenValiditySeconds;
 
+    /** 동시에 보관할 2FA 임시 티켓의 상한. 초과 시(만료분 정리 후에도) 신규 발급을 429 로 거부한다. */
+    @Value("${doro.iam.two-factor.max-pending-tickets:10000}")
+    private int maxPendingTwoFactorTickets;
+
+    /** 만료된 2FA 임시 티켓을 주기적으로 정리한다. 로그인하지 않고 방치된 티켓이 메모리에 쌓이는 것을 막는다. */
+    @Scheduled(fixedDelayString = "${doro.iam.two-factor.cleanup-interval-ms:60000}",
+            initialDelayString = "${doro.iam.two-factor.cleanup-initial-delay-ms:60000}")
+    public void purgeExpiredTwoFactorTickets() {
+        purgeExpiredTwoFactorTickets(Instant.now());
+    }
+
+    /** @return 제거한 티켓 수 */
+    public int purgeExpiredTwoFactorTickets(Instant now) {
+        int before = pendingTwoFactorTickets.size();
+        pendingTwoFactorTickets.values().removeIf(t -> now.isAfter(t.expiresAt()));
+        int removed = before - pendingTwoFactorTickets.size();
+        if (removed > 0) {
+            log.debug("Purged {} expired 2FA ticket(s)", removed);
+        }
+        return removed;
+    }
+
+    public int pendingTwoFactorTicketCount() {
+        return pendingTwoFactorTickets.size();
+    }
+
+    private void requireTicketCapacity() {
+        if (maxPendingTwoFactorTickets <= 0 || pendingTwoFactorTickets.size() < maxPendingTwoFactorTickets) {
+            return;
+        }
+        purgeExpiredTwoFactorTickets(Instant.now());
+        if (pendingTwoFactorTickets.size() >= maxPendingTwoFactorTickets) {
+            log.warn("Pending 2FA ticket capacity reached: limit={}", maxPendingTwoFactorTickets);
+            throw new AuthException(ErrorCode.TOO_MANY_REQUESTS);
+        }
+    }
+
     @Transactional
     public UUID signup(SignUpRequest request) {
-        if (userRepository.existsByEmail(request.email())) {
+        // 이메일은 trim + 소문자로 정규화해 저장하고, 중복 검사는 (과거 혼합 대소문자 데이터 포함) 대소문자를 무시한다.
+        String email = EmailNormalizer.normalize(request.email());
+        if (userRepository.existsByEmailIgnoreCase(email)) {
             throw new AuthException(ErrorCode.EMAIL_ALREADY_EXISTS);
         }
 
         User user = User.builder()
-                .email(request.email())
+                .email(email)
                 .name(request.name())
                 .status(UserStatus.ACTIVE)
                 .build();
@@ -78,13 +120,14 @@ public class AuthService {
 
         userRelationSyncService.syncUserTuples(savedUser, savedUser.getRole() != null ? savedUser.getRole() : UserRole.USER);
 
-        log.info("User registered successfully and synced to Zanzibar ReBAC: userId={}, email={}", savedUser.getId(), savedUser.getEmail());
+        log.info("User registered successfully and synced to Zanzibar ReBAC: userId={}, email={}",
+                savedUser.getId(), LogMasking.maskEmail(savedUser.getEmail()));
         return savedUser.getId();
     }
 
     @Transactional(readOnly = true)
     public AccountLookupResponse lookupAccount(String email) {
-        User user = userRepository.findByEmail(email)
+        User user = userRepository.findByEmailIgnoreCase(email)
                 .orElseThrow(() -> new AuthException(ErrorCode.USER_NOT_FOUND, "Doro 계정을 찾을 수 없습니다."));
 
         if (!user.isActive()) {
@@ -96,7 +139,7 @@ public class AuthService {
 
     @Transactional
     public LoginResponse login(LoginRequest request, String ipAddress, String userAgent) {
-        User user = userRepository.findByEmail(request.email())
+        User user = userRepository.findByEmailIgnoreCase(request.email())
                 .orElseThrow(() -> new AuthException(ErrorCode.INVALID_CREDENTIALS));
 
         if (!user.isActive()) {
@@ -112,12 +155,14 @@ public class AuthService {
 
         if (!passwordEncoder.matches(request.password(), credential.getPasswordHash())) {
             credentialService.recordFailedAttempt(user.getId());
-            log.warn("Invalid password attempt for user {}. Failed count: {}", user.getEmail(), credential.getFailedAttempts() + 1);
+            log.warn("Invalid password attempt for user {}. Failed count: {}",
+                    LogMasking.maskEmail(user.getEmail()), credential.getFailedAttempts() + 1);
             throw new AuthException(ErrorCode.INVALID_CREDENTIALS);
         }
 
         // 2FA 등록 여부 확인 (2FA 계정은 OTP 까지 통과해야 실패 카운트를 초기화한다)
         if (credential.getTotpSecret() != null && !credential.getTotpSecret().isBlank()) {
+            requireTicketCapacity();
             String tempTicket = UUID.randomUUID().toString();
             pendingTwoFactorTickets.put(tempTicket, new TwoFactorTicketSession(
                     user.getId(),

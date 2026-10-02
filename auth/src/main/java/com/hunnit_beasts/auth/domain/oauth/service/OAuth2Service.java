@@ -13,6 +13,7 @@ import com.hunnit_beasts.auth.domain.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -47,8 +48,46 @@ public class OAuth2Service {
     @Value("${doro.oauth.allowed-redirect-uris:}")
     private List<String> allowedRedirectUris = List.of();
 
+    /** 동시에 보관할 미사용 인가 코드의 상한. 초과 시(만료분 정리 후에도) 신규 발급을 429 로 거부한다. */
+    @Value("${doro.oauth.max-pending-authorization-codes:10000}")
+    private int maxPendingAuthorizationCodes;
+
+    /** 만료된 인가 코드를 주기적으로 정리한다. 교환되지 않고 방치된 코드가 메모리에 쌓이는 것을 막는다. */
+    @Scheduled(fixedDelayString = "${doro.oauth.cleanup-interval-ms:60000}",
+            initialDelayString = "${doro.oauth.cleanup-initial-delay-ms:60000}")
+    public void purgeExpiredAuthorizationCodes() {
+        purgeExpiredAuthorizationCodes(Instant.now());
+    }
+
+    /** @return 제거한 코드 수 */
+    public int purgeExpiredAuthorizationCodes(Instant now) {
+        int before = authCodeStore.size();
+        authCodeStore.values().removeIf(e -> now.isAfter(e.expiresAt()));
+        int removed = before - authCodeStore.size();
+        if (removed > 0) {
+            log.debug("Purged {} expired authorization code(s)", removed);
+        }
+        return removed;
+    }
+
+    public int pendingAuthorizationCodeCount() {
+        return authCodeStore.size();
+    }
+
+    private void requireCodeCapacity() {
+        if (maxPendingAuthorizationCodes <= 0 || authCodeStore.size() < maxPendingAuthorizationCodes) {
+            return;
+        }
+        purgeExpiredAuthorizationCodes(Instant.now());
+        if (authCodeStore.size() >= maxPendingAuthorizationCodes) {
+            log.warn("Pending authorization code capacity reached: limit={}", maxPendingAuthorizationCodes);
+            throw new AuthException(ErrorCode.TOO_MANY_REQUESTS);
+        }
+    }
+
     public String generateAuthorizationCode(String clientId, String redirectUri, UUID userId, String codeChallenge) {
         requireAllowedRedirectUri(redirectUri);
+        requireCodeCapacity();
         byte[] bytes = new byte[32];
         secureRandom.nextBytes(bytes);
         String code = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);

@@ -5,12 +5,16 @@ import com.hunnit_beasts.auth.common.exception.ErrorCode;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
+import io.jsonwebtoken.JwsHeader;
 import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.Locator;
+import io.jsonwebtoken.LocatorAdapter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.security.Key;
 import java.util.Date;
 import java.util.UUID;
 
@@ -20,6 +24,14 @@ import java.util.UUID;
 public class JwtTokenProvider {
 
     private final JwtKeyProvider keyProvider;
+
+    /** 토큰 헤더의 kid 로 검증 키를 고른다. (키 로테이션 중에는 이전 공개키로 발급된 토큰도 만료 전까지 유효) */
+    private final Locator<Key> verificationKeyLocator = new LocatorAdapter<Key>() {
+        @Override
+        protected Key locate(JwsHeader header) {
+            return keyProvider.resolveVerificationKey(header.getKeyId());
+        }
+    };
 
     @Value("${doro.iam.issuer:https://auth.doro.local}")
     private String issuer;
@@ -64,7 +76,7 @@ public class JwtTokenProvider {
     public Claims parseAndValidateToken(String token) {
         try {
             return Jwts.parser()
-                    .verifyWith(keyProvider.getPublicKey())
+                    .keyLocator(verificationKeyLocator)
                     .build()
                     .parseSignedClaims(token)
                     .getPayload();

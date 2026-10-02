@@ -1,5 +1,7 @@
 package com.hunnit_beasts.auth.interfaces.api;
 
+import com.hunnit_beasts.auth.common.exception.AuthException;
+import com.hunnit_beasts.auth.common.exception.ErrorCode;
 import com.hunnit_beasts.auth.common.response.ApiResponse;
 import com.hunnit_beasts.auth.domain.user.dto.UserProfileResponse;
 import com.hunnit_beasts.auth.domain.user.entity.UserRole;
@@ -11,9 +13,12 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Slf4j
 @RestController
@@ -42,13 +47,21 @@ public class AdminController {
             @RequestBody Map<String, String> body,
             @AuthenticationPrincipal UUID adminId
     ) {
-        String roleStr = body.get("role");
-        if (roleStr == null || roleStr.isBlank()) {
-            throw new IllegalArgumentException("role is required");
-        }
-        UserRole newRole = UserRole.valueOf(roleStr.trim().toUpperCase());
+        UserRole newRole = parseRole(body == null ? null : body.get("role"));
         UserProfileResponse updated = userService.changeUserRole(userId, newRole, adminId);
         return ResponseEntity.ok(ApiResponse.success(updated));
+    }
+
+    private static UserRole parseRole(String roleStr) {
+        String allowed = Arrays.stream(UserRole.values()).map(Enum::name).collect(Collectors.joining(", "));
+        if (roleStr == null || roleStr.isBlank()) {
+            throw new AuthException(ErrorCode.INVALID_INPUT, "role 은 필수입니다. 허용 값: " + allowed);
+        }
+        try {
+            return UserRole.valueOf(roleStr.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new AuthException(ErrorCode.INVALID_INPUT, "알 수 없는 role 입니다. 허용 값: " + allowed);
+        }
     }
 
     /**

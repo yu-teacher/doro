@@ -1,5 +1,6 @@
 package com.hunnit_beasts.auth.domain.user.service;
 
+import com.hunnit_beasts.auth.common.log.LogMasking;
 import com.hunnit_beasts.auth.domain.user.entity.User;
 import com.hunnit_beasts.auth.domain.user.entity.UserRole;
 import com.hunnit_beasts.auth.domain.user.repository.UserRepository;
@@ -28,7 +29,8 @@ public class UserRelationSyncService {
      */
     public void syncUserTuples(User user, UserRole newRole) {
         String userId = user.getId().toString();
-        log.info("Synchronizing Zanzibar relation tuples for user: email={}, newRole={}", user.getEmail(), newRole);
+        log.info("Synchronizing Zanzibar relation tuples for user: email={}, newRole={}",
+                LogMasking.maskEmail(user.getEmail()), newRole);
 
         // 1. 기존 잠재적 상위 권한 튜플 정리 (안전한 교체)
         List<TupleDto> tuplesToDelete = List.of(
@@ -60,7 +62,8 @@ public class UserRelationSyncService {
         }
 
         int written = guardClient.writeTuples(tuplesToWrite);
-        log.info("Successfully synchronized {} Zanzibar relation tuples for user {}", written, user.getEmail());
+        log.info("Successfully synchronized {} Zanzibar relation tuples for user {}",
+                written, LogMasking.maskEmail(user.getEmail()));
     }
 
     /**

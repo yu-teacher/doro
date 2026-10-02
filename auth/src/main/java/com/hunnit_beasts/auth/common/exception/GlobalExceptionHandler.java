@@ -37,6 +37,25 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(errorCode.getHttpStatus()).body(response);
     }
 
+    @ExceptionHandler(FieldValidationException.class)
+    public ResponseEntity<ErrorResponse> handleFieldValidation(FieldValidationException ex, HttpServletRequest request) {
+        log.warn("Field validation failed at {}: field={}", request.getRequestURI(), ex.getField());
+
+        ErrorResponse response = ErrorResponse.builder()
+                .status(HttpStatus.BAD_REQUEST.value())
+                .error(HttpStatus.BAD_REQUEST.getReasonPhrase())
+                .code("INVALID_INPUT_VALUE")
+                .message("요청 파라미터 유효성 검증에 실패했습니다.")
+                .path(request.getRequestURI())
+                .details(List.of(ErrorResponse.FieldErrorDetail.builder()
+                        .field(ex.getField())
+                        .reason(ex.getReason())
+                        .build()))
+                .build();
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidationException(MethodArgumentNotValidException ex, HttpServletRequest request) {
         List<ErrorResponse.FieldErrorDetail> details = ex.getBindingResult().getFieldErrors().stream()
