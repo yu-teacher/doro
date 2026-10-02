@@ -203,12 +203,13 @@ public class OAuth2Service {
                 OAuth2Constants.SESSION_USER_AGENT_PREFIX + client.clientId()
         );
 
-        String accessToken = jwtTokenProvider.createAccessToken(
+        // OAuth 액세스 토큰은 role=USER + 클라이언트 표시(cid). IAM 자신의 API 에서는 인정되지 않는다(JwtAuthenticationFilter).
+        String accessToken = jwtTokenProvider.createOAuthAccessToken(
                 user.getId(),
                 user.getEmail(),
                 session.getId(),
                 session.getUserIndex(),
-                user.getRole() != null ? user.getRole().name() : "USER"
+                client.clientId()
         );
         String refreshToken = refreshTokenService.createRefreshToken(session.getId());
 
@@ -257,12 +258,12 @@ public class OAuth2Service {
             throw new AuthException(ErrorCode.ACCOUNT_SUSPENDED);
         }
 
-        String accessToken = jwtTokenProvider.createAccessToken(
+        String accessToken = jwtTokenProvider.createOAuthAccessToken(
                 user.getId(),
                 user.getEmail(),
                 session.getId(),
                 session.getUserIndex(),
-                user.getRole() != null ? user.getRole().name() : "USER"
+                client.clientId()
         );
         log.info("OAuth refresh token rotated: clientId={}, userId={}", client.clientId(), user.getId());
         return TokenResponse.ofOAuth(accessToken, rotated.newRefreshToken(), accessTokenValiditySeconds,

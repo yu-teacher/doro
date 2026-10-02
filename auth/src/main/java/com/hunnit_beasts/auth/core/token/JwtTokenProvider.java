@@ -38,6 +38,9 @@ public class JwtTokenProvider {
     @Value("${doro.iam.issuer:https://auth.doro.local}")
     private String issuer;
 
+    /** OAuth 클라이언트에 발급한 액세스 토큰임을 나타내는 클레임(값은 client_id) */
+    public static final String CLAIM_CLIENT_ID = "cid";
+
     @Value("${doro.iam.jwt.access-token-validity-seconds:900}")
     private long accessTokenValiditySeconds;
 
@@ -66,6 +69,34 @@ public class JwtTokenProvider {
                 .claim("sid", sessionId.toString())
                 .claim("uidx", userIndex)
                 .claim("role", role != null ? role : "USER")
+                .issuedAt(now)
+                .expiration(validity)
+                .signWith(keyProvider.getPrivateKey(), Jwts.SIG.RS256)
+                .compact();
+    }
+
+    /**
+     * OAuth 클라이언트에 발급하는 Access Token. 리소스 서버(서브 서비스)에서 쓰는 토큰이므로
+     * (1) role 은 항상 USER 로 낮추고(사용자의 관리자 권한이 클라이언트로 넘어가지 않게), (2) 발급 대상 클라이언트를
+     * {@link #CLAIM_CLIENT_ID} 클레임으로 표시한다. 표시가 있는 토큰은 IAM 자신의 API 에서 인증으로 인정되지 않는다
+     * ({@code JwtAuthenticationFilter}: userinfo / 세션 확인만 예외).
+     */
+    public String createOAuthAccessToken(UUID userId, String email, UUID sessionId, int userIndex, String clientId) {
+        Date now = new Date();
+        Date validity = new Date(now.getTime() + (accessTokenValiditySeconds * 1000));
+
+        return Jwts.builder()
+                .header()
+                .keyId(keyProvider.getKeyId())
+                .type("JWT")
+                .and()
+                .issuer(issuer)
+                .subject(userId.toString())
+                .claim("email", email)
+                .claim("sid", sessionId.toString())
+                .claim("uidx", userIndex)
+                .claim("role", "USER")
+                .claim(CLAIM_CLIENT_ID, clientId)
                 .issuedAt(now)
                 .expiration(validity)
                 .signWith(keyProvider.getPrivateKey(), Jwts.SIG.RS256)

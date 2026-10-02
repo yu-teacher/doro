@@ -62,10 +62,17 @@ class DoroJwtAuthFilterAudienceTest {
     }
 
     @Test
-    @DisplayName("audience 가 비어 있으면(기본) aud 를 검사하지 않는다")
-    void emptyAudienceDoesNotCheck() throws Exception {
+    @DisplayName("audience 가 비어 있으면(기본) aud 가 없는 일반 액세스 토큰을 그대로 받는다")
+    void emptyAudienceAcceptsPlainAccessTokens() throws Exception {
         assertThat(run(filter(""), token()).isAuthenticated()).isTrue();
-        assertThat(run(filter(null), token("other")).isAuthenticated()).isTrue();
+        assertThat(run(filter(null), token()).isAuthenticated()).isTrue();
+    }
+
+    @Test
+    @DisplayName("audience 를 설정하지 않았다면 aud 가 있는 토큰(OIDC id_token 등)은 액세스 토큰으로 인정하지 않는다 (토큰 혼동 방지)")
+    void tokensWithAudAreNotAccessTokensUnlessAudienceIsConfigured() throws Exception {
+        assertThat(run(filter(""), token("some-client")).isAuthenticated()).isFalse();
+        assertThat(run(filter(null), token("a", "b")).isAuthenticated()).isFalse();
     }
 
     @Test

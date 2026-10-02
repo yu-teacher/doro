@@ -232,10 +232,15 @@ public class DoroJwtAuthFilter extends OncePerRequestFilter {
     }
 
     private void verifyAudience(Claims claims) {
+        Set<String> audience = claims.getAudience();
         if (requiredAudience.isEmpty()) {
+            // audience 를 설정하지 않은 서비스는 aud 가 없는 일반 액세스 토큰만 받는다. aud 가 있는 토큰은 특정 클라이언트용
+            // (OIDC id_token 등)이라 API 인증으로 쓰이면 토큰 혼동이 된다.
+            if (audience != null && !audience.isEmpty()) {
+                throw new IllegalStateException("JWT with an audience is not an access token (doro.iam.audience is not configured)");
+            }
             return;
         }
-        Set<String> audience = claims.getAudience();
         if (audience == null || !audience.contains(requiredAudience)) {
             throw new IllegalStateException("JWT audience mismatch");
         }
