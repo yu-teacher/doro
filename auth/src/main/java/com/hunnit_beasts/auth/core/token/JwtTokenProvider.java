@@ -6,6 +6,7 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.JwsHeader;
+import io.jsonwebtoken.JwtBuilder;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.Locator;
 import io.jsonwebtoken.LocatorAdapter;
@@ -16,6 +17,7 @@ import org.springframework.stereotype.Component;
 
 import java.security.Key;
 import java.util.Date;
+import java.util.Map;
 import java.util.UUID;
 
 @Slf4j
@@ -68,6 +70,37 @@ public class JwtTokenProvider {
                 .expiration(validity)
                 .signWith(keyProvider.getPrivateKey(), Jwts.SIG.RS256)
                 .compact();
+    }
+
+    /**
+     * OIDC ID Token (RS256, Access Token 과 같은 키/kid). aud 는 client_id, exp 는 Access Token 과 같은 수명이다.
+     * sid(OIDC session id)를 포함해 세션 킬스위치가 ID Token 에도 동일하게 적용되게 한다.
+     *
+     * @param nonce      인가 요청의 nonce(없으면 null → 클레임 생략)
+     * @param userClaims email/email_verified/name/picture 등 스코프에 따라 호출자가 고른 추가 클레임
+     */
+    public String createIdToken(UUID userId, String clientId, UUID sessionId, String nonce,
+                                long authTimeEpochSeconds, Map<String, Object> userClaims) {
+        Date now = new Date();
+        Date validity = new Date(now.getTime() + (accessTokenValiditySeconds * 1000));
+
+        JwtBuilder builder = Jwts.builder()
+                .header()
+                .keyId(keyProvider.getKeyId())
+                .type("JWT")
+                .and()
+                .issuer(issuer)
+                .subject(userId.toString())
+                .audience().add(clientId).and()
+                .claim("sid", sessionId.toString())
+                .claim("auth_time", authTimeEpochSeconds)
+                .issuedAt(now)
+                .expiration(validity);
+        if (nonce != null && !nonce.isEmpty()) {
+            builder.claim("nonce", nonce);
+        }
+        userClaims.forEach(builder::claim);
+        return builder.signWith(keyProvider.getPrivateKey(), Jwts.SIG.RS256).compact();
     }
 
     /**

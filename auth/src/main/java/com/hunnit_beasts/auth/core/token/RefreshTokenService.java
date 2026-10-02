@@ -157,6 +157,16 @@ public class RefreshTokenService {
                 .orElse(false);
     }
 
+    /**
+     * 리프레시 토큰이 속한 세션을 회전 없이 조회한다(폐기/비활성 토큰·세션 포함). 회전 전에 세션 종류(OAuth 클라이언트 등)를
+     * 검사해, 조건에 맞지 않는 토큰을 소모하지 않고 거부하기 위한 용도다.
+     */
+    @Transactional(readOnly = true)
+    public Optional<UserSession> findSessionByRawToken(String rawToken) {
+        return refreshTokenRepository.findByTokenHash(hashToken(rawToken))
+                .flatMap(token -> userSessionRepository.findById(token.getSessionId()));
+    }
+
     @Transactional
     public void revokeAllForSession(UUID sessionId) {
         refreshTokenRepository.revokeAllBySessionId(sessionId);

@@ -20,6 +20,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -161,9 +162,14 @@ class SessionRevocationSecurityTest {
     }
 
     @Test
-    @DisplayName("N1: 로그인하지 않은 /oauth2/authorize 는 401")
+    @DisplayName("N1: Bearer 없는 /oauth2/authorize 는 코드를 발급하지 않고 동의 페이지로 302, 잘못된 Bearer 는 401 (계약 변경: 기존 401)")
     void authorizeRequiresLogin() throws Exception {
-        mockMvc.perform(get("/oauth2/authorize")
+        mockMvc.perform(get("/oauth2/authorize?client_id=c&redirect_uri=https://app-a.com/cb&response_type=code"
+                        + "&code_challenge=E9Melhoa2OwvFrGMTJguCH5rtx64FIbEIqiPQsjzkxo"))
+                .andExpect(status().isFound())
+                .andExpect(header().string("Location", org.hamcrest.Matchers.startsWith("/oauth2/consent?")))
+                .andExpect(content().string(not(containsString("code\":"))));
+        mockMvc.perform(get("/oauth2/authorize").header("Authorization", "Bearer not-a-jwt")
                         .param("client_id", "c").param("redirect_uri", "https://app-a.com/cb")
                         .param("response_type", "code")
                         .param("code_challenge", "E9Melhoa2OwvFrGMTJguCH5rtx64FIbEIqiPQsjzkxo"))

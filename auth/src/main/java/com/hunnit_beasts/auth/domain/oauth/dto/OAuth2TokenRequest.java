@@ -2,20 +2,28 @@ package com.hunnit_beasts.auth.domain.oauth.dto;
 
 import jakarta.validation.constraints.NotBlank;
 
+/**
+ * 토큰 요청(JSON camelCase / 폼 snake_case 공통 모델). grant_type 별 필수 필드는 서비스가
+ * invalid_request 로 검증한다. (authorization_code: code, redirectUri, clientId, codeVerifier / refresh_token: refreshToken, clientId)
+ */
 public record OAuth2TokenRequest(
         @NotBlank(message = "grant_type은 필수입니다.")
         String grantType,
-
-        @NotBlank(message = "code는 필수입니다.")
         String code,
-
-        @NotBlank(message = "redirect_uri는 필수입니다.")
         String redirectUri,
-
-        @NotBlank(message = "client_id는 필수입니다.")
         String clientId,
-
-        @NotBlank(message = "code_verifier는 필수입니다 (PKCE).")
-        String codeVerifier
+        String codeVerifier,
+        String refreshToken,
+        String scope
 ) {
+    /** authorization_code 교환용(기존 호출부 호환) */
+    public OAuth2TokenRequest(String grantType, String code, String redirectUri, String clientId, String codeVerifier) {
+        this(grantType, code, redirectUri, clientId, codeVerifier, null, null);
+    }
+
+    @Override
+    public String toString() {
+        // 코드·검증자·리프레시 토큰이 로그에 남지 않도록 값은 출력하지 않는다.
+        return "OAuth2TokenRequest[grantType=" + grantType + ", clientId=" + clientId + "]";
+    }
 }

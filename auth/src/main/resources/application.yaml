@@ -46,6 +46,16 @@ doro:
     allowed-redirect-uris: ${DORO_OAUTH_ALLOWED_REDIRECT_URIS:}
     # 메모리에 보관하는 미사용 인가 코드 상한. 초과하면 신규 발급을 429 로 거부한다. 0 이하는 무제한.
     max-pending-authorization-codes: ${DORO_OAUTH_MAX_PENDING_AUTHORIZATION_CODES:10000}
+    # 클라이언트 레지스트리 적용 수준: OFF(환경변수 허용 목록만) | WARN(등록 클라이언트는 레지스트리 규칙, 미등록은 허용 목록 폴백+경고) | ENFORCE(미등록 거부)
+    client-registry-mode: ${DORO_OAUTH_CLIENT_REGISTRY_MODE:WARN}
+    # Bearer 없이 /oauth2/authorize 로 이동해 온 브라우저를 보낼 동의(로그인) 페이지. 원래 쿼리 문자열이 그대로 붙는다.
+    consent-url: ${DORO_OAUTH_CONSENT_URL:/oauth2/consent}
+    # 인가 코드 저장소: auto(Redis 연결 가능하면 Redis, 아니면 메모리) | redis | memory
+    code-store: ${DORO_OAUTH_CODE_STORE:auto}
+    # 인가 코드 유효 시간(초)
+    code-ttl-seconds: ${DORO_OAUTH_CODE_TTL_SECONDS:300}
+    # 재사용된 인가 코드/미등록 client 경고 로그의 최소 간격(초). 폭주 방지용 rate limit.
+    warn-log-interval-seconds: ${DORO_OAUTH_WARN_LOG_INTERVAL_SECONDS:60}
   cors:
     # 브라우저에서 IAM 을 직접 호출할 수 있는 Origin 패턴 (쉼표 구분). 와일드카드(*) 전체 허용은 사용하지 않는다.
     allowed-origin-patterns: ${DORO_CORS_ALLOWED_ORIGIN_PATTERNS:https://varen05.asuscomm.com,http://192.168.0.101:*,http://localhost:*,http://127.0.0.1:*}
@@ -85,6 +95,9 @@ doro:
       lookup-window-seconds: 600
       signup-max: 10
       signup-window-seconds: 3600
+      # /oauth2/token 및 Bearer 없는 /oauth2/authorize (IP 단위)
+      token-max: ${DORO_IAM_RATE_LIMIT_TOKEN_MAX:60}
+      token-window-seconds: 600
     session:
       # 사용자당 동시 활성 세션 상한(새 세션 포함). 초과 시 가장 오래된 세션부터 종료한다. 0 이하는 무제한.
       max-active-sessions-per-user: ${DORO_IAM_SESSION_MAX_ACTIVE_PER_USER:10}

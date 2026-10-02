@@ -19,7 +19,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 인증 관련 공개 엔드포인트(로그인/2FA 로그인/계정 조회/가입)에 IP 단위 요청 제한을 적용한다.
+ * 인증 관련 공개 엔드포인트(로그인/2FA 로그인/계정 조회/가입, OAuth 토큰/Bearer 없는 인가)에 IP 단위 요청 제한을 적용한다.
  * 계정 잠금은 계정 단위라서 대량 비밀번호 시도나 계정 열거를 막지 못하므로 IP 단위 제한을 함께 둔다.
  * 고정 윈도우 방식이며 단일 인스턴스 메모리 기준이다.
  */
@@ -28,7 +28,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Order(Ordered.HIGHEST_PRECEDENCE + 20)
 public class AuthRateLimitFilter extends OncePerRequestFilter {
 
-    enum Bucket { LOGIN, LOOKUP, SIGNUP }
+    enum Bucket { LOGIN, LOOKUP, SIGNUP, TOKEN }
 
     private record Window(long startEpochSecond, int count) {}
 
@@ -41,6 +41,8 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     private final long lookupWindowSeconds;
     private final int signupMax;
     private final long signupWindowSeconds;
+    private final int tokenMax;
+    private final long tokenWindowSeconds;
 
     private final ClientIpResolver clientIpResolver;
 
@@ -52,7 +54,9 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             @Value("${doro.iam.rate-limit.lookup-max:30}") int lookupMax,
             @Value("${doro.iam.rate-limit.lookup-window-seconds:600}") long lookupWindowSeconds,
             @Value("${doro.iam.rate-limit.signup-max:10}") int signupMax,
-            @Value("${doro.iam.rate-limit.signup-window-seconds:3600}") long signupWindowSeconds) {
+            @Value("${doro.iam.rate-limit.signup-window-seconds:3600}") long signupWindowSeconds,
+            @Value("${doro.iam.rate-limit.token-max:60}") int tokenMax,
+            @Value("${doro.iam.rate-limit.token-window-seconds:600}") long tokenWindowSeconds) {
         this.clientIpResolver = clientIpResolver;
         this.enabled = enabled;
         this.loginMax = loginMax;
@@ -61,17 +65,19 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
         this.lookupWindowSeconds = lookupWindowSeconds;
         this.signupMax = signupMax;
         this.signupWindowSeconds = signupWindowSeconds;
+        this.tokenMax = tokenMax;
+        this.tokenWindowSeconds = tokenWindowSeconds;
     }
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !enabled || !"POST".equals(request.getMethod()) || bucketOf(request.getRequestURI()) == null;
+        return !enabled || bucketOf(request) == null;
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        Bucket bucket = bucketOf(request.getRequestURI());
+        Bucket bucket = bucketOf(request);
         String ip = clientIpResolver.resolve(request);
         long retryAfter = tryAcquire(bucket, ip, Instant.now().getEpochSecond());
         if (retryAfter > 0) {
@@ -104,13 +110,27 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
         return retryAfter[0];
     }
 
-    private static Bucket bucketOf(String uri) {
-        return switch (uri) {
-            case "/api/v1/auth/login", "/api/v1/auth/2fa/login" -> Bucket.LOGIN;
-            case "/api/v1/auth/lookup" -> Bucket.LOOKUP;
-            case "/api/v1/auth/signup" -> Bucket.SIGNUP;
-            default -> null;
-        };
+    private static Bucket bucketOf(HttpServletRequest request) {
+        String uri = request.getRequestURI();
+        if ("POST".equals(request.getMethod())) {
+            return switch (uri) {
+                case "/api/v1/auth/login", "/api/v1/auth/2fa/login" -> Bucket.LOGIN;
+                case "/api/v1/auth/lookup" -> Bucket.LOOKUP;
+                case "/api/v1/auth/signup" -> Bucket.SIGNUP;
+                case "/oauth2/token" -> Bucket.TOKEN;
+                default -> null;
+            };
+        }
+        // 브라우저가 Bearer 없이 이동해 오는 인가 요청만 제한한다(Bearer 가 있는 포털의 fetch 는 인증된 호출).
+        if ("GET".equals(request.getMethod()) && "/oauth2/authorize".equals(uri) && !hasBearer(request)) {
+            return Bucket.TOKEN;
+        }
+        return null;
+    }
+
+    private static boolean hasBearer(HttpServletRequest request) {
+        String header = request.getHeader("Authorization");
+        return header != null && header.startsWith("Bearer ");
     }
 
     private int maxOf(Bucket bucket) {
@@ -118,6 +138,7 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             case LOGIN -> loginMax;
             case LOOKUP -> lookupMax;
             case SIGNUP -> signupMax;
+            case TOKEN -> tokenMax;
         };
     }
 
@@ -126,6 +147,7 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             case LOGIN -> loginWindowSeconds;
             case LOOKUP -> lookupWindowSeconds;
             case SIGNUP -> signupWindowSeconds;
+            case TOKEN -> tokenWindowSeconds;
         };
     }
 
@@ -133,7 +155,7 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     @Scheduled(fixedDelayString = "${doro.iam.rate-limit.cleanup-interval-ms:300000}")
     void evictExpiredWindows() {
         long now = Instant.now().getEpochSecond();
-        long longest = Math.max(loginWindowSeconds, Math.max(lookupWindowSeconds, signupWindowSeconds));
+        long longest = Math.max(Math.max(loginWindowSeconds, lookupWindowSeconds), Math.max(signupWindowSeconds, tokenWindowSeconds));
         windows.entrySet().removeIf(entry -> now - entry.getValue().startEpochSecond() >= longest);
     }
 }
