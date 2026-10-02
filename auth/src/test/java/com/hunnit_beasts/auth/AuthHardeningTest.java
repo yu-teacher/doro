@@ -8,6 +8,8 @@ import com.hunnit_beasts.auth.domain.credential.entity.Credential;
 import com.hunnit_beasts.auth.domain.credential.repository.CredentialRepository;
 import com.hunnit_beasts.auth.domain.credential.service.CredentialService;
 import com.hunnit_beasts.auth.domain.session.entity.UserSession;
+import com.hunnit_beasts.auth.domain.user.entity.User;
+import com.hunnit_beasts.auth.domain.user.repository.UserRepository;
 import com.hunnit_beasts.auth.domain.session.repository.UserSessionRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -45,10 +47,20 @@ class AuthHardeningTest {
     private CredentialRepository credentialRepository;
     @Autowired
     private TotpService totpService;
+    @Autowired
+    private UserRepository userRepository;
+
+    /** 세션·자격증명은 users 를 FK 로 참조한다 (실제 PostgreSQL 스키마에서는 FK 가 강제된다). */
+    private UUID persistedUserId() {
+        return userRepository.saveAndFlush(User.builder()
+                .email("hardening-" + UUID.randomUUID() + "@doro.test")
+                .name("hardening")
+                .build()).getId();
+    }
 
     private UserSession newSession() {
         return userSessionRepository.save(UserSession.builder()
-                .userId(UUID.randomUUID())
+                .userId(persistedUserId())
                 .userIndex(0)
                 .expiresAt(Instant.now().plus(7, ChronoUnit.DAYS))
                 .build());
@@ -121,7 +133,7 @@ class AuthHardeningTest {
     @Test
     @DisplayName("N5: 동시 로그인 실패도 카운트가 유실되지 않고 임계치에서 잠긴다")
     void concurrentFailedAttemptsAreAllCounted() throws Exception {
-        UUID userId = UUID.randomUUID();
+        UUID userId = persistedUserId();
         credentialRepository.saveAndFlush(Credential.builder().userId(userId).passwordHash("x").build());
 
         int attempts = 20;

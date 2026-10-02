@@ -3,6 +3,8 @@ package com.hunnit_beasts.auth.core.token;
 import com.hunnit_beasts.auth.common.exception.AuthException;
 import com.hunnit_beasts.auth.common.exception.ErrorCode;
 import com.hunnit_beasts.auth.domain.session.entity.UserSession;
+import com.hunnit_beasts.auth.domain.user.entity.User;
+import com.hunnit_beasts.auth.domain.user.repository.UserRepository;
 import com.hunnit_beasts.auth.domain.session.repository.UserSessionRepository;
 import com.hunnit_beasts.auth.domain.token.repository.RefreshTokenRepository;
 import com.hunnit_beasts.auth.core.redis.KillSwitchPublisher;
@@ -32,10 +34,21 @@ class RefreshTokenServiceTest {
     @Autowired
     private UserSessionRepository userSessionRepository;
 
+    @Autowired
+    private UserRepository userRepository;
+
+    /** 세션은 users 를 FK 로 참조한다 (실제 PostgreSQL 스키마에서는 FK 가 강제된다). */
+    private UUID persistedUserId() {
+        return userRepository.saveAndFlush(User.builder()
+                .email("rt-" + UUID.randomUUID() + "@doro.test")
+                .name("rt")
+                .build()).getId();
+    }
+
     @Test
     @DisplayName("정상 Refresh Token 발급 및 회전(RTR) 검증")
     void testCreateAndRotateRefreshToken() {
-        UUID userId = UUID.randomUUID();
+        UUID userId = persistedUserId();
         UserSession session = userSessionRepository.save(UserSession.builder()
                 .userId(userId)
                 .userIndex(0)
@@ -58,7 +71,7 @@ class RefreshTokenServiceTest {
     @Test
     @DisplayName("토큰 재사용 공격 감지 시 패밀리 전체 무효화 및 예외 발생 검증")
     void testReuseDetection() {
-        UUID userId = UUID.randomUUID();
+        UUID userId = persistedUserId();
         UserSession session = userSessionRepository.save(UserSession.builder()
                 .userId(userId)
                 .userIndex(0)

@@ -31,6 +31,9 @@ jobs:
       - name: 🧪 Backend tests (auth, guard, sdk)
         run: scripts/ci-test.sh backend
 
+      - name: 🐘 Guard/Auth tests on a real PostgreSQL
+        run: scripts/ci-test.sh pg
+
       - name: 🧪 Web tests and type check
         run: scripts/ci-test.sh web
 
