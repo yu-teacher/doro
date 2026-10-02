@@ -5,7 +5,7 @@
 #   ssh mini 'bash -s -- --check'    < scripts/split-guard-tokens.sh   # 읽기 전용 점검
 #   ssh mini 'bash -s -- --apply'    < scripts/split-guard-tokens.sh   # 1단계: 호출자별 토큰 발급/적용 (공유 토큰은 유지)
 #   ssh mini 'bash -s -- --finalize' < scripts/split-guard-tokens.sh   # 2단계: 공유 토큰 제거 (적용 후 10분 이상 지난 뒤)
-#   ssh mini 'bash -s -- --rollback' < scripts/split-guard-tokens.sh   # 가장 최근 백업(.env 두 개)으로 되돌리고 guard/auth/blog 재생성
+#   ssh mini 'bash -s -- --rollback' < scripts/split-guard-tokens.sh   # 분리 이전(공유 토큰만 쓰던) .env 로 되돌리고 guard/auth/blog 재생성
 #
 # 선행 조건: 호출자별 토큰을 받을 수 있는 Guard(코드 커밋 "per-caller service tokens")가 이미 배포돼 있어야 한다.
 #            (배포돼 있지 않으면 --apply 의 검증에서 실패하고 자동으로 원래대로 돌아간다.)
@@ -78,10 +78,16 @@ case "$MODE_ARG" in
   --check) describe; exit 0 ;;
   --apply|--finalize) ;;
   --rollback)
-    latest() { ls -1t "$1".bak-splittokens-* 2>/dev/null | head -1; }
-    ENV_LAST="$(latest "$ENV_FILE")"; BLOG_LAST="$(latest "$BLOG_ENV")"
-    [ -n "$ENV_LAST" ] && [ -n "$BLOG_LAST" ] || die "되돌릴 백업(.env.bak-splittokens-*)이 없다"
-    log "복원: $ENV_LAST , $BLOG_LAST"
+    # 호출자별 토큰이 들어가기 전(DORO_GUARD_SERVICE_TOKENS 가 없거나 비어 있음)의 가장 최근 백업으로 되돌린다.
+    # 백업 시각은 .env 와 blog .env 가 같은 접미사를 쓴다.
+    ENV_LAST=""
+    for f in $(ls -1t "$ENV_FILE".bak-splittokens-* 2>/dev/null); do
+      if [ -z "$(get_var "$f" DORO_GUARD_SERVICE_TOKENS)" ]; then ENV_LAST="$f"; break; fi
+    done
+    [ -n "$ENV_LAST" ] || die "되돌릴 분리 이전 백업(.env.bak-splittokens-*)이 없다"
+    BLOG_LAST="$BLOG_ENV.bak-splittokens-${ENV_LAST##*bak-splittokens-}"
+    [ -f "$BLOG_LAST" ] || die "짝이 되는 blog 백업($BLOG_LAST)이 없다"
+    log "분리 이전 상태로 복원: $ENV_LAST , $BLOG_LAST"
     cp -p "$ENV_LAST" "$ENV_FILE"; cp -p "$BLOG_LAST" "$BLOG_ENV"; rm -f "$MARKER"
     recreate_guard_auth guard-api auth-api; recreate_blog
     for c in $GUARD $AUTH $BLOG; do wait_healthy "$c" || die "$c 가 healthy 로 돌아오지 않았다"; done
@@ -90,10 +96,10 @@ case "$MODE_ARG" in
 esac
 
 for c in $GUARD $AUTH $BLOG; do healthy "$c" || die "$c 가 healthy 가 아니다. 먼저 정상으로 만든 뒤 실행한다"; done
+# 백업은 사전 검증을 모두 통과한 뒤에만 만든다 (거부된 실행이 "최근 백업"을 오염시키지 않게).
 STAMP="$(date +%Y%m%d-%H%M%S)"
 ENV_BAK="$ENV_FILE.bak-splittokens-$STAMP"; BLOG_BAK="$BLOG_ENV.bak-splittokens-$STAMP"
-cp -p "$ENV_FILE" "$ENV_BAK"; cp -p "$BLOG_ENV" "$BLOG_BAK"
-log "백업: $ENV_BAK , $BLOG_BAK"
+take_backups() { cp -p "$ENV_FILE" "$ENV_BAK"; cp -p "$BLOG_ENV" "$BLOG_BAK"; log "백업: $ENV_BAK , $BLOG_BAK"; }
 
 STARTED=false
 rollback() {
@@ -117,6 +123,7 @@ if [ "$MODE_ARG" = "--apply" ]; then
   [ "$GUARD_MODE" != OFF ] || log "참고: Guard 모드가 OFF 라 토큰 검사 자체가 꺼져 있다. 토큰은 나뉘지만 ENFORCE 가 되기 전에는 효과가 없다"
   AUTH_TOKEN="$(openssl rand -hex 32)"; BLOG_TOKEN="$(openssl rand -hex 32)"
   [ "${#AUTH_TOKEN}" -eq 64 ] && [ "${#BLOG_TOKEN}" -eq 64 ] && [ "$AUTH_TOKEN" != "$BLOG_TOKEN" ] || die "토큰 생성 실패"
+  take_backups
 
   STARTED=true
   set_var "$ENV_FILE" DORO_GUARD_AUTH_TOKEN "$AUTH_TOKEN"
@@ -168,6 +175,7 @@ AUTH_TOKEN="$(get_var "$ENV_FILE" DORO_GUARD_AUTH_TOKEN)"; BLOG_TOKEN="$(get_var
 [ "$(docker exec "$BLOG" printenv DORO_GUARD_SERVICE_TOKEN)" = "$BLOG_TOKEN" ] || die "blog 컨테이너가 자기 토큰을 쓰고 있지 않다"
 [ "$BLOG_TOKEN" != "$SHARED" ] && [ "$AUTH_TOKEN" != "$SHARED" ] || die "호출자 토큰이 공유 토큰과 같다"
 
+take_backups
 STARTED=true
 set_var "$ENV_FILE" DORO_GUARD_SERVICE_TOKEN ""
 log "guard-api 재생성 (공유 토큰 제거)"
