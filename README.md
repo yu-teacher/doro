@@ -44,9 +44,9 @@
 - 권한은 코드의 `if (role == ...)`가 아니라 **관계 튜플**(예: `post:42#author@user:alice`)과 **스키마 규칙**으로 선언하고, Guard가 판정합니다.
 - 서비스마다 독립 DB(`service_{name}`)를 쓰고, 인증/인가는 SDK로 위임합니다.
 
-**아직 하지 않는 일** (오해 방지)
-- 리다이렉트 기반 **SSO(OAuth 로그인 공유)는 실사용 단계가 아닙니다.** 지금의 "통합 로그인"은 모든 프런트가 같은 IAM API를 같은 origin으로 호출하는 방식입니다. 자세히는 [OAuth 상태](#oauth-21--oidc-현재-상태)를 보세요.
-- 로그아웃/세션 종료가 **서브서비스에 즉시** 반영되지는 않습니다(액세스 토큰 수명, 기본 15분 이내). [토큰 폐기와 한계](#세션과-폐기)를 보세요.
+**알아 두면 좋은 점** (오해 방지)
+- **SSO(OAuth/OIDC)는 구현되어 있지만 아직 쓰는 서비스는 없습니다.** 지금 doro-blog 같은 서비스는 "인앱 로그인"(같은 IAM API를 같은 origin으로 호출)을 쓰고, 리다이렉트 방식 로그인이 필요한 서비스가 생기면 [OAuth/OIDC](#oauth-21--oidc-sso) 절의 흐름으로 붙입니다. 클라이언트를 등록하기 전까지 OAuth 인가는 동작하지 않습니다.
+- 로그아웃/세션 종료의 서브 서비스 반영은 **선택 기능**입니다. SDK의 `revocation-check`를 켜지 않으면 폐기된 액세스 토큰이 만료(기본 15분)까지 유효합니다. [세션과 폐기](#세션과-폐기)를 보세요.
 
 ---
 
@@ -137,7 +137,7 @@ sequenceDiagram
 - 사용자당 활성 세션 수는 `DORO_IAM_SESSION_MAX_ACTIVE_PER_USER`(기본 10, 0 이하는 무제한)로 제한되며, 넘으면 가장 오래된 세션부터 폐기합니다. 세션 만료는 **슬라이딩**입니다: 리프레시할 때마다 마지막 활동 + 30일로 연장됩니다.
 - 폐기 경로(로그아웃, 개별 세션 종료, 다른 기기 로그아웃, 비밀번호 변경, 역할 변경, 재사용 감지)는 모두 `SessionRevocationService` 한 곳을 지나며 **DB 상태 + 리프레시 토큰 폐기 + Redis 킬스위치**를 함께 처리합니다.
 - 세션 종료 API는 **소유자 검사**를 합니다(남의 세션은 404).
-- IAM 자신의 필터는 Redis 세션 블랙리스트를 확인합니다. 하지만 **SDK 필터는 확인하지 않으므로** 서브 서비스에서는 폐기된 액세스 토큰이 만료(기본 15분)까지 유효합니다.
+- IAM 자신의 필터는 Redis 세션 블랙리스트를 확인합니다. 서브 서비스는 SDK의 **`doro.iam.revocation-check`**(기본 `OFF`)를 켜면 `GET /api/v1/sessions/current`(DB 기준 세션 상태, 204/401)로 폐기를 즉시 반영합니다. 켜지 않으면 폐기된 액세스 토큰이 만료(기본 15분)까지 유효합니다. 자세한 내용은 [SDK](#-doro-sdk--서비스-연동-sdk)를 보세요.
 
 ### 관리자 인가와 Guard 동기화
 - 관리자 API는 JWT 역할 + **Guard 재검사**를 함께 요구합니다.
@@ -154,15 +154,34 @@ sequenceDiagram
 
 - 첫 관리자를 만드는 부트스트랩 API는 없습니다(DB의 `users.role`을 직접 지정한 뒤 기동 시 동기화).
 
-### OAuth 2.1 / OIDC — 현재 상태
-`/oauth2/authorize`(PKCE S256), `/oauth2/token`, `/.well-known/openid-configuration`이 있지만 **표준 SSO로 쓰기에는 미완성**입니다.
+### OAuth 2.1 / OIDC (SSO)
+Doro는 **인가 코드 + PKCE(S256)** 방식의 OAuth 2.1 / OpenID Connect 공급자입니다. 서비스는 비밀번호를 직접 다루지 않고 브라우저를 IAM으로 보냈다가 코드를 받아 토큰으로 교환합니다.
 
-| 있는 것 | 없는 것 / 다른 점 |
-|---|---|
-| `authorization_code` + PKCE(S256 필수, 검증은 상수 시간 비교) | `client_id` 등록소 없음(임의 문자열 통과, 공개 클라이언트만) |
-| `redirect_uri` **정확 일치 허용 목록**(`DORO_OAUTH_ALLOWED_REDIRECT_URIS`, 비어 있으면 전부 거부) | `/authorize`는 302가 아니라 **JSON**으로 코드를 반환, 로그인된 Bearer 필요 |
-| 인가 코드 1회용·5분 | 코드 저장소가 **인메모리**(재시작/다중 인스턴스에서 유실) |
-| 포털 동의 화면이 실제 `/authorize` 호출 | `/token`은 `application/json`·camelCase만, `refresh_token` grant·`id_token`·`userinfo`·`scope` 없음 |
+```mermaid
+sequenceDiagram
+    participant B as 브라우저
+    participant A as 클라이언트 앱
+    participant I as IAM
+    participant P as 포털(동의 화면)
+    A->>B: 인가 요청 (PKCE challenge 생성, state/nonce)
+    B->>I: GET /oauth2/authorize?client_id&redirect_uri&code_challenge…
+    I-->>B: 302 /oauth2/consent?… (client_id·redirect_uri 검증 후)
+    B->>P: 로그인 + 동의
+    P->>I: GET /oauth2/authorize (Bearer) → code
+    P-->>B: redirect_uri?code=…&state=…
+    B->>A: code 전달
+    A->>I: POST /oauth2/token (code + code_verifier)
+    I-->>A: access_token · refresh_token · id_token
+```
+
+- **클라이언트 등록**: 관리자 API(`POST/GET/DELETE /api/v1/admin/oauth/clients`, ADMIN + Guard `system:doro#admin`)로 `client_id`와 `redirect_uri` 목록(https만, loopback은 http 허용, 와일드카드·fragment·userinfo 불가)을 등록합니다. 모드 `DORO_OAUTH_CLIENT_REGISTRY_MODE`(기본 `WARN`): 등록된 클라이언트는 **자기 URI와 정확히 일치**해야 하고 스코프는 허용 목록의 부분집합이어야 합니다. 미등록 `client_id`는 `ENFORCE`에서 거부, `WARN`에서는 환경 허용 목록(`DORO_OAUTH_ALLOWED_REDIRECT_URIS`)으로 폴백하며 경고를 남깁니다.
+- **인가 엔드포인트**: `client_id`/`redirect_uri`를 **먼저** 검증하고 실패하면 절대 리다이렉트하지 않습니다(오픈 리다이렉트 방지). 이후 오류만 검증된 `redirect_uri`로 `error`/`state`와 함께 돌려보냅니다. `Bearer`가 있으면(포털 동의 화면) JSON `{code, state}`를 반환합니다.
+- **토큰 엔드포인트**: `application/x-www-form-urlencoded`(RFC 6749 snake_case, RFC 응답·오류 형식, `Cache-Control: no-store`)와 기존 `application/json`(camelCase, `ApiResponse`) 둘 다 받습니다. grant는 `authorization_code`와 **`refresh_token`**(리프레시 회전·재사용 감지, 해당 클라이언트의 세션에만 허용). 인가 코드는 1회용·기본 5분이고 `client_id`·`redirect_uri`·PKCE에 묶이며, 검증 실패 시에도 소비됩니다.
+- **OIDC**: `openid` 스코프면 `id_token`(RS256, `aud`=클라이언트, `nonce`, `email`/`name` 등 스코프별 클레임; `picture`는 http(s) URL만), `GET /oauth2/userinfo`, `/.well-known/openid-configuration`.
+- **코드 저장소**: Redis(`doro:oauth:code:<sha256>`, 원본 코드는 저장하지 않음)를 쓰고, Redis가 없으면 인메모리로 폴백합니다(`DORO_OAUTH_CODE_STORE=auto|redis|memory`).
+- **토큰 격리(중요)**: OAuth로 발급한 액세스 토큰에는 `cid`(클라이언트)가 표시되고 **`role`은 항상 `USER`**입니다(사용자의 관리자 권한이 클라이언트로 넘어가지 않음). 이런 토큰은 IAM에서 `/oauth2/userinfo`와 `/api/v1/sessions/current`에서만 인증으로 인정되고 다른 IAM API(프로필·세션·2FA·관리자)에서는 거부됩니다. `id_token`(`aud` 있음)은 IAM에서 어떤 API에도, SDK에서는 `doro.iam.audience`를 설정하지 않는 한 액세스 토큰으로 인정되지 않습니다.
+- **세션**: OAuth 세션은 클라이언트별로 만들어져 같은 클라이언트의 이전 세션만 교체됩니다. 토큰 엔드포인트와 인증 없는 인가 요청에는 IP 단위 요청 제한이 있습니다.
+- **공개 클라이언트 전용**(`token_endpoint_auth_methods_supported: none`)이며, 브라우저 앱이 다른 origin에서 토큰 엔드포인트를 부르려면 `DORO_CORS_ALLOWED_ORIGIN_PATTERNS`에 그 origin을 추가해야 합니다. 게이트웨이의 `/oauth2/consent` 라우트는 `gateway/nginx.conf` 반영이 필요합니다.
 
 ### API 요약 (`/api/v1/**`, JSON camelCase)
 
@@ -174,9 +193,9 @@ sequenceDiagram
 | 2FA | `POST /auth/2fa/setup`(`{secret, qrUri}`), `/2fa/verify`, `/2fa/disable` | Bearer |
 | 로그아웃 | `POST /auth/logout?sessionId=` (생략 시 토큰의 `sid`) | Bearer + 소유자 검사 |
 | 내 정보 | `GET`·`PATCH /users/me`, `PUT /users/me/password` | Bearer |
-| 세션 | `GET /sessions`, `DELETE /sessions/{id}`, `POST /sessions/revoke-others` | Bearer + 소유자 검사 |
+| 세션 | `GET /sessions`, `GET /sessions/current`(204/401), `DELETE /sessions/{id}`, `POST /sessions/revoke-others` | Bearer (+ 소유자 검사) |
 | 관리자 | `GET /admin/users`, `PATCH /admin/users/{id}/role`, `DELETE /admin/users/{id}/2fa`, `GET /admin/authz`(204) | ADMIN+ & Guard |
-| OAuth/키 | `GET /oauth2/authorize`, `POST /oauth2/token`, `GET /.well-known/{jwks.json,openid-configuration}` | 위 표 참고 |
+| OAuth/키 | `GET /oauth2/authorize`, `POST /oauth2/token`, `GET /oauth2/userinfo`, `GET /.well-known/{jwks.json,openid-configuration}`, 관리자 `…/admin/oauth/clients` | 위 설명 참고 |
 
 `TokenResponse = {accessToken, refreshToken, tokenType:"Bearer", expiresIn, sessionId, userIndex}`
 
@@ -330,6 +349,11 @@ doro:
     clock-skew-seconds: 5
     audience: ""                   # 비어 있지 않으면 aud 클레임에 이 값이 없는 토큰 거부
     jwks-prefetch: true             # 시작 시 JWKS 백그라운드 사전 조회
+    revocation-check: OFF           # OFF | WARN | ENFORCE — 로그아웃/세션 종료를 즉시 반영 (IAM 호출)
+    revocation-cache-seconds: 30
+    revocation-timeout-millis: 2000
+    revocation-fail-open: true
+    revocation-failure-backoff-seconds: 10
   guard:
     grpc-host: guard-api            # 기본 localhost
     grpc-port: 9090
@@ -355,7 +379,8 @@ public PostResponse update(@PathVariable Long postId, @CurrentDoroUser DoroUser 
 
 | 항목 | 동작 |
 |---|---|
-| JWT 검증 | RS256 고정, `exp` 필수, `kid`로 키 선택, 시계 오차 허용. `iss`는 `issuer-validation`에 따라, `aud`는 `doro.iam.audience`가 설정된 경우에만 검증(기본 꺼짐). **세션 폐기(킬스위치)는 검사하지 않음** |
+| JWT 검증 | RS256 고정, `exp` 필수, `kid`로 키 선택, 시계 오차 허용. `iss`는 `issuer-validation`에 따라 검증. **`aud`가 있는 토큰(OIDC id_token 등)은 `doro.iam.audience`를 설정하지 않으면 액세스 토큰으로 인정하지 않고**, 설정하면 그 값이 `aud`에 있어야 함 |
+| 세션 폐기 확인 | 기본 꺼짐(`revocation-check: OFF`). `WARN`/`ENFORCE`면 검증된 토큰의 세션을 IAM `GET /api/v1/sessions/current`로 확인("유효" 30초 캐시, "폐기"는 토큰 만료까지 캐시, 같은 세션 동시 조회는 호출 1회로 합침). 폐기면 `ENFORCE`는 익명 처리, `WARN`은 로그만. IAM 장애는 기본 fail-open이고, 한 번 실패하면 `revocation-failure-backoff-seconds`(기본 10초) 동안은 IAM을 다시 부르지 않습니다 |
 | **필터는 요청을 막지 않음** | 토큰이 없거나 틀려도 **익명으로 통과**합니다. 인증 강제는 `@DoroGuard` 또는 컨트롤러의 `isAuthenticated()` 확인으로 해야 합니다. |
 | 기본 예외 처리 | `DoroAccessDeniedException` → 비로그인 `401 UNAUTHORIZED` / 로그인 `403 ACCESS_DENIED`, Guard 장애(`checkOrThrow`) → `503 GUARD_UNAVAILABLE`. 본문은 `{success:false, code, message, status}`. 서비스가 자체 핸들러를 정의하면 그것이 우선합니다. |
 | Fail-closed | Guard가 응답하지 않으면 `check`는 `false`(거부)입니다. `@DoroGuard` 경로에서는 이것이 403으로 나타납니다(503 아님). 호출당 3초 데드라인, 재시도 없음. |
@@ -424,7 +449,11 @@ docker compose up -d            # postgres, redis, auth-api, guard-api, web, lok
 | `DORO_IAM_TRUSTED_PROXIES` | 루프백 + `172.16.0.0/12` | `X-Real-IP`를 신뢰할 대역 |
 | `DORO_IAM_RATE_LIMIT_ENABLED` / `_LOGIN_MAX` | `true` / `20` | 요청 제한 |
 | `DORO_CORS_ALLOWED_ORIGIN_PATTERNS` | 로컬 + 운영 도메인 목록 | 쉼표 구분, **`*` 단독은 기동 시 거부** |
-| `DORO_OAUTH_ALLOWED_REDIRECT_URIS` | 비어 있음(전부 거부) | `redirect_uri` 정확 일치 목록 |
+| `DORO_OAUTH_ALLOWED_REDIRECT_URIS` | 비어 있음(전부 거부) | 미등록 클라이언트용 `redirect_uri` 정확 일치 목록 |
+| `DORO_OAUTH_CLIENT_REGISTRY_MODE` | `WARN` | OAuth 클라이언트 등록 강제 `OFF`/`WARN`/`ENFORCE` |
+| `DORO_OAUTH_CONSENT_URL` | `/oauth2/consent` | 브라우저 인가 요청이 보내질 동의(로그인) 페이지 |
+| `DORO_OAUTH_CODE_STORE` / `_CODE_TTL_SECONDS` | `auto` / `300` | 인가 코드 저장소(`auto`·`redis`·`memory`)와 수명 |
+| `DORO_IAM_RATE_LIMIT_TOKEN_MAX` | `60` | 토큰 엔드포인트 IP당 10분 요청 수 |
 | `DORO_GUARD_URL` | `http://guard-api:8081` | IAM → Guard |
 | `DORO_GUARD_SECURITY_MODE` | `OFF` | `OFF` / `WARN` / `ENFORCE` |
 | `DORO_GUARD_SERVICE_TOKEN` | 비어 있음 | 공유 토큰(호환용) |
@@ -442,7 +471,7 @@ docker compose up -d            # postgres, redis, auth-api, guard-api, web, lok
 JWT 서명 키를 고정하려면 `doro.iam.jwt.private-key-pem` / `public-key-pem`(PEM 텍스트)을 설정합니다. 설정이 없으면 Redis에 생성·저장합니다.
 
 ### CI/CD
-`main`에 push하면 self-hosted runner가 `.env`를 확인하고, CSP 해시를 검증하고(`scripts/check-csp-hash.sh`), `docker compose up -d --build`로 배포한 뒤 IAM/Guard `/actuator/health`가 `UP`이 될 때까지 기다립니다. 게이트웨이와 서브 서비스 배포는 별도입니다.
+`main`에 push하면 self-hosted runner가 먼저 **테스트 작업**을 실행합니다: `scripts/ci-test.sh`가 Docker 컨테이너 안에서 백엔드(auth·guard·sdk)와 웹 테스트·타입 검사를 돌립니다(러너에는 Java 21만 있어서 Java 25/Node 24 이미지를 사용, 운영 서비스와 같은 호스트라 CPU 2·메모리 4GB 제한, 캐시는 `~/.cache/doro-ci`). **테스트가 실패하거나 취소되면 배포하지 않습니다.** 통과하면 배포 작업이 `.env`를 확인하고 CSP 해시를 검증한 뒤(`scripts/check-csp-hash.sh`) `docker compose up -d --build`로 배포하고 IAM/Guard `/actuator/health`가 `UP`이 될 때까지 기다립니다. 긴급 복구용으로 수동 실행(`workflow_dispatch`)에는 `skip_tests` 옵션이 있고, 배포는 동시에 하나씩만 실행됩니다. 게이트웨이와 서브 서비스 배포는 별도입니다.
 
 ### 관측성
 모든 서비스는 stdout으로 로그를 내고 Promtail이 Docker 컨테이너 로그를 Loki로 수집합니다. 로그 형식에 `[traceId] [userId] [clientIp]`가 들어가며, `X-Trace-Id`는 HTTP/gRPC로 전파됩니다. Grafana에는 Loki 데이터소스가 프로비저닝되어 있습니다.
@@ -475,7 +504,7 @@ JWT 서명 키를 고정하려면 `doro.iam.jwt.private-key-pem` / `public-key-p
 **인증(IAM)**
 - **JWT 개인키 보호는 선택 사항입니다.** `DORO_IAM_JWT_KEY_ENCRYPTION_SECRET`을 설정하지 않으면 PEM 설정이 없는 경우 개인키가 Redis에 **평문(무기한)**으로 남습니다(기동 시 ERROR 로그로 알림). 키 회전은 이전 공개키 게시까지만 지원하며, Redis에 있는 키를 교체하는 도구는 없습니다(절차는 `application.yaml` 주석).
 - **인메모리 상태**: 요청 제한, 2FA 티켓, OAuth 인가 코드, TOTP 재사용 방지 맵은 프로세스 메모리에 있어 **재시작 시 사라지고 다중 인스턴스에서 일관되지 않습니다.** (만료된 항목은 주기적으로 청소하고 개수 상한이 있습니다.)
-- **OAuth/OIDC는 미완성**입니다: `client_id` 등록소 없음, `/authorize`가 JSON 반환, 인가 코드 인메모리, `refresh_token` grant·`id_token`·`userinfo`·`scope` 없음.
+- **OAuth/OIDC는 공개 클라이언트·기본 스코프만** 지원합니다: 클라이언트 시크릿 인증, `userinfo`의 스코프별 응답, 동의 이력 저장은 없습니다. 인가 코드가 재사용되면 이미 발급된 토큰은 폐기하지 않고 경고만 남깁니다(RFC 6749 권고 미구현). OAuth 액세스 토큰은 IAM API에서는 격리되지만(위 **토큰 격리**), 서브 서비스에서는 일반 토큰처럼 쓰이므로 서비스는 `role` 클레임이 아니라 Guard로 권한을 판정해야 합니다. 코드 저장소 `auto` 모드는 기동 시 Redis에 닿지 않으면 재시작 전까지 인메모리를 씁니다.
 - 킬스위치는 Redis에 의존하며 Redis 장애 시 **fail-open**입니다. 세션 상한·같은 기기 정리는 동시 로그인에서 잠깐 초과할 수 있습니다(직렬화하지 않음).
 - Guard 튜플 쓰기는 실패해도 DB 변경이 성공으로 처리됩니다(삭제 후 쓰기 사이 장애 시 관리자 튜플이 일시 사라질 수 있음 → 기동 시 전체 재동기화로 복구).
 - `lookup`·가입 409·로그인 오류 구분으로 **계정 존재 여부가 노출**됩니다(요청 제한으로 완화). 이메일은 새 가입부터 소문자로 저장하고 조회는 대소문자를 무시하지만, `lower(email)` 조회는 인덱스를 타지 않습니다(DB 함수형 인덱스는 별도 Flyway 스크립트 필요).
@@ -490,9 +519,9 @@ JWT 서명 키를 고정하려면 `doro.iam.jwt.private-key-pem` / `public-key-p
 - Guard에는 Redis 의존성이 없습니다(이전의 미사용 Redis 설정 제거).
 
 **SDK·포털·인프라**
-- SDK는 **세션 폐기(킬스위치)를 확인하지 않습니다.** 폐기된 액세스 토큰이 서브 서비스에서는 만료(기본 15분)까지 유효합니다. 확인하려면 IAM 쪽 조회 수단이 먼저 필요합니다. `issuer-validation` 기본은 OFF이고, Guard와의 gRPC는 평문입니다.
+- SDK의 **세션 폐기 확인은 기본 꺼져 있습니다**(`revocation-check: OFF`). 켜지 않은 서비스에서는 폐기된 액세스 토큰이 만료(기본 15분)까지 유효하고, 켜면 서비스 요청마다 IAM 확인(캐시·백오프 포함)이 추가됩니다. `issuer-validation` 기본은 OFF이고, Guard와의 gRPC는 평문입니다.
 - 포털은 모든 계정의 액세스/리프레시 토큰을 `localStorage`에 보관합니다(XSS가 있으면 유출 — 게이트웨이 CSP가 주된 완화책).
-- Loki는 보존 기간 설정이 없고 root로 실행되며, Promtail은 호스트의 **모든** 컨테이너 로그를 수집합니다. CI는 테스트를 실행하지 않고 배포합니다.
+- Loki는 보존 기간 설정이 없고 root로 실행되며, Promtail은 호스트의 **모든** 컨테이너 로그를 수집합니다.
 - 백엔드 테스트는 H2에서 돌아 PostgreSQL 전용 SQL(Guard V3 부분 유니크 인덱스, `ON CONFLICT`)은 테스트로 검증되지 않습니다.
 
 ---
