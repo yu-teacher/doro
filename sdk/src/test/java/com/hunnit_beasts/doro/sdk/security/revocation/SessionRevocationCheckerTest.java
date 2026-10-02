@@ -212,4 +212,64 @@ class SessionRevocationCheckerTest {
         assertThat(SessionRevocationChecker.resolveUrl("", "not a uri")).isNull();
         assertThat(SessionRevocationChecker.resolveUrl("", "/relative/path")).isNull();
     }
+
+    private SessionRevocationChecker checkerWithBackoff(long cacheSeconds, int timeoutMillis, long backoffSeconds) {
+        return new SessionRevocationChecker(iam.url(), cacheSeconds, timeoutMillis, backoffSeconds * 1000L, clock);
+    }
+
+    @Test
+    @DisplayName("IAM 이 판정을 못 내리면 백오프 동안은 다시 호출하지 않고 바로 UNAVAILABLE 을 돌려준다 (장애가 모든 요청의 지연으로 번지지 않게)")
+    void unavailableTriggersBackoffWithoutHittingIamAgain() {
+        iam.respondWith(503);
+        SessionRevocationChecker checker = checkerWithBackoff(30, 1000, 10);
+
+        assertThat(checker.check(UUID.randomUUID(), "tok", exp())).isEqualTo(Verdict.UNAVAILABLE);
+        assertThat(iam.hits()).isEqualTo(1);
+
+        // 다른 sid 라도 백오프 동안은 IAM 을 다시 부르지 않는다
+        for (int i = 0; i < 5; i++) {
+            assertThat(checker.check(UUID.randomUUID(), "tok", exp())).isEqualTo(Verdict.UNAVAILABLE);
+        }
+        assertThat(iam.hits()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("백오프가 끝나면 다시 시도하고, IAM 이 회복되어 있으면 정상 판정으로 돌아온다")
+    void backoffEndsAndIamIsRetried() {
+        iam.respondWith(503);
+        SessionRevocationChecker checker = checkerWithBackoff(30, 1000, 10);
+        assertThat(checker.check(UUID.randomUUID(), "tok", exp())).isEqualTo(Verdict.UNAVAILABLE);
+
+        iam.respondWith(204);
+        clock.advanceSeconds(11);
+        assertThat(checker.check(UUID.randomUUID(), "tok", exp())).isEqualTo(Verdict.ACTIVE);
+        assertThat(iam.hits()).isEqualTo(2);
+
+        // 회복 후에는 백오프가 풀려 있다
+        assertThat(checker.check(UUID.randomUUID(), "tok", exp())).isEqualTo(Verdict.ACTIVE);
+        assertThat(iam.hits()).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("백오프 중에도 이미 캐시된 판정(폐기/유효)은 그대로 쓴다")
+    void cachedVerdictsStillServedDuringBackoff() {
+        SessionRevocationChecker checker = checkerWithBackoff(30, 1000, 10);
+        UUID known = UUID.randomUUID();
+        assertThat(checker.check(known, "tok", exp())).isEqualTo(Verdict.ACTIVE);
+
+        iam.respondWith(503);
+        assertThat(checker.check(UUID.randomUUID(), "tok", exp())).isEqualTo(Verdict.UNAVAILABLE); // 백오프 시작
+        assertThat(checker.check(known, "tok", exp())).isEqualTo(Verdict.ACTIVE);
+        assertThat(iam.hits()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("백오프를 0 으로 두면(기본 생성자) 이전과 같이 매번 시도한다")
+    void zeroBackoffKeepsOldBehaviour() {
+        iam.respondWith(503);
+        SessionRevocationChecker checker = checker(30, 1000);
+        checker.check(UUID.randomUUID(), "tok", exp());
+        checker.check(UUID.randomUUID(), "tok", exp());
+        assertThat(iam.hits()).isEqualTo(2);
+    }
 }

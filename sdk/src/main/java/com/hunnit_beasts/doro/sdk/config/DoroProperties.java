@@ -50,6 +50,11 @@ public class DoroProperties {
          * false 이고 모드가 ENFORCE 이면 익명으로 처리한다.
          */
         private boolean revocationFailOpen = true;
+        /**
+         * IAM 이 판정을 내리지 못한 뒤(연결 실패/타임아웃/5xx) 이 시간(초) 동안은 IAM 을 다시 호출하지 않고 곧바로
+         * fail-open/closed 정책을 적용한다. IAM 장애가 모든 서비스 요청의 지연(타임아웃)으로 번지는 것을 막는다. 0 이면 매번 시도한다.
+         */
+        private long revocationFailureBackoffSeconds = 10;
     }
 
     public enum RevocationCheck { OFF, WARN, ENFORCE }

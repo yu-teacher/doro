@@ -54,6 +54,8 @@ public class SessionRevocationChecker {
     private final URI url;
     private final long activeCacheMillis;
     private final long waitMillis;
+    /** IAM 이 판정을 못 내린 뒤 다시 호출하지 않는 시간(밀리초). 0 이하면 매번 시도한다. */
+    private final long failureBackoffMillis;
     private final Clock clock;
     private final RestClient restClient;
     private final Map<UUID, CacheEntry> cache = new ConcurrentHashMap<>();
@@ -61,6 +63,8 @@ public class SessionRevocationChecker {
     private final AtomicLong sequence = new AtomicLong();
     private final Object cacheWriteLock = new Object();
     private volatile long lastUnavailableWarnMillis = Long.MIN_VALUE;
+    /** 이 시각 전까지는 IAM 을 호출하지 않는다(장애가 모든 요청의 타임아웃 지연으로 번지는 것을 막는다). */
+    private volatile long unavailableUntilMillis = Long.MIN_VALUE;
 
     public SessionRevocationChecker(String url, long cacheSeconds, int timeoutMillis) {
         this(url, cacheSeconds, timeoutMillis, Clock.systemUTC());
@@ -68,6 +72,15 @@ public class SessionRevocationChecker {
 
     /** 테스트에서 시계를 주입하기 위한 생성자 */
     public SessionRevocationChecker(String url, long cacheSeconds, int timeoutMillis, Clock clock) {
+        this(url, cacheSeconds, timeoutMillis, 0L, clock);
+    }
+
+    public SessionRevocationChecker(String url, long cacheSeconds, int timeoutMillis, long failureBackoffMillis) {
+        this(url, cacheSeconds, timeoutMillis, failureBackoffMillis, Clock.systemUTC());
+    }
+
+    public SessionRevocationChecker(String url, long cacheSeconds, int timeoutMillis, long failureBackoffMillis, Clock clock) {
+        this.failureBackoffMillis = Math.max(0L, failureBackoffMillis);
         this.url = URI.create(url);
         this.activeCacheMillis = Math.max(0L, cacheSeconds) * 1000L;
         this.waitMillis = 2L * timeoutMillis + WAIT_MARGIN_MILLIS;
@@ -88,6 +101,11 @@ public class SessionRevocationChecker {
         Verdict cached = fromCache(sid);
         if (cached != null) {
             return cached;
+        }
+
+        // IAM 이 직전에 판정을 못 내렸다면 백오프가 끝날 때까지 호출하지 않고 바로 UNAVAILABLE (fail-open/closed 는 호출 측 정책)
+        if (clock.millis() < unavailableUntilMillis) {
+            return Verdict.UNAVAILABLE;
         }
 
         CompletableFuture<Verdict> mine = new CompletableFuture<>();
@@ -148,10 +166,14 @@ public class SessionRevocationChecker {
                     .exchange((request, response) -> response.getStatusCode().value());
         } catch (RuntimeException e) {
             warnUnavailable("IAM unreachable (" + e.getClass().getSimpleName() + ")");
+            startBackoff();
             return Verdict.UNAVAILABLE;
         }
 
         long now = clock.millis();
+        if (status == HTTP_NO_CONTENT || status == HTTP_UNAUTHORIZED || status == HTTP_FORBIDDEN) {
+            unavailableUntilMillis = Long.MIN_VALUE; // IAM 이 정상적으로 판정을 내렸으므로 백오프 해제
+        }
         if (status == HTTP_NO_CONTENT) {
             put(sid, new CacheEntry(Verdict.ACTIVE, now + activeCacheMillis, now, sequence.incrementAndGet()));
             return Verdict.ACTIVE;
@@ -161,7 +183,14 @@ public class SessionRevocationChecker {
             return Verdict.REVOKED;
         }
         warnUnavailable("IAM answered unexpected status " + status);
+        startBackoff();
         return Verdict.UNAVAILABLE;
+    }
+
+    private void startBackoff() {
+        if (failureBackoffMillis > 0) {
+            unavailableUntilMillis = clock.millis() + failureBackoffMillis;
+        }
     }
 
     private void put(UUID sid, CacheEntry entry) {

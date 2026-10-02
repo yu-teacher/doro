@@ -54,7 +54,8 @@ public class DoroAutoConfiguration implements WebMvcConfigurer {
                 revocationMode = DoroProperties.RevocationCheck.OFF;
             } else {
                 revocationChecker = new SessionRevocationChecker(
-                        revocationUrl, iam.getRevocationCacheSeconds(), iam.getRevocationTimeoutMillis());
+                        revocationUrl, iam.getRevocationCacheSeconds(), iam.getRevocationTimeoutMillis(),
+                        iam.getRevocationFailureBackoffSeconds() * 1000L);
             }
         }
         DoroJwtAuthFilter filter = new DoroJwtAuthFilter(
