@@ -22,8 +22,10 @@ log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 OLD_MODE="$(grep '^DORO_GUARD_SECURITY_MODE=' "$ENV_FILE" | cut -d= -f2- || true)"
 OLD_MODE="${OLD_MODE:-OFF}"
 TOKEN="$(grep '^DORO_GUARD_SERVICE_TOKEN=' "$ENV_FILE" | cut -d= -f2- || true)"
+# 토큰을 호출자별로 나눈 뒤(split-guard-tokens.sh --finalize)에는 공유 토큰이 없고 auth 토큰으로 검증한다.
+[ -n "$TOKEN" ] || TOKEN="$(grep '^DORO_GUARD_AUTH_TOKEN=' "$ENV_FILE" | cut -d= -f2- || true)"
 if [ "$MODE" != "OFF" ] && [ -z "$TOKEN" ]; then
-  log "ERROR: DORO_GUARD_SERVICE_TOKEN 이 비어 있어 $MODE 로 바꿀 수 없다"; exit 1
+  log "ERROR: 토큰(DORO_GUARD_SERVICE_TOKEN 또는 DORO_GUARD_AUTH_TOKEN)이 비어 있어 $MODE 로 바꿀 수 없다"; exit 1
 fi
 if [ "$MODE" = "$OLD_MODE" ]; then
   log "이미 $MODE 모드이다. 변경하지 않는다."; exit 0

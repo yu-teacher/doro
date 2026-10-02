@@ -13,6 +13,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -122,5 +123,77 @@ class ServiceTokenAuthTest {
     void grpcWarnAndOffPass() {
         assertThat(grpcCloseStatus(properties(ServiceAuthProperties.Mode.WARN), null)).isNull();
         assertThat(grpcCloseStatus(properties(ServiceAuthProperties.Mode.OFF), null)).isNull();
+    }
+
+    private static final String AUTH_TOKEN = "auth-token-0123456789abcdef0123456789abcdef";
+    private static final String BLOG_TOKEN = "blog-token-0123456789abcdef0123456789abcdef";
+
+    private ServiceAuthProperties perCaller(String sharedToken) {
+        ServiceAuthProperties properties = new ServiceAuthProperties();
+        properties.setMode(ServiceAuthProperties.Mode.ENFORCE);
+        properties.setServiceToken(sharedToken);
+        properties.setServiceTokens("auth:" + AUTH_TOKEN + ", blog:" + BLOG_TOKEN);
+        return properties;
+    }
+
+    @Test
+    @DisplayName("호출자별 토큰: 각자의 토큰은 통과하고 호출자 이름으로 식별된다")
+    void perCallerTokensIdentifyTheCaller() throws Exception {
+        ServiceAuthProperties properties = perCaller("");
+        assertThat(properties.authenticate(AUTH_TOKEN)).contains("auth");
+        assertThat(properties.authenticate(BLOG_TOKEN)).contains("blog");
+        assertThat(properties.authenticate("wrong")).isEmpty();
+        assertThat(callRest(properties, "/api/v1/guard/check", AUTH_TOKEN)).isEqualTo(200);
+        assertThat(callRest(properties, "/api/v1/guard/check", BLOG_TOKEN)).isEqualTo(200);
+        assertThat(callRest(properties, "/api/v1/guard/check", "wrong")).isEqualTo(401);
+        assertThat(callRest(properties, "/api/v1/guard/check", null)).isEqualTo(401);
+    }
+
+    @Test
+    @DisplayName("전환 기간: 공유 토큰과 호출자별 토큰이 함께 통과하고, 공유 토큰을 지우면 공유 토큰은 거부된다")
+    void sharedTokenWorksUntilRemoved() throws Exception {
+        ServiceAuthProperties both = perCaller(TOKEN);
+        assertThat(both.authenticate(TOKEN)).contains(ServiceAuthProperties.SHARED_CALLER);
+        assertThat(callRest(both, "/api/v1/guard/check", TOKEN)).isEqualTo(200);
+        assertThat(callRest(both, "/api/v1/guard/check", AUTH_TOKEN)).isEqualTo(200);
+
+        ServiceAuthProperties finalized = perCaller("");
+        assertThat(callRest(finalized, "/api/v1/guard/check", TOKEN)).isEqualTo(401);
+        assertThat(callRest(finalized, "/api/v1/guard/check", AUTH_TOKEN)).isEqualTo(200);
+    }
+
+    @Test
+    @DisplayName("공유 토큰은 호출자별 토큰이 설정된 뒤에만 정리 대상(deprecated)으로 표시된다")
+    void sharedTokenIsDeprecatedOnlyOncePerCallerTokensExist() {
+        ServiceAuthProperties onlyShared = properties(ServiceAuthProperties.Mode.ENFORCE);
+        assertThat(onlyShared.isSharedTokenDeprecated(ServiceAuthProperties.SHARED_CALLER)).isFalse();
+
+        ServiceAuthProperties both = perCaller(TOKEN);
+        assertThat(both.isSharedTokenDeprecated(ServiceAuthProperties.SHARED_CALLER)).isTrue();
+        assertThat(both.isSharedTokenDeprecated("auth")).isFalse();
+    }
+
+    @Test
+    @DisplayName("gRPC ENFORCE: 호출자별 토큰도 통과한다")
+    void grpcAcceptsPerCallerToken() {
+        ServiceAuthProperties properties = perCaller("");
+        assertThat(grpcCloseStatus(properties, BLOG_TOKEN)).isNull();
+        assertThat(grpcCloseStatus(properties, "wrong")).isNotNull();
+    }
+
+    @Test
+    @DisplayName("잘못된 service-tokens 설정은 기동 시점에 실패한다 (짧은 토큰, 중복 토큰, 잘못된 이름, 예약 이름)")
+    void invalidSpecFailsFast() {
+        ServiceAuthProperties properties = new ServiceAuthProperties();
+        assertThatThrownBy(() -> properties.setServiceTokens("auth:short")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> properties.setServiceTokens("auth:" + AUTH_TOKEN + ",blog:" + AUTH_TOKEN))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> properties.setServiceTokens("Bad_Name:" + AUTH_TOKEN)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> properties.setServiceTokens(AUTH_TOKEN)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> properties.setServiceTokens("shared:" + AUTH_TOKEN)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> properties.setServiceTokens("auth:" + AUTH_TOKEN + ",auth:" + BLOG_TOKEN))
+                .isInstanceOf(IllegalArgumentException.class);
+        properties.setServiceTokens("");
+        assertThat(properties.getCallerTokens()).isEmpty();
     }
 }

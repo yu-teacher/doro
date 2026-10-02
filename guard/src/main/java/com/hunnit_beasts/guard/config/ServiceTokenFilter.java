@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.Optional;
 
 /** /api/v1/guard/** REST 호출에 서비스 토큰 검증을 적용한다. (health, swagger 등은 대상이 아니다) */
 @Slf4j
@@ -34,8 +35,13 @@ public class ServiceTokenFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
-        boolean authenticated = properties.matches(request.getHeader(ServiceAuthProperties.HEADER_NAME));
-        if (!authenticated) {
+        Optional<String> caller = properties.authenticate(request.getHeader(ServiceAuthProperties.HEADER_NAME));
+        if (caller.isPresent()) {
+            if (properties.isSharedTokenDeprecated(caller.get())) {
+                rateLimitedWarn.warn(log, "rest-shared:" + request.getRequestURI(),
+                        ServiceAuthProperties.SHARED_TOKEN_WARNING + ": transport=rest, path={}", request.getRequestURI());
+            }
+        } else {
             rateLimitedWarn.warn(log, "rest:" + request.getMethod() + ":" + request.getRequestURI(),
                     "Guard REST call without a valid service token: method={}, path={}, mode={}",
                     request.getMethod(), request.getRequestURI(), properties.getMode());

@@ -8,6 +8,8 @@ import io.grpc.Status;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.Optional;
+
 /** gRPC 호출에 서비스 토큰 검증을 적용한다. */
 @Slf4j
 @RequiredArgsConstructor
@@ -22,8 +24,17 @@ public class ServiceTokenServerInterceptor implements ServerInterceptor {
     @Override
     public <ReqT, RespT> ServerCall.Listener<ReqT> interceptCall(
             ServerCall<ReqT, RespT> call, Metadata headers, ServerCallHandler<ReqT, RespT> next) {
-        if (properties.isActive() && !properties.matches(headers.get(TOKEN_KEY))) {
-            String method = call.getMethodDescriptor().getFullMethodName();
+        if (!properties.isActive()) {
+            return next.startCall(call, headers);
+        }
+        String method = call.getMethodDescriptor().getFullMethodName();
+        Optional<String> caller = properties.authenticate(headers.get(TOKEN_KEY));
+        if (caller.isPresent()) {
+            if (properties.isSharedTokenDeprecated(caller.get())) {
+                rateLimitedWarn.warn(log, "grpc-shared:" + method,
+                        ServiceAuthProperties.SHARED_TOKEN_WARNING + ": transport=grpc, method={}", method);
+            }
+        } else {
             rateLimitedWarn.warn(log, "grpc:" + method,
                     "Guard gRPC call without a valid service token: method={}, mode={}", method, properties.getMode());
             if (properties.getMode() == ServiceAuthProperties.Mode.ENFORCE) {

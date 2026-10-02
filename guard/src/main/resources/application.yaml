@@ -53,6 +53,8 @@ doro:
       # OFF | WARN | ENFORCE. 모든 호출자가 토큰을 보내도록 배포한 뒤 OFF -> WARN -> ENFORCE 순으로 올린다.
       mode: ${DORO_GUARD_SECURITY_MODE:OFF}
       service-token: ${DORO_GUARD_SERVICE_TOKEN:}
+      # 호출자별 토큰. 형식: auth:<토큰>,blog:<토큰> (토큰은 32자 이상). 공유 토큰과 함께 쓸 수 있다.
+      service-tokens: ${DORO_GUARD_SERVICE_TOKENS:}
 
 management:
   endpoints:
