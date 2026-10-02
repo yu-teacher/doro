@@ -26,6 +26,7 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-web'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	implementation 'io.micrometer:micrometer-registry-prometheus'
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.5'
 
 	// JPA, Flyway & Postgres
@@ -35,9 +36,8 @@ dependencies {
 	runtimeOnly 'org.postgresql:postgresql'
 	testRuntimeOnly 'com.h2database:h2'
 
-	// Caching: L1 Caffeine & L2 Redis
+	// Caching: L1 Caffeine (Guard 는 Redis 를 사용하지 않는다. 스타터가 있으면 /actuator/health 에 Redis 지표가 섞인다)
 	implementation 'com.github.ben-manes.caffeine:caffeine:3.1.8'
-	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 	implementation 'com.fasterxml.jackson.core:jackson-databind'
 
 	// gRPC & Protobuf

@@ -35,20 +35,25 @@ spring:
     table: guard_schema_history
     locations: classpath:db/migration,classpath:db/vendor/{vendor}
 
-  data:
-    redis:
-      host: ${SPRING_DATA_REDIS_HOST:localhost}
-      port: ${SPRING_DATA_REDIS_PORT:6379}
-      password: ${SPRING_DATA_REDIS_PASSWORD:}
-      timeout: 3000ms
-
 doro:
   guard:
     grpc:
       port: ${GRPC_PORT:9090}
     engine:
+      # Check/Expand 재귀 탐색 최대 깊이
       max-depth: 32
-      cache-ttl-seconds: 60
+      # L1(Caffeine) 인가 결과 캐시 TTL(초)과 최대 항목 수. TTL 0 이면 캐시하지 않는다.
+      cache-ttl-seconds: ${DORO_GUARD_CACHE_TTL_SECONDS:60}
+      cache-max-size: ${DORO_GUARD_CACHE_MAX_SIZE:50000}
+      # Expand 응답 트리의 최대 노드 수. 넘으면 전개를 멈추고 루트에 "truncated":true 를 표시한다.
+      expand-max-nodes: ${DORO_GUARD_EXPAND_MAX_NODES:5000}
+    validation:
+      # OFF | WARN | ENFORCE. 튜플(타입/릴레이션 선언 여부)과 스키마 DSL(이해 못 한 줄, 선언되지 않은 타입 참조) 검증.
+      # WARN 은 로그만 남기고, ENFORCE 는 400(INVALID_TUPLE / INVALID_SYNTAX)으로 거부한다.
+      mode: ${DORO_GUARD_VALIDATION_MODE:WARN}
+    schema:
+      # DB 의 활성 스키마 버전을 주기적으로 확인해 다른 인스턴스의 변경/기동 시 폴백을 반영한다(초). 0 이면 비활성.
+      refresh-interval-seconds: ${DORO_GUARD_SCHEMA_REFRESH_SECONDS:30}
     security:
       # OFF | WARN | ENFORCE. 모든 호출자가 토큰을 보내도록 배포한 뒤 OFF -> WARN -> ENFORCE 순으로 올린다.
       mode: ${DORO_GUARD_SECURITY_MODE:OFF}
@@ -76,5 +81,5 @@ logging:
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} [traceId=%X{traceId:-NONE}] [clientIp=%X{clientIp:-LOCAL}] - %msg%n"
   level:
-    com.hunnit_beasts.guard: DEBUG
+    com.hunnit_beasts.guard: ${DORO_LOG_LEVEL:INFO}
 

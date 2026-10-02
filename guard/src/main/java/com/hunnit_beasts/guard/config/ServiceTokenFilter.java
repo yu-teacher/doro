@@ -22,6 +22,8 @@ import java.util.Optional;
 public class ServiceTokenFilter extends OncePerRequestFilter {
 
     private static final String PROTECTED_PREFIX = "/api/v1/guard";
+    /** 경고 로그 키에 쓰는 경로 세그먼트 수. 원시 URI 를 키로 쓰면 임의 경로로 키가 무한히 늘어난다. */
+    private static final int LOG_KEY_PATH_SEGMENTS = 4;
     private static final String SCHEMA_PATH = "/api/v1/guard/schema";
 
     private final ServiceAuthProperties properties;
@@ -39,7 +41,7 @@ public class ServiceTokenFilter extends OncePerRequestFilter {
         Optional<String> caller = properties.authenticate(request.getHeader(ServiceAuthProperties.HEADER_NAME));
         if (caller.isPresent()) {
             if (properties.isSharedTokenDeprecated(caller.get())) {
-                rateLimitedWarn.warn(log, "rest-shared:" + request.getRequestURI(),
+                rateLimitedWarn.warn(log, "rest-shared:" + boundedPath(request.getRequestURI()),
                         ServiceAuthProperties.SHARED_TOKEN_WARNING + ": transport=rest, path={}", request.getRequestURI());
             }
             if (isSchemaWrite(request) && !properties.hasScope(caller.get(), ServiceAuthProperties.SCOPE_SCHEMA_WRITE)) {
@@ -51,7 +53,7 @@ public class ServiceTokenFilter extends OncePerRequestFilter {
                 }
             }
         } else {
-            rateLimitedWarn.warn(log, "rest:" + request.getMethod() + ":" + request.getRequestURI(),
+            rateLimitedWarn.warn(log, "rest:" + request.getMethod() + ":" + boundedPath(request.getRequestURI()),
                     "Guard REST call without a valid service token: method={}, path={}, mode={}",
                     request.getMethod(), request.getRequestURI(), properties.getMode());
             if (properties.getMode() == ServiceAuthProperties.Mode.ENFORCE) {
@@ -60,6 +62,25 @@ public class ServiceTokenFilter extends OncePerRequestFilter {
             }
         }
         filterChain.doFilter(request, response);
+    }
+
+    /** 앞의 4개 세그먼트만 남긴다. 예: /api/v1/guard/tuples/abc/def -> /api/v1/guard/tuples */
+    static String boundedPath(String uri) {
+        if (uri == null) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        int segments = 0;
+        for (String segment : uri.split("/")) {
+            if (segment.isEmpty()) {
+                continue;
+            }
+            if (segments++ >= LOG_KEY_PATH_SEGMENTS) {
+                break;
+            }
+            sb.append('/').append(segment);
+        }
+        return sb.toString();
     }
 
     private static boolean isSchemaWrite(HttpServletRequest request) {

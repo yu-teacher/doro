@@ -12,6 +12,11 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.validation.FieldError;
+import org.springframework.context.MessageSourceResolvable;
+import org.springframework.validation.method.ParameterErrors;
+import org.springframework.validation.method.ParameterValidationResult;
 
 import java.util.List;
 
@@ -74,6 +79,46 @@ public class GlobalExceptionHandler {
                         .reason(err.getDefaultMessage())
                         .build())
                 .toList();
+
+        ErrorResponse response = ErrorResponse.builder()
+                .status(HttpStatus.BAD_REQUEST.value())
+                .error(HttpStatus.BAD_REQUEST.getReasonPhrase())
+                .code("INVALID_INPUT_VALUE")
+                .message("요청 파라미터 유효성 검증에 실패했습니다.")
+                .path(request.getRequestURI())
+                .details(details)
+                .build();
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+    }
+
+    /**
+     * Spring 7 의 메서드 검증: {@code @Valid @RequestBody List<...>} 처럼 컨테이너 파라미터의 제약 위반은
+     * MethodArgumentNotValidException 이 아니라 이 예외로 올라온다. 처리하지 않으면 500 이 된다.
+     */
+    @ExceptionHandler(HandlerMethodValidationException.class)
+    public ResponseEntity<ErrorResponse> handleMethodValidation(HandlerMethodValidationException ex, HttpServletRequest request) {
+        List<ErrorResponse.FieldErrorDetail> details = new java.util.ArrayList<>();
+        for (ParameterValidationResult result : ex.getParameterValidationResults()) {
+            if (result instanceof ParameterErrors parameterErrors) {
+                for (FieldError err : parameterErrors.getFieldErrors()) {
+                    details.add(ErrorResponse.FieldErrorDetail.builder()
+                            .field(parameterErrors.getNestedPath() + err.getField())
+                            .rejectedValue(err.getRejectedValue())
+                            .reason(err.getDefaultMessage())
+                            .build());
+                }
+            } else {
+                for (MessageSourceResolvable error : result.getResolvableErrors()) {
+                    details.add(ErrorResponse.FieldErrorDetail.builder()
+                            .field(result.getMethodParameter().getParameterName())
+                            .rejectedValue(result.getArgument())
+                            .reason(error.getDefaultMessage())
+                            .build());
+                }
+            }
+        }
+        log.warn("Method validation failed at {}: {} violation(s)", request.getRequestURI(), details.size());
 
         ErrorResponse response = ErrorResponse.builder()
                 .status(HttpStatus.BAD_REQUEST.value())

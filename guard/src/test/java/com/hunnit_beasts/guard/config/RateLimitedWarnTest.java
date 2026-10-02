@@ -39,4 +39,29 @@ class RateLimitedWarnTest {
 
         verify(log, times(2)).warn(anyString(), any(Object[].class));
     }
+
+    @Test
+    @DisplayName("서로 다른 키가 아무리 많아도 추적 키 수는 상한을 넘지 않는다")
+    void trackedKeysAreBounded() {
+        Logger log = mock(Logger.class);
+        RateLimitedWarn warn = new RateLimitedWarn(60_000L, 100);
+
+        for (int i = 0; i < 10_000; i++) {
+            warn.warn(log, "rest:GET:/api/v1/guard/random-" + i, "no token");
+            org.assertj.core.api.Assertions.assertThat(warn.trackedKeys()).isLessThanOrEqualTo(100);
+        }
+        // 상한에 걸려 키가 비워져도 새 키의 첫 경고는 기록된다 (모든 키가 한 번은 기록됨)
+        verify(log, times(10_000)).warn(anyString(), any(Object[].class));
+    }
+
+    @Test
+    @DisplayName("ServiceTokenFilter 의 로그 키는 경로 앞 4개 세그먼트로 제한된다")
+    void filterLogKeyIsTruncatedToFourSegments() {
+        org.assertj.core.api.Assertions.assertThat(ServiceTokenFilter.boundedPath("/api/v1/guard/tuples/abc/def"))
+                .isEqualTo("/api/v1/guard/tuples");
+        org.assertj.core.api.Assertions.assertThat(ServiceTokenFilter.boundedPath("/api/v1/guard/check"))
+                .isEqualTo("/api/v1/guard/check");
+        org.assertj.core.api.Assertions.assertThat(ServiceTokenFilter.boundedPath("/api/v1"))
+                .isEqualTo("/api/v1");
+    }
 }

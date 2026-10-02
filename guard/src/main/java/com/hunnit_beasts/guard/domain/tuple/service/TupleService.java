@@ -22,6 +22,7 @@ public class TupleService {
 
     private final RelationTupleRepository tupleRepository;
     private final CheckEngine checkEngine;
+    private final TupleSchemaValidator schemaValidator;
 
     @Transactional
     public int writeTuples(List<TupleDto> dtos) {
@@ -30,6 +31,9 @@ public class TupleService {
         for (TupleDto dto : dtos) {
             unique.putIfAbsent(keyOf(dto), dto);
         }
+
+        // ENFORCE 에서는 배치 전체를 쓰기 전에 거부한다 (WARN 은 로그만).
+        schemaValidator.validate(unique.values());
 
         int written = 0;
         for (TupleDto dto : unique.values()) {

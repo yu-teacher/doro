@@ -32,6 +32,13 @@ doro:
     engine:
       max-depth: 32
       cache-ttl-seconds: 60
+      cache-max-size: 50000
+      expand-max-nodes: 5000
+    validation:
+      mode: WARN
+    schema:
+      # 테스트에서는 백그라운드 갱신 스레드를 끄고 refreshFromDatabase() 를 직접 호출한다.
+      refresh-interval-seconds: 0
 
 management:
   health:

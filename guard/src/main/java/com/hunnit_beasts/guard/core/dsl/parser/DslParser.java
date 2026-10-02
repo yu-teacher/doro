@@ -10,10 +10,36 @@ import java.util.*;
 @Component
 public class DslParser {
 
-    public SchemaAst parse(String dslContent) {
-        if (dslContent == null || dslContent.isBlank()) {
-            return new SchemaAst(Collections.emptyMap());
+    /** 파싱은 성공했지만 의심스러운 지점. 평가 방식에는 영향을 주지 않으며 등록 시 검증(validation.mode)에만 쓴다. */
+    public record Diagnostic(int line, String message) {
+        @Override
+        public String toString() {
+            return "line " + line + ": " + message;
         }
+    }
+
+    private record RelationLine(int line, String typeName, RelationAst relation) {}
+
+    public record ParseResult(SchemaAst ast, List<Diagnostic> diagnostics) {}
+
+    /** 기존 동작 그대로 파싱한다 (진단 없음). 저장된 스키마를 읽는 경로는 항상 이쪽을 써서 기동이 실패하지 않게 한다. */
+    public SchemaAst parse(String dslContent) {
+        return parseWithDiagnostics(dslContent).ast();
+    }
+
+    /**
+     * 파싱 결과와 함께 진단을 돌려준다. 진단 대상:
+     * (a) 이해하지 못해 무시한 줄, (b) 선언되지 않은 타입 이름을 가리키는 직접 항(전방 참조/오타).
+     * TTU 항(예: system#admin)은 검사하지 않는다.
+     */
+    public ParseResult parseWithDiagnostics(String dslContent) {
+        if (dslContent == null || dslContent.isBlank()) {
+            return new ParseResult(new SchemaAst(Collections.emptyMap()), List.of());
+        }
+
+        List<Diagnostic> diagnostics = new ArrayList<>();
+        // 타입 이름 검사를 위해 (줄 번호, 소속 타입, 릴레이션)을 기록해 둔다.
+        List<RelationLine> relationLines = new ArrayList<>();
 
         Map<String, TypeAst> types = new LinkedHashMap<>();
         String[] rawLines = dslContent.split("\\r?\\n");
@@ -21,7 +47,9 @@ public class DslParser {
         String currentTypeName = null;
         Map<String, RelationAst> currentRelations = new LinkedHashMap<>();
 
-        for (String rawLine : rawLines) {
+        for (int lineIdx = 0; lineIdx < rawLines.length; lineIdx++) {
+            String rawLine = rawLines[lineIdx];
+            int lineNo = lineIdx + 1;
             String line = rawLine.trim();
 
             // 주석 및 빈 줄 무시
@@ -71,7 +99,12 @@ public class DslParser {
                 String exprStr = afterRel.substring(colonIdx + 1).trim();
 
                 ExpressionNode exprNode = parseExpression(exprStr, currentRelations);
-                currentRelations.put(relName, new RelationAst(relName, exprNode));
+                RelationAst relationAst = new RelationAst(relName, exprNode);
+                currentRelations.put(relName, relationAst);
+                relationLines.add(new RelationLine(lineNo, currentTypeName, relationAst));
+            } else if (!line.equals("{")) {
+                // 타입 선언을 다음 줄의 '{' 로 여는 스타일은 무시해도 의미가 같으므로 정상으로 본다.
+                diagnostics.add(new Diagnostic(lineNo, "이해할 수 없는 줄이 무시되었습니다: " + line));
             }
         }
 
@@ -79,7 +112,31 @@ public class DslParser {
             types.put(currentTypeName, new TypeAst(currentTypeName, currentRelations));
         }
 
-        return new SchemaAst(types);
+        for (RelationLine rl : relationLines) {
+            collectUndeclaredTypeTerms(rl.relation().expression(), types.keySet(), rl, diagnostics);
+        }
+        diagnostics.sort(Comparator.comparingInt(Diagnostic::line));
+
+        return new ParseResult(new SchemaAst(types), diagnostics);
+    }
+
+    private static void collectUndeclaredTypeTerms(ExpressionNode node, Set<String> typeNames,
+                                                   RelationLine rl, List<Diagnostic> diagnostics) {
+        if (node instanceof DirectRelationNode direct) {
+            if (!typeNames.contains(direct.targetType())) {
+                diagnostics.add(new Diagnostic(rl.line(), "type " + rl.typeName() + " 의 relation " + rl.relation().name()
+                        + " 이(가) 선언되지 않은 이름 '" + direct.targetType()
+                        + "' 을(를) 참조합니다 (오타이거나, 같은 타입에서 나중에 선언된 relation 의 전방 참조일 수 있습니다)."));
+            }
+        } else if (node instanceof UnionNode union) {
+            union.children().forEach(c -> collectUndeclaredTypeTerms(c, typeNames, rl, diagnostics));
+        } else if (node instanceof IntersectionNode intersection) {
+            intersection.children().forEach(c -> collectUndeclaredTypeTerms(c, typeNames, rl, diagnostics));
+        } else if (node instanceof DifferenceNode difference) {
+            collectUndeclaredTypeTerms(difference.base(), typeNames, rl, diagnostics);
+            collectUndeclaredTypeTerms(difference.subtract(), typeNames, rl, diagnostics);
+        }
+        // ComputedUsersetNode / TupleToUsersetNode / SubjectUsersetNode 는 검사하지 않는다 (TTU 는 기본 스키마에도 비활성 항이 있다).
     }
 
     private ExpressionNode parseExpression(String exprStr, Map<String, RelationAst> existingRelations) {

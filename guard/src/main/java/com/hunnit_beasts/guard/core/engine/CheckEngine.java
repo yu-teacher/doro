@@ -11,6 +11,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
@@ -30,18 +31,43 @@ public class CheckEngine {
     @Value("${doro.guard.engine.max-depth:32}")
     private int maxDepth = 32;
 
-    // L1 인메모리 캐시 (TTL 60초)
+    @Value("${doro.guard.engine.cache-ttl-seconds:60}")
+    private long cacheTtlSeconds = 60;
+
+    @Value("${doro.guard.engine.cache-max-size:50000}")
+    private long cacheMaxSize = 50_000;
+
     // 캐시 무효화 세대. 평가 도중 무효화가 일어났다면 그 평가 결과는 캐시에 넣지 않는다.
     private final AtomicLong cacheGeneration = new AtomicLong();
 
-    private final Cache<String, Boolean> l1Cache = Caffeine.newBuilder()
-            .maximumSize(50_000)
-            .expireAfterWrite(Duration.ofSeconds(60))
-            .build();
+    /** L1 캐시 값: 판정과 그 판정에 도달한 최대 재귀 깊이 */
+    private record CachedDecision(boolean allowed, int depth) {}
+
+    // L1 인메모리 캐시. TTL/최대 크기는 doro.guard.engine.cache-* 로 설정한다.
+    private Cache<String, CachedDecision> l1Cache = buildCache();
+
+    @PostConstruct
+    void initCache() {
+        l1Cache = buildCache();
+        log.info("CheckEngine L1 cache: ttl={}s, maxSize={}", cacheTtlSeconds, cacheMaxSize);
+    }
+
+    /** TTL 또는 최대 크기가 0 이하이면 캐시를 사용하지 않는다. */
+    private boolean cacheEnabled() {
+        return cacheTtlSeconds > 0 && cacheMaxSize > 0;
+    }
+
+    private Cache<String, CachedDecision> buildCache() {
+        return Caffeine.newBuilder()
+                .maximumSize(Math.max(0, cacheMaxSize))
+                .expireAfterWrite(Duration.ofSeconds(Math.max(0, cacheTtlSeconds)))
+                .build();
+    }
 
     /** 깊이 초과/순환으로 탐색이 잘린 횟수. 잘린 결과는 "진짜 거부"와 구분되므로 캐시하지 않고 차집합에서는 거부로 처리한다. */
     public static class EvalState {
         private int cutoffs;
+        private int maxDepthReached;
 
         void markCutoff() {
             cutoffs++;
@@ -49,6 +75,16 @@ public class CheckEngine {
 
         int cutoffs() {
             return cutoffs;
+        }
+
+        void observeDepth(int depth) {
+            if (depth > maxDepthReached) {
+                maxDepthReached = depth;
+            }
+        }
+
+        int maxDepthReached() {
+            return maxDepthReached;
         }
     }
 
@@ -109,18 +145,20 @@ public class CheckEngine {
                 .build();
 
         String cacheKey = initialContext.toSignature();
-        Boolean cached = l1Cache.getIfPresent(cacheKey);
+        CachedDecision cached = l1Cache.getIfPresent(cacheKey);
         if (cached != null) {
-            return new CheckResult(cached, 0, "L1_CACHE_HIT");
+            return new CheckResult(cached.allowed(), cached.depth(), "L1_CACHE_HIT");
         }
 
         long generation = cacheGeneration.get();
         boolean allowed = evaluate(initialContext);
-        boolean cacheable = initialContext.getState().cutoffs() == 0 && generation == cacheGeneration.get();
+        // 루트 컨텍스트의 depth 는 항상 0 이므로, 요청 전체에서 실제로 도달한 최대 깊이를 EvalState 에서 읽는다.
+        int depthReached = initialContext.getState().maxDepthReached();
+        boolean cacheable = cacheEnabled() && initialContext.getState().cutoffs() == 0 && generation == cacheGeneration.get();
         if (cacheable) {
-            l1Cache.put(cacheKey, allowed);
+            l1Cache.put(cacheKey, new CachedDecision(allowed, depthReached));
         }
-        return new CheckResult(allowed, initialContext.getDepth(), allowed ? "ACCESS_GRANTED" : "ACCESS_DENIED");
+        return new CheckResult(allowed, depthReached, allowed ? "ACCESS_GRANTED" : "ACCESS_DENIED");
     }
 
     private boolean evaluate(CheckContext ctx) {
@@ -130,6 +168,8 @@ public class CheckEngine {
             ctx.getState().markCutoff();
             return false;
         }
+
+        ctx.getState().observeDepth(ctx.getDepth());
 
         if (ctx.getVisited().contains(ctx.toSignature())) {
             log.warn("CheckEngine: Circular reference detected at {}", ctx.toSignature());
