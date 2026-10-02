@@ -6,7 +6,7 @@ export const CONSENT_RETURN_STORAGE_KEY = 'doro_oauth_consent_return';
 export const CONSENT_RETURN_TTL_MS = 10 * 60 * 1000;
 
 // 로그인 후 복원하는 파라미터는 동의 화면이 쓰는 것만 허용한다.
-const CONSENT_PARAM_NAMES = ['client_id', 'redirect_uri', 'code_challenge', 'state'] as const;
+const CONSENT_PARAM_NAMES = ['client_id', 'redirect_uri', 'code_challenge', 'code_challenge_method', 'scope', 'state', 'nonce'] as const;
 
 interface StoredConsent {
   query: string;

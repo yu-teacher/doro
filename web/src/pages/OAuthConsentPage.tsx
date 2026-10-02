@@ -3,12 +3,22 @@ import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { isAxiosError } from 'axios';
 import { useAuthStore } from '../store/authStore';
 import { apiClient } from '../api/client';
-import { buildAuthorizationRedirect, parseConsentRequest } from '../utils/oauthConsent';
+import {
+  buildAuthorizationRedirect,
+  buildAuthorizeParams,
+  describeScopes,
+  parseConsentRequest,
+  resolveAuthorizeError,
+} from '../utils/oauthConsent';
 import { saveConsentReturn } from '../utils/consentReturn';
 import { Shield, Check, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 interface AuthorizeResponse {
   data?: { code?: string; state?: string };
+}
+
+interface ServerErrorBody {
+  message?: unknown;
 }
 
 export const OAuthConsentPage: React.FC = () => {
@@ -33,19 +43,13 @@ export const OAuthConsentPage: React.FC = () => {
 
   const handleApprove = async () => {
     if (!parsed.ok || submitting) return;
-    const { clientId, redirectUri, codeChallenge, state } = parsed.request;
+    const { redirectUri, state } = parsed.request;
     setSubmitting(true);
     setErrorMessage(null);
     try {
       // 실제 인가 서버를 호출한다. redirect_uri 허용 여부는 서버가 판정하며, 허용되지 않으면 코드를 발급하지 않는다.
       const response = await apiClient.get<AuthorizeResponse>('/oauth2/authorize', {
-        params: {
-          client_id: clientId,
-          redirect_uri: redirectUri,
-          response_type: 'code',
-          code_challenge: codeChallenge,
-          ...(state ? { state } : {}),
-        },
+        params: buildAuthorizeParams(parsed.request),
       });
       const code = response.data?.data?.code;
       if (!code) {
@@ -55,8 +59,12 @@ export const OAuthConsentPage: React.FC = () => {
       setApproved(true);
       window.location.assign(buildAuthorizationRedirect(redirectUri, code, state));
     } catch (error) {
-      const rejected = isAxiosError(error) && error.response?.status === 400;
-      setErrorMessage(rejected ? '허용되지 않은 요청입니다. 앱 관리자에게 문의해 주세요.' : '승인 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
+      if (isAxiosError<ServerErrorBody>(error)) {
+        setErrorMessage(resolveAuthorizeError(error.response?.status, error.response?.data?.message));
+      } else {
+        console.error('OAuth authorize request failed', error);
+        setErrorMessage(resolveAuthorizeError(undefined, null));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -87,7 +95,7 @@ export const OAuthConsentPage: React.FC = () => {
     );
   }
 
-  const { clientId, redirectHost } = parsed.request;
+  const { clientId, redirectHost, scopes } = parsed.request;
 
   return (
     <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4">
@@ -118,15 +126,11 @@ export const OAuthConsentPage: React.FC = () => {
           {/* Scopes */}
           <div className="mt-6 p-4 bg-indigo-50/70 border border-indigo-100 rounded-2xl text-left space-y-2.5">
             <span className="text-[11px] font-bold text-indigo-900 uppercase tracking-wider block">요청된 접근 권한:</span>
-            <div className="flex items-center gap-2 text-xs text-slate-700">
-              <Check className="w-4 h-4 text-emerald-600" /> 기본 프로필 정보 (이름, 사용자 ID)
-            </div>
-            <div className="flex items-center gap-2 text-xs text-slate-700">
-              <Check className="w-4 h-4 text-emerald-600" /> 이메일 주소 확인
-            </div>
-            <div className="flex items-center gap-2 text-xs text-slate-700">
-              <Check className="w-4 h-4 text-emerald-600" /> Doro Guard ReBAC 권한 상태 동기화
-            </div>
+            {describeScopes(scopes).map(({ scope, label }) => (
+              <div key={scope || 'default'} className="flex items-center gap-2 text-xs text-slate-700">
+                <Check className="w-4 h-4 text-emerald-600" /> {label}
+              </div>
+            ))}
           </div>
 
           {errorMessage && (

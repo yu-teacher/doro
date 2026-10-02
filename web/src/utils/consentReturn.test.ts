@@ -36,6 +36,14 @@ describe('consentReturn', () => {
     expect(restored.get('state')).toBe('st');
   });
 
+  it('scope/nonce/code_challenge_method 도 함께 저장·복원한다', () => {
+    saveConsentReturn(params({ scope: 'openid email', nonce: 'nn', code_challenge_method: 'S256' }), 1000);
+    const restored = new URLSearchParams(peekConsentReturnPath(1500)!.split('?')[1]);
+    expect(restored.get('scope')).toBe('openid email');
+    expect(restored.get('nonce')).toBe('nn');
+    expect(restored.get('code_challenge_method')).toBe('S256');
+  });
+
   it('검증에 실패한 요청은 저장하지 않는다', () => {
     expect(saveConsentReturn(params({ code_challenge: 'short' }))).toBe(false);
     expect(saveConsentReturn(params({ redirect_uri: 'javascript:alert(1)' }))).toBe(false);
