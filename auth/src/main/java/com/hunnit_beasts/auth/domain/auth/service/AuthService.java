@@ -12,6 +12,7 @@ import com.hunnit_beasts.auth.domain.auth.dto.*;
 import com.hunnit_beasts.auth.domain.credential.entity.Credential;
 import com.hunnit_beasts.auth.domain.credential.repository.CredentialRepository;
 import com.hunnit_beasts.auth.domain.credential.service.CredentialService;
+import com.hunnit_beasts.auth.domain.oauth.service.OAuth2Service;
 import com.hunnit_beasts.auth.domain.session.entity.UserSession;
 import com.hunnit_beasts.auth.domain.session.service.SessionRevocationService;
 import com.hunnit_beasts.auth.domain.session.service.SessionService;
@@ -289,6 +290,15 @@ public class AuthService {
 
     @Transactional
     public TokenResponse refresh(RefreshTokenRequest request) {
+        // OAuth 클라이언트용 세션의 리프레시 토큰으로 일반 로그인 토큰(사용자의 실제 role, cid 없음)을 발급받으면 OAuth 토큰 격리가
+        // 무너진다. 회전하기 전에 확인해서, 거부된 시도가 정상 클라이언트의 토큰을 소모하지도 않게 한다.
+        refreshTokenService.findSessionByRawToken(request.refreshToken())
+                .filter(OAuth2Service::isOAuthSession)
+                .ifPresent(oauthSession -> {
+                    log.warn("Refresh through the first-party endpoint rejected: the token belongs to an OAuth client session");
+                    throw new AuthException(ErrorCode.INVALID_TOKEN);
+                });
+
         RefreshTokenService.RotatedTokenResult result = refreshTokenService.rotateRefreshToken(request.refreshToken());
         UserSession session = result.session();
 

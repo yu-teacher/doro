@@ -112,4 +112,28 @@ class OAuthTokenContainmentTest extends OAuthTestSupport {
         mockMvc.perform(get("/api/v1/sessions/current").header("Authorization", "Bearer " + user.accessToken()))
                 .andExpect(status().isNoContent());
     }
+
+    @Test
+    @DisplayName("OAuth 리프레시 토큰으로 일반 갱신 엔드포인트(/auth/token/refresh)를 호출해 일반 로그인 토큰(관리자 role)을 얻을 수 없다")
+    void oauthRefreshTokenCannotMintAFirstPartyToken() throws Exception {
+        JsonNode tokens = oauthTokensForAdmin(uniqueClientId());
+
+        mockMvc.perform(post("/api/v1/auth/token/refresh").contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("refreshToken", tokens.path("refresh_token").asText()))))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("거부된 시도는 OAuth 리프레시 토큰을 소모하지 않는다 (정상 클라이언트의 refresh_token grant 는 계속 동작)")
+    void rejectedFirstPartyRefreshDoesNotBurnTheOauthToken() throws Exception {
+        String clientId = uniqueClientId();
+        JsonNode tokens = oauthTokensForAdmin(clientId);
+        String refresh = tokens.path("refresh_token").asText();
+
+        mockMvc.perform(post("/api/v1/auth/token/refresh").contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("refreshToken", refresh)))).andExpect(status().isBadRequest());
+
+        mockMvc.perform(tokenForm("grant_type", "refresh_token", "client_id", clientId, "refresh_token", refresh))
+                .andExpect(status().isOk());
+    }
 }

@@ -270,6 +270,13 @@ public class OAuth2Service {
                 session.getId(), session.getUserIndex(), null, null);
     }
 
+    /** OAuth 클라이언트용으로 만들어진 세션인지(어떤 클라이언트든). 일반 로그인 경로가 이런 세션의 토큰을 받지 않게 하는 데 쓴다. */
+    public static boolean isOAuthSession(UserSession session) {
+        return OAuth2Constants.SESSION_IP_MARKER.equals(session.getIpAddress())
+                && session.getUserAgent() != null
+                && session.getUserAgent().startsWith(OAuth2Constants.SESSION_USER_AGENT_PREFIX);
+    }
+
     private static boolean isOAuthSessionOf(UserSession session, String clientId) {
         return OAuth2Constants.SESSION_IP_MARKER.equals(session.getIpAddress())
                 && (OAuth2Constants.SESSION_USER_AGENT_PREFIX + clientId).equals(session.getUserAgent());
