@@ -1,9 +1,12 @@
 package com.hunnit_beasts.doro.sdk.security.filter;
 
 import com.hunnit_beasts.doro.sdk.config.DoroProperties.IssuerValidation;
+import com.hunnit_beasts.doro.sdk.config.DoroProperties.RevocationCheck;
 import com.hunnit_beasts.doro.sdk.domain.DoroUser;
 import com.hunnit_beasts.doro.sdk.domain.DoroUserContext;
 import com.hunnit_beasts.doro.sdk.security.jwks.JwksKeyProvider;
+import com.hunnit_beasts.doro.sdk.security.revocation.SessionRevocationChecker;
+import com.hunnit_beasts.doro.sdk.security.revocation.SessionRevocationChecker.Verdict;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.JwtParser;
@@ -20,6 +23,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Pattern;
 
 @Slf4j
@@ -37,6 +41,10 @@ public class DoroJwtAuthFilter extends OncePerRequestFilter {
     private final String cookieName;
     private final String requiredAudience;
     private final JwtParser parser;
+    private final RevocationCheck revocationMode;
+    private final SessionRevocationChecker revocationChecker;
+    private final boolean revocationFailOpen;
+    private final AtomicBoolean sidlessWarned = new AtomicBoolean(false);
 
     public DoroJwtAuthFilter(JwksKeyProvider jwksKeyProvider) {
         this(jwksKeyProvider, null, IssuerValidation.OFF, "", 0);
@@ -57,6 +65,26 @@ public class DoroJwtAuthFilter extends OncePerRequestFilter {
                              String cookieName,
                              long clockSkewSeconds,
                              String requiredAudience) {
+        this(jwksKeyProvider, expectedIssuer, issuerValidation, cookieName, clockSkewSeconds, requiredAudience,
+                RevocationCheck.OFF, null, true);
+    }
+
+    /**
+     * 세션 폐기 확인을 포함하는 생성자. revocationMode 가 OFF 이거나 revocationChecker 가 null 이면
+     * 폐기 확인을 하지 않는다(추가 네트워크 호출 없음).
+     */
+    public DoroJwtAuthFilter(JwksKeyProvider jwksKeyProvider,
+                             String expectedIssuer,
+                             IssuerValidation issuerValidation,
+                             String cookieName,
+                             long clockSkewSeconds,
+                             String requiredAudience,
+                             RevocationCheck revocationMode,
+                             SessionRevocationChecker revocationChecker,
+                             boolean revocationFailOpen) {
+        this.revocationMode = revocationMode != null ? revocationMode : RevocationCheck.OFF;
+        this.revocationChecker = revocationChecker;
+        this.revocationFailOpen = revocationFailOpen;
         this.requiredAudience = requiredAudience != null ? requiredAudience.trim() : "";
         this.expectedIssuer = expectedIssuer;
         this.issuerValidation = issuerValidation != null ? issuerValidation : IssuerValidation.OFF;
@@ -151,7 +179,43 @@ public class DoroJwtAuthFilter extends OncePerRequestFilter {
         int userIndex = (uidx != null) ? uidx : 0;
         String role = claims.get("role", String.class);
 
+        if (!passesRevocationCheck(sessionId, token, claims)) {
+            return null;
+        }
+
         return new DoroUser(userId, email, sessionId, userIndex, role != null ? role : "USER");
+    }
+
+    /** JWT 검증이 끝난 뒤 IAM 에 세션 유효성을 확인한다. false 이면 요청을 익명으로 처리한다. */
+    private boolean passesRevocationCheck(UUID sessionId, String token, Claims claims) {
+        if (revocationMode == RevocationCheck.OFF || revocationChecker == null) {
+            return true;
+        }
+        if (sessionId == null) {
+            if (sidlessWarned.compareAndSet(false, true)) {
+                log.warn("Session revocation check skipped: token has no sid claim (logged once)");
+            }
+            return true;
+        }
+        Verdict verdict = revocationChecker.check(sessionId, token, claims.getExpiration().getTime());
+        boolean enforce = revocationMode == RevocationCheck.ENFORCE;
+        switch (verdict) {
+            case ACTIVE:
+                return true;
+            case REVOKED:
+                if (enforce) {
+                    log.warn("Rejected request with revoked session: sid={}", sessionId);
+                    return false;
+                }
+                log.warn("Session is revoked (mode=WARN, request allowed): sid={}", sessionId);
+                return true;
+            default:
+                if (enforce && !revocationFailOpen) {
+                    log.warn("Rejected request: session state unavailable and fail-open=false: sid={}", sessionId);
+                    return false;
+                }
+                return true;
+        }
     }
 
     private void verifyIssuer(Claims claims) {

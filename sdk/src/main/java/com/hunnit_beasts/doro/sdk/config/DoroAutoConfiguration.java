@@ -4,6 +4,7 @@ import com.hunnit_beasts.doro.sdk.aop.DoroGuardAspect;
 import com.hunnit_beasts.doro.sdk.client.DoroGuardClient;
 import com.hunnit_beasts.doro.sdk.security.filter.DoroJwtAuthFilter;
 import com.hunnit_beasts.doro.sdk.security.jwks.JwksKeyProvider;
+import com.hunnit_beasts.doro.sdk.security.revocation.SessionRevocationChecker;
 import com.hunnit_beasts.doro.sdk.web.CurrentDoroUserArgumentResolver;
 import com.hunnit_beasts.doro.sdk.web.DoroExceptionHandlerAdvice;
 import lombok.extern.slf4j.Slf4j;
@@ -44,17 +45,33 @@ public class DoroAutoConfiguration implements WebMvcConfigurer {
     public FilterRegistrationBean<DoroJwtAuthFilter> doroJwtAuthFilterRegistration(JwksKeyProvider jwksKeyProvider,
                                                                                     DoroProperties properties) {
         DoroProperties.IamProperties iam = properties.getIam();
+        DoroProperties.RevocationCheck revocationMode = iam.getRevocationCheck();
+        SessionRevocationChecker revocationChecker = null;
+        if (revocationMode != DoroProperties.RevocationCheck.OFF) {
+            String revocationUrl = SessionRevocationChecker.resolveUrl(iam.getRevocationUrl(), iam.getJwksUri());
+            if (revocationUrl == null) {
+                log.warn("Doro session revocation check disabled: revocation-url is empty and jwks-uri cannot be parsed");
+                revocationMode = DoroProperties.RevocationCheck.OFF;
+            } else {
+                revocationChecker = new SessionRevocationChecker(
+                        revocationUrl, iam.getRevocationCacheSeconds(), iam.getRevocationTimeoutMillis());
+            }
+        }
         DoroJwtAuthFilter filter = new DoroJwtAuthFilter(
                 jwksKeyProvider,
                 iam.getIssuer(),
                 iam.getIssuerValidation(),
                 iam.getCookieName(),
                 iam.getClockSkewSeconds(),
-                iam.getAudience());
-        log.info("Doro JWT validation: issuer-validation={}, audience-check={}, cookie-auth={}",
+                iam.getAudience(),
+                revocationMode,
+                revocationChecker,
+                iam.isRevocationFailOpen());
+        log.info("Doro JWT validation: issuer-validation={}, audience-check={}, cookie-auth={}, revocation-check={}",
                 iam.getIssuerValidation(),
                 iam.getAudience() != null && !iam.getAudience().isBlank() ? "ENFORCE" : "OFF",
-                iam.getCookieName() != null && !iam.getCookieName().isBlank());
+                iam.getCookieName() != null && !iam.getCookieName().isBlank(),
+                revocationMode);
         FilterRegistrationBean<DoroJwtAuthFilter> registration = new FilterRegistrationBean<>(filter);
         registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
         return registration;
