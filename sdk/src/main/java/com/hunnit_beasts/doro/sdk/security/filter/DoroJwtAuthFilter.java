@@ -44,6 +44,7 @@ public class DoroJwtAuthFilter extends OncePerRequestFilter {
     private final RevocationCheck revocationMode;
     private final SessionRevocationChecker revocationChecker;
     private final boolean revocationFailOpen;
+    private final Set<String> acceptedOAuthClientIds;
     private final AtomicBoolean sidlessWarned = new AtomicBoolean(false);
 
     public DoroJwtAuthFilter(JwksKeyProvider jwksKeyProvider) {
@@ -82,6 +83,25 @@ public class DoroJwtAuthFilter extends OncePerRequestFilter {
                              RevocationCheck revocationMode,
                              SessionRevocationChecker revocationChecker,
                              boolean revocationFailOpen) {
+        this(jwksKeyProvider, expectedIssuer, issuerValidation, cookieName, clockSkewSeconds, requiredAudience,
+                revocationMode, revocationChecker, revocationFailOpen, Set.of());
+    }
+
+    /**
+     * acceptedOAuthClientIds: 받아 주는 OAuth 클라이언트 ID. 비어 있으면 cid 클레임이 있는 토큰(제3자 클라이언트가
+     * 사용자 대신 받은 토큰)을 모두 거부한다.
+     */
+    public DoroJwtAuthFilter(JwksKeyProvider jwksKeyProvider,
+                             String expectedIssuer,
+                             IssuerValidation issuerValidation,
+                             String cookieName,
+                             long clockSkewSeconds,
+                             String requiredAudience,
+                             RevocationCheck revocationMode,
+                             SessionRevocationChecker revocationChecker,
+                             boolean revocationFailOpen,
+                             Set<String> acceptedOAuthClientIds) {
+        this.acceptedOAuthClientIds = acceptedOAuthClientIds != null ? Set.copyOf(acceptedOAuthClientIds) : Set.of();
         this.revocationMode = revocationMode != null ? revocationMode : RevocationCheck.OFF;
         this.revocationChecker = revocationChecker;
         this.revocationFailOpen = revocationFailOpen;
@@ -168,6 +188,7 @@ public class DoroJwtAuthFilter extends OncePerRequestFilter {
         }
         verifyIssuer(claims);
         verifyAudience(claims);
+        String clientId = verifyOAuthClient(claims);
 
         String sub = claims.getSubject();
         String email = claims.get("email", String.class);
@@ -183,7 +204,7 @@ public class DoroJwtAuthFilter extends OncePerRequestFilter {
             return null;
         }
 
-        return new DoroUser(userId, email, sessionId, userIndex, role != null ? role : "USER");
+        return new DoroUser(userId, email, sessionId, userIndex, role != null ? role : "USER", clientId);
     }
 
     /** JWT 검증이 끝난 뒤 IAM 에 세션 유효성을 확인한다. false 이면 요청을 익명으로 처리한다. */
@@ -216,6 +237,23 @@ public class DoroJwtAuthFilter extends OncePerRequestFilter {
                 }
                 return true;
         }
+    }
+
+    /**
+     * OAuth 클라이언트가 받은 토큰(cid)은 허용 목록에 있는 클라이언트의 것만 통과시킨다. 일반 로그인 토큰(cid 없음)은 영향이 없다.
+     * 허용하지 않으면 제3자 앱의 토큰이 이 서비스의 모든 보호 API 에서 사용자 본인의 전권으로 동작하게 된다.
+     *
+     * @return 토큰의 클라이언트 ID, 일반 토큰이면 null
+     */
+    private String verifyOAuthClient(Claims claims) {
+        String clientId = claims.get("cid", String.class);
+        if (clientId == null || clientId.isBlank()) {
+            return null;
+        }
+        if (!acceptedOAuthClientIds.contains(clientId)) {
+            throw new IllegalStateException("OAuth client token is not accepted (doro.iam.oauth-client-ids does not include it)");
+        }
+        return clientId;
     }
 
     private void verifyIssuer(Claims claims) {

@@ -79,6 +79,11 @@ public class OAuth2Service {
 
     // ------------------------------------------------------------------ 인가 단계
 
+    /** 동의 화면용 클라이언트 정보(등록·활성 클라이언트만). */
+    public java.util.Optional<OAuthClientRegistry.ClientInfo> describeClient(String clientId) {
+        return clientRegistry.describe(clientId);
+    }
+
     /** 1단계: client_id 와 redirect_uri 검증. 실패하면 호출자는 절대 redirect_uri 로 리다이렉트하지 않는다. */
     public ResolvedClient validateClientAndRedirect(String clientId, String redirectUri) {
         return clientRegistry.resolveForAuthorization(clientId, redirectUri);

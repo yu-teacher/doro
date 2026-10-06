@@ -24,6 +24,12 @@ public class DoroProperties {
          * 값이 있으면 항상 ENFORCE 로 동작하여 aud 에 해당 값이 없는 토큰은 인증 실패(익명 계속) 처리된다.
          */
         private String audience = "";
+        /**
+         * 이 서비스가 받아 주는 OAuth 클라이언트 ID(토큰의 cid 클레임). 비어 있으면(기본) OAuth 클라이언트 토큰은 모두 거부한다.
+         * 클라이언트 토큰은 사용자 본인 로그인 토큰과 달리 제3자 앱이 사용자 대신 받은 것이라, 서비스가 명시적으로 허용한
+         * 클라이언트(예: 자기 BFF 의 클라이언트)만 통과시켜야 한다. 쉼표로 여러 개를 줄 수 있다.
+         */
+        private java.util.List<String> oauthClientIds = new java.util.ArrayList<>();
         /** 기동 시 JWKS 를 백그라운드로 미리 조회한다(best-effort). 실패해도 기동을 막지 않는다. */
         private boolean jwksPrefetch = true;
         /** Authorization 헤더가 없을 때 액세스 토큰을 읽을 쿠키 이름. 비어 있으면 쿠키를 읽지 않는다. */

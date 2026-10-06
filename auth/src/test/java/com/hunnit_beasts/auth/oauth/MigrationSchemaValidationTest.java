@@ -10,7 +10,7 @@ import org.springframework.test.context.ActiveProfiles;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Flyway 스크립트(V1~V6)만으로 만든 스키마를 Hibernate 가 ddl-auto=validate 로 엔티티와 대조한다.
+ * Flyway 스크립트(V1~V7)만으로 만든 스키마를 Hibernate 가 ddl-auto=validate 로 엔티티와 대조한다.
  * (운영과 같은 방식의 검증을 H2 PostgreSQL 모드에서 수행한다. 실제 PostgreSQL 기동 검증은 아님)
  */
 @SpringBootTest(properties = {
@@ -24,10 +24,10 @@ class MigrationSchemaValidationTest {
     private JdbcTemplate jdbcTemplate;
 
     @Test
-    @DisplayName("V6 oauth_clients 테이블이 마이그레이션으로 생성되고 엔티티 매핑과 일치한다")
+    @DisplayName("V6, V7 마이그레이션으로 oauth_clients 테이블(first_party 포함)이 만들어지고 엔티티 매핑과 일치한다")
     void oauthClientsTableMatchesEntity() {
         Integer columns = jdbcTemplate.queryForObject(
                 "select count(*) from information_schema.columns where table_name = 'oauth_clients'", Integer.class);
-        assertThat(columns).isEqualTo(7);
+        assertThat(columns).isEqualTo(8);
     }
 }

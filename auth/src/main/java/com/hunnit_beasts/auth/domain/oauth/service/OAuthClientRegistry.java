@@ -32,7 +32,7 @@ public class OAuthClientRegistry {
     public OAuthClientRegistry(
             OAuthClientRepository clientRepository,
             RateLimitedLogGate logGate,
-            @Value("${doro.oauth.client-registry-mode:WARN}") String mode,
+            @Value("${doro.oauth.client-registry-mode:ENFORCE}") String mode,
             @Value("${doro.oauth.allowed-redirect-uris:}") List<String> allowedRedirectUris) {
         this.clientRepository = clientRepository;
         this.logGate = logGate;
@@ -43,6 +43,18 @@ public class OAuthClientRegistry {
 
     public ClientRegistryMode mode() {
         return mode;
+    }
+
+    /** 동의 화면에 보여 줄 클라이언트 정보. 등록되고 활성인 클라이언트만 돌려준다(미등록 client_id 의 존재 여부는 알리지 않는다). */
+    public record ClientInfo(String clientId, String name, boolean firstParty) {}
+
+    public Optional<ClientInfo> describe(String clientId) {
+        if (clientId == null || !OAuth2Constants.CLIENT_ID_PATTERN.matcher(clientId).matches()) {
+            return Optional.empty();
+        }
+        return clientRepository.findByClientId(clientId)
+                .filter(OAuthClient::isActive)
+                .map(client -> new ClientInfo(client.getClientId(), client.getName(), client.isFirstParty()));
     }
 
     /** 인가 요청 단계: client_id 와 redirect_uri 를 함께 검증한다. 실패 시 절대 redirect_uri 로 리다이렉트하면 안 된다. */

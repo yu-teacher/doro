@@ -179,6 +179,7 @@ includeBuild('../Doro') {
 - 검증: RS256 만 허용, **`exp` 필수**, 서명, 만료(시계 오차 `clock-skew-seconds` 기본 5초).
   - **`iss`**: `doro.iam.issuer-validation` = `OFF`(기본) | `WARN` | `ENFORCE`. 기본은 검증하지 않는다. 켜려면 `doro.iam.issuer` 를 IAM 의 `DORO_IAM_ISSUER` 와 같게 맞춘다.
   - **`aud`**: `doro.iam.audience` 가 **비어 있으면 `aud` 가 있는 토큰(예: OIDC id_token)을 거부**한다(토큰 혼동 방지). 값이 있으면 항상 ENFORCE — `aud` 에 그 값이 없는 토큰은 거부.
+  - **`cid`**(OAuth 클라이언트 토큰): `doro.iam.oauth-client-ids` 에 **적힌 클라이언트의 토큰만** 통과한다(기본은 비어 있어 모두 거부). 일반 로그인 토큰(`cid` 없음)은 영향이 없다. 통과한 요청의 `DoroUser.clientId()` 로 클라이언트 토큰 여부를 구분한다(`isOAuthClientToken()`). 제3자 앱이 사용자 대신 받은 토큰이 서비스의 모든 보호 API 에서 사용자 본인의 권한으로 동작하지 않게 하려는 장치다.
 - **세션 폐기 확인**(`doro.iam.revocation-check`: `OFF`(기본) | `WARN` | `ENFORCE`): 서명 검증 뒤 IAM `GET /api/v1/sessions/current` 에 같은 토큰으로 질의한다. 활성 응답은 `sid` 별로 `revocation-cache-seconds`(30초) 캐시, 폐기 응답은 토큰 `exp` 까지 캐시, 동시 조회는 합쳐진다(single-flight). IAM 에 닿지 못하면(연결 실패/타임아웃/5xx) `revocation-failure-backoff-seconds`(10초) 동안 재호출하지 않고 `revocation-fail-open`(기본 true) 정책을 적용한다. URL 은 `revocation-url`, 비우면 `jwks-uri` 의 origin + `/api/v1/sessions/current`. **ENFORCE 에서 폐기된 세션이면 익명 처리**(요청 자체는 막지 않음).
 - **토큰이 없거나 검증에 실패해도 요청을 막지 않는다**(WARN 로그만). 사용자만 `anonymous` 로 남는다. → **인증 강제는 SDK 필터가 해주지 않는다.** 컨트롤러가 직접 `isAuthenticated()` 를 확인하거나 `@DoroGuard` 를 써야 한다.
 - 사용자 정보는 `ThreadLocal`(`DoroUserContext`)에 담긴다(요청 종료 시 정리). 비동기 스레드로 넘어가면 사라진다.
@@ -217,6 +218,7 @@ doro:
     issuer: https://auth.doro.local        # issuer-validation 이 OFF 면 쓰이지 않음
     issuer-validation: OFF                 # OFF | WARN | ENFORCE
     audience: ""                           # 비어 있으면 aud 있는 토큰 거부
+    oauth-client-ids: []                   # 받아 줄 OAuth 클라이언트 ID. 비어 있으면 cid 토큰(제3자 앱이 받은 토큰) 전부 거부
     cookie-name: ""                        # 비어 있으면 쿠키 미사용
     clock-skew-seconds: 5
     jwks-prefetch: true                    # 기동 시 백그라운드 사전 조회(실패해도 기동 계속)
@@ -268,9 +270,10 @@ doro:
 - **인가 코드 저장소**: `doro.oauth.code-store` = `auto`(기본: 기동 시 Redis 에 닿으면 Redis, 아니면 WARN 후 메모리) | `redis` | `memory`. 메모리 모드는 재시작/다중 인스턴스에서 코드가 유실되고 `max-pending-authorization-codes`(10000) 초과 시 429. `auto` 가 기동 시 Redis 에 닿지 못하면 **재시작 전까지 메모리**를 쓴다.
 
 ### 5.3 클라이언트 등록과 모드
-- 테이블 `oauth_clients`(Flyway **V6**). 등록: `POST /api/v1/admin/oauth/clients` `{name, redirectUris[1~10], scopes?, clientId?}`(ADMIN + Guard `system:doro#admin`). `redirect_uri` 는 **https 만**(loopback 호스트는 http 허용), 와일드카드/fragment/userinfo/`..` 세그먼트 불가, ≤500자. `clientId` 생략 시 서버가 생성(`[A-Za-z0-9._~-]{1,100}`). `DELETE .../{clientId}` 는 **소프트 삭제**(`is_active=false`). 이후 요청은 `WARN`/`ENFORCE` 에서 거부되고, `OFF` 모드는 레지스트리를 조회하지 않아 영향이 없다 [코드: `OAuthClientRegistry.lookup`].
+- 테이블 `oauth_clients`(Flyway **V6**, V7). 등록: `POST /api/v1/admin/oauth/clients` `{name, redirectUris[1~10], scopes?, clientId?, firstParty?}`(ADMIN + Guard `system:doro#admin`). `redirect_uri` 는 **https 만**(loopback 호스트는 http 허용), 와일드카드/fragment/userinfo/`..` 세그먼트 불가, ≤500자. `clientId` 생략 시 서버가 생성(`[A-Za-z0-9._~-]{1,100}`). `DELETE .../{clientId}` 는 **소프트 삭제**(`is_active=false`). 이후 요청은 `WARN`/`ENFORCE` 에서 거부되고, `OFF` 모드는 레지스트리를 조회하지 않아 영향이 없다 [코드: `OAuthClientRegistry.lookup`].
 - `redirect_uri` 는 **문자열 정확 일치**만 인정한다(정규화·부분 일치 없음).
-- `doro.oauth.client-registry-mode`(`DORO_OAUTH_CLIENT_REGISTRY_MODE`, 기본 **`WARN`**):
+- 클라이언트에 `firstParty: true` 를 주면(관리자 등록 시, 테이블 컬럼 `first_party`, Flyway **V7**) **자사 서비스**로 표시된다. 포털 동의 화면은 이 표시가 있는 클라이언트에는 동의를 묻지 않고 로그인 직후 바로 인가 코드를 요청한다(`GET /oauth2/client-info?client_id=` 로 확인, 로그인 필요, 등록·활성 클라이언트만 응답). 제3자 앱은 기본값(`false`)이라 기존처럼 동의 화면을 거친다. `redirect_uri` 의 정확 일치 검증은 자사 앱에도 똑같이 적용된다.
+- `doro.oauth.client-registry-mode`(`DORO_OAUTH_CLIENT_REGISTRY_MODE`, 기본 **`ENFORCE`**):
   - `OFF`: 레지스트리 미사용, 환경변수 허용 목록(`DORO_OAUTH_ALLOWED_REDIRECT_URIS`, 쉼표 구분, 정확 일치)만 사용.
   - `WARN`: **등록된 클라이언트는 레지스트리 규칙**(등록한 redirect_uri/scope 만), **미등록 `client_id` 는 환경변수 허용 목록으로 폴백**(경고 로그).
   - `ENFORCE`: 미등록 `client_id` 는 `invalid_client` 로 거부.

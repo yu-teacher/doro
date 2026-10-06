@@ -175,3 +175,14 @@ export function buildAuthorizationRedirect(redirectUri: string, code: string, st
   }
   return target.toString();
 }
+
+/**
+ * /oauth2/client-info 응답에서 자사(first-party) 앱 여부를 읽는다.
+ * true 가 확실할 때만 동의 화면을 건너뛴다: 응답 형식이 다르거나 값이 없으면 false 로 보고 동의 화면을 그대로 보여 준다.
+ */
+export function isFirstPartyClient(body: unknown): boolean {
+  if (typeof body !== 'object' || body === null) return false;
+  const data = (body as { data?: unknown }).data;
+  if (typeof data !== 'object' || data === null) return false;
+  return (data as { firstParty?: unknown }).firstParty === true;
+}

@@ -17,6 +17,14 @@ public record OAuthClientCreateRequest(
 
         List<String> scopes,
 
-        String clientId
+        String clientId,
+
+        /** 자사 서비스 표시(동의 화면 생략). 생략하면 false. */
+        Boolean firstParty
 ) {
+    /** firstParty 를 생략하는 기존 호출을 위한 생성자. */
+    public OAuthClientCreateRequest(String name, List<String> redirectUris, List<String> scopes, String clientId) {
+        this(name, redirectUris, scopes, clientId, null);
+    }
+
 }

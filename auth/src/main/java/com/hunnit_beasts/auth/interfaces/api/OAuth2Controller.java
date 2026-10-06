@@ -144,6 +144,26 @@ public class OAuth2Controller {
         }
     }
 
+    /**
+     * 포털 동의 화면용 클라이언트 정보. 로그인한 사용자만 조회할 수 있고, 등록되고 활성인 클라이언트만 돌려준다.
+     * firstParty 이면 포털은 동의 화면을 건너뛰고 바로 인가 코드를 요청한다(redirect_uri 는 인가 요청에서 서버가 다시 검증한다).
+     */
+    @GetMapping(value = "/oauth2/client-info", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> clientInfo(@RequestParam(value = "client_id", required = false) String clientId,
+                                        @AuthenticationPrincipal UUID userId) {
+        if (userId == null) {
+            throw new AuthException(ErrorCode.UNAUTHORIZED, "로그인이 필요한 요청입니다.");
+        }
+        return oAuth2Service.describeClient(clientId)
+                .<ResponseEntity<?>>map(info -> noStore(ResponseEntity.ok()).body(ApiResponse.success(Map.of(
+                        "clientId", info.clientId(),
+                        "name", info.name(),
+                        "firstParty", info.firstParty()))))
+                .orElseGet(() -> noStore(ResponseEntity.status(HttpStatus.NOT_FOUND)).body(Map.of(
+                        "error", "invalid_client",
+                        "error_description", "등록되지 않은 클라이언트입니다.")));
+    }
+
     /** OIDC UserInfo (Bearer 액세스 토큰). */
     @GetMapping(value = "/oauth2/userinfo", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<Map<String, Object>> userInfo(Authentication authentication,

@@ -25,6 +25,8 @@ spring:
 doro:
   oauth:
     code-store: memory
+    # 기존 테스트는 등록하지 않은 client_id + 환경변수 허용 URI 로 동작한다. 운영 기본값(ENFORCE)은 별도 테스트가 검증한다.
+    client-registry-mode: WARN
     allowed-redirect-uris: http://localhost:3000/callback,https://app-a.com/cb,https://app.doro.local/callback
   cors:
     allowed-origin-patterns: http://localhost:*,http://127.0.0.1:*

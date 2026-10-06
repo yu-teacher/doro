@@ -61,9 +61,10 @@ public class OAuthClientAdminService {
                 .name(name)
                 .redirectUris(redirectUris)
                 .allowedScopes(scopes)
+                .firstParty(Boolean.TRUE.equals(request.firstParty()))
                 .build());
-        log.info("OAuth client registered: clientId={}, redirectUriCount={}, adminId={}",
-                saved.getClientId(), redirectUris.size(), adminId);
+        log.info("OAuth client registered: clientId={}, firstParty={}, redirectUriCount={}, adminId={}",
+                saved.getClientId(), saved.isFirstParty(), redirectUris.size(), adminId);
         return OAuthClientResponse.from(saved);
     }
 

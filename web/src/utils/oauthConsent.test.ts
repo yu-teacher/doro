@@ -6,6 +6,7 @@ import {
   parseConsentRequest,
   resolveAuthorizeError,
   sanitizeServerMessage,
+  isFirstPartyClient,
 } from './oauthConsent';
 import type { ConsentRequest } from './oauthConsent';
 
@@ -156,5 +157,22 @@ describe('buildAuthorizationRedirect', () => {
   it('state 가 없으면 붙이지 않는다', () => {
     expect(buildAuthorizationRedirect('https://docs.example.com/cb', 'CODE', null))
       .toBe('https://docs.example.com/cb?code=CODE');
+  });
+});
+
+describe('isFirstPartyClient', () => {
+  it('firstParty 가 정확히 true 일 때만 true', () => {
+    expect(isFirstPartyClient({ data: { clientId: 'doro-blog', firstParty: true } })).toBe(true);
+    expect(isFirstPartyClient({ data: { firstParty: false } })).toBe(false);
+  });
+
+  it('형식이 다르거나 값이 없으면 false (동의 화면을 그대로 보여 준다)', () => {
+    expect(isFirstPartyClient(null)).toBe(false);
+    expect(isFirstPartyClient(undefined)).toBe(false);
+    expect(isFirstPartyClient('true')).toBe(false);
+    expect(isFirstPartyClient({})).toBe(false);
+    expect(isFirstPartyClient({ data: null })).toBe(false);
+    expect(isFirstPartyClient({ data: { firstParty: 'true' } })).toBe(false);
+    expect(isFirstPartyClient({ data: { firstParty: 1 } })).toBe(false);
   });
 });

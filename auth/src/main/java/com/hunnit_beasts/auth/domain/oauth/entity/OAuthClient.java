@@ -47,16 +47,21 @@ public class OAuthClient {
     @Column(name = "is_active", nullable = false)
     private boolean isActive;
 
+    /** 운영자가 직접 만든 자사 서비스(예: 블로그). true 이면 사용자에게 동의 화면을 보여 주지 않는다. */
+    @Column(name = "first_party", nullable = false)
+    private boolean firstParty;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
     @Builder
-    public OAuthClient(UUID id, String clientId, String name, List<String> redirectUris, Set<String> allowedScopes) {
+    public OAuthClient(UUID id, String clientId, String name, List<String> redirectUris, Set<String> allowedScopes, boolean firstParty) {
         this.id = id != null ? id : UUID.randomUUID();
         this.clientId = clientId;
         this.name = name;
         this.redirectUris = String.join(URI_SEPARATOR, redirectUris);
         this.allowedScopes = String.join(SCOPE_SEPARATOR, allowedScopes);
+        this.firstParty = firstParty;
         this.isActive = true;
         this.createdAt = Instant.now();
     }

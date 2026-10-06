@@ -58,6 +58,8 @@ public class DoroAutoConfiguration implements WebMvcConfigurer {
                         iam.getRevocationFailureBackoffSeconds() * 1000L);
             }
         }
+        java.util.Set<String> acceptedClients = iam.getOauthClientIds().stream()
+                .map(String::trim).filter(id -> !id.isEmpty()).collect(java.util.stream.Collectors.toUnmodifiableSet());
         DoroJwtAuthFilter filter = new DoroJwtAuthFilter(
                 jwksKeyProvider,
                 iam.getIssuer(),
@@ -67,12 +69,14 @@ public class DoroAutoConfiguration implements WebMvcConfigurer {
                 iam.getAudience(),
                 revocationMode,
                 revocationChecker,
-                iam.isRevocationFailOpen());
-        log.info("Doro JWT validation: issuer-validation={}, audience-check={}, cookie-auth={}, revocation-check={}",
+                iam.isRevocationFailOpen(),
+                acceptedClients);
+        log.info("Doro JWT validation: issuer-validation={}, audience-check={}, cookie-auth={}, revocation-check={}, oauth-clients={}",
                 iam.getIssuerValidation(),
                 iam.getAudience() != null && !iam.getAudience().isBlank() ? "ENFORCE" : "OFF",
                 iam.getCookieName() != null && !iam.getCookieName().isBlank(),
-                revocationMode);
+                revocationMode,
+                acceptedClients.isEmpty() ? "none (OAuth client tokens rejected)" : acceptedClients);
         FilterRegistrationBean<DoroJwtAuthFilter> registration = new FilterRegistrationBean<>(filter);
         registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
         return registration;

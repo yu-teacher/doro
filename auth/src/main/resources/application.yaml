@@ -47,7 +47,7 @@ doro:
     # 메모리에 보관하는 미사용 인가 코드 상한. 초과하면 신규 발급을 429 로 거부한다. 0 이하는 무제한.
     max-pending-authorization-codes: ${DORO_OAUTH_MAX_PENDING_AUTHORIZATION_CODES:10000}
     # 클라이언트 레지스트리 적용 수준: OFF(환경변수 허용 목록만) | WARN(등록 클라이언트는 레지스트리 규칙, 미등록은 허용 목록 폴백+경고) | ENFORCE(미등록 거부)
-    client-registry-mode: ${DORO_OAUTH_CLIENT_REGISTRY_MODE:WARN}
+    client-registry-mode: ${DORO_OAUTH_CLIENT_REGISTRY_MODE:ENFORCE}
     # Bearer 없이 /oauth2/authorize 로 이동해 온 브라우저를 보낼 동의(로그인) 페이지. 원래 쿼리 문자열이 그대로 붙는다.
     consent-url: ${DORO_OAUTH_CONSENT_URL:/oauth2/consent}
     # 인가 코드 저장소: auto(Redis 연결 가능하면 Redis, 아니면 메모리) | redis | memory

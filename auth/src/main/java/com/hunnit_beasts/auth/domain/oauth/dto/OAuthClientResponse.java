@@ -13,6 +13,7 @@ public record OAuthClientResponse(
         List<String> redirectUris,
         List<String> scopes,
         boolean active,
+        boolean firstParty,
         Instant createdAt
 ) {
     public static OAuthClientResponse from(OAuthClient client) {
@@ -23,6 +24,7 @@ public record OAuthClientResponse(
                 client.redirectUriList(),
                 List.copyOf(client.allowedScopeSet()),
                 client.isActive(),
+                client.isFirstParty(),
                 client.getCreatedAt());
     }
 }

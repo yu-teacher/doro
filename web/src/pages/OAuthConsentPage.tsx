@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { isAxiosError } from 'axios';
 import { useAuthStore } from '../store/authStore';
@@ -7,6 +7,7 @@ import {
   buildAuthorizationRedirect,
   buildAuthorizeParams,
   describeScopes,
+  isFirstPartyClient,
   parseConsentRequest,
   resolveAuthorizeError,
 } from '../utils/oauthConsent';
@@ -32,6 +33,9 @@ export const OAuthConsentPage: React.FC = () => {
   const [approved, setApproved] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // 자사 앱인지 확인하는 동안에는 동의 화면을 보여 주지 않는다 (확인 후 깜빡이며 바뀌는 것을 막는다)
+  const [clientChecked, setClientChecked] = useState(false);
+  const inFlight = useRef(false);
 
   // 로그인 전이라면 검증된 동의 요청을 보관해 두었다가, 로그인 직후 이 화면으로 돌아오게 한다.
   const needsLogin = parsed.ok && !activeAccount;
@@ -41,8 +45,9 @@ export const OAuthConsentPage: React.FC = () => {
     }
   }, [needsLogin, searchParams]);
 
-  const handleApprove = async () => {
-    if (!parsed.ok || submitting) return;
+  const handleApprove = useCallback(async () => {
+    if (!parsed.ok || inFlight.current) return;
+    inFlight.current = true;
     const { redirectUri, state } = parsed.request;
     setSubmitting(true);
     setErrorMessage(null);
@@ -66,9 +71,37 @@ export const OAuthConsentPage: React.FC = () => {
         setErrorMessage(resolveAuthorizeError(undefined, null));
       }
     } finally {
+      inFlight.current = false;
       setSubmitting(false);
     }
-  };
+  }, [parsed]);
+
+  // 자사 앱(운영자가 등록한 서비스)이면 동의 화면 없이 바로 인가 코드를 요청한다. 그 밖의 앱은 기존처럼 동의 화면을 거친다.
+  // redirect_uri 가 등록된 값과 일치하는지는 이어지는 인가 요청에서 서버가 다시 판정한다.
+  const canCheckClient = parsed.ok && Boolean(activeAccount);
+  const checkedClientId = parsed.ok ? parsed.request.clientId : '';
+  useEffect(() => {
+    if (!canCheckClient) return undefined;
+    let cancelled = false;
+    apiClient
+      .get<unknown>('/oauth2/client-info', { params: { client_id: checkedClientId } })
+      .then(async (response) => {
+        if (cancelled) return;
+        if (isFirstPartyClient(response.data)) {
+          await handleApprove();
+        }
+      })
+      .catch((error: unknown) => {
+        // 확인에 실패해도 동의 화면을 보여 주면 되므로 로그인 흐름을 막지 않는다
+        console.warn('OAuth client info lookup failed; showing the consent screen', error);
+      })
+      .finally(() => {
+        if (!cancelled) setClientChecked(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canCheckClient, checkedClientId, handleApprove]);
 
   const handleDeny = () => {
     navigate('/account');
@@ -96,6 +129,17 @@ export const OAuthConsentPage: React.FC = () => {
   }
 
   const { clientId, redirectHost, scopes } = parsed.request;
+
+  if (!clientChecked || approved) {
+    return (
+      <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4">
+        <div role="status" className="text-xs font-bold text-slate-500 flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-indigo-600" />
+          {approved ? '서비스로 이동 중입니다...' : 'Doro 계정을 확인하는 중입니다...'}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4">
