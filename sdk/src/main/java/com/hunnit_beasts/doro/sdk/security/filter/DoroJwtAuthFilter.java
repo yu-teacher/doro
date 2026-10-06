@@ -4,13 +4,9 @@ import com.hunnit_beasts.doro.sdk.config.DoroProperties.IssuerValidation;
 import com.hunnit_beasts.doro.sdk.config.DoroProperties.RevocationCheck;
 import com.hunnit_beasts.doro.sdk.domain.DoroUser;
 import com.hunnit_beasts.doro.sdk.domain.DoroUserContext;
+import com.hunnit_beasts.doro.sdk.security.DoroTokenVerifier;
 import com.hunnit_beasts.doro.sdk.security.jwks.JwksKeyProvider;
 import com.hunnit_beasts.doro.sdk.security.revocation.SessionRevocationChecker;
-import com.hunnit_beasts.doro.sdk.security.revocation.SessionRevocationChecker.Verdict;
-import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.Jws;
-import io.jsonwebtoken.JwtParser;
-import io.jsonwebtoken.Jwts;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.Cookie;
@@ -23,7 +19,6 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Pattern;
 
 @Slf4j
@@ -33,19 +28,10 @@ public class DoroJwtAuthFilter extends OncePerRequestFilter {
     private static final String MDC_TRACE_ID = "traceId";
     private static final String MDC_USER_ID = "userId";
     private static final String BEARER_PREFIX = "Bearer ";
-    private static final String REQUIRED_ALGORITHM = "RS256";
     private static final Pattern SAFE_TRACE_ID = Pattern.compile("^[A-Za-z0-9._-]{1,64}$");
 
-    private final String expectedIssuer;
-    private final IssuerValidation issuerValidation;
     private final String cookieName;
-    private final String requiredAudience;
-    private final JwtParser parser;
-    private final RevocationCheck revocationMode;
-    private final SessionRevocationChecker revocationChecker;
-    private final boolean revocationFailOpen;
-    private final Set<String> acceptedOAuthClientIds;
-    private final AtomicBoolean sidlessWarned = new AtomicBoolean(false);
+    private final DoroTokenVerifier verifier;
 
     public DoroJwtAuthFilter(JwksKeyProvider jwksKeyProvider) {
         this(jwksKeyProvider, null, IssuerValidation.OFF, "", 0);
@@ -101,21 +87,14 @@ public class DoroJwtAuthFilter extends OncePerRequestFilter {
                              SessionRevocationChecker revocationChecker,
                              boolean revocationFailOpen,
                              Set<String> acceptedOAuthClientIds) {
-        this.acceptedOAuthClientIds = acceptedOAuthClientIds != null ? Set.copyOf(acceptedOAuthClientIds) : Set.of();
-        this.revocationMode = revocationMode != null ? revocationMode : RevocationCheck.OFF;
-        this.revocationChecker = revocationChecker;
-        this.revocationFailOpen = revocationFailOpen;
-        this.requiredAudience = requiredAudience != null ? requiredAudience.trim() : "";
-        this.expectedIssuer = expectedIssuer;
-        this.issuerValidation = issuerValidation != null ? issuerValidation : IssuerValidation.OFF;
+        this(new DoroTokenVerifier(jwksKeyProvider, expectedIssuer, issuerValidation, clockSkewSeconds, requiredAudience,
+                revocationMode, revocationChecker, revocationFailOpen, acceptedOAuthClientIds), cookieName);
+    }
+
+    /** 이미 만든 검증기를 공유하는 생성자 (BFF 등 다른 경로도 같은 검증 규칙을 쓰도록). */
+    public DoroJwtAuthFilter(DoroTokenVerifier verifier, String cookieName) {
+        this.verifier = verifier;
         this.cookieName = cookieName != null ? cookieName.trim() : "";
-        this.parser = Jwts.parser()
-                .clockSkewSeconds(clockSkewSeconds)
-                .keyLocator(header -> {
-                    String kid = (String) header.get("kid");
-                    return kid != null ? jwksKeyProvider.getPublicKey(kid) : null;
-                })
-                .build();
     }
 
     @Override
@@ -132,7 +111,7 @@ public class DoroJwtAuthFilter extends OncePerRequestFilter {
         String token = resolveToken(request);
         if (token != null) {
             try {
-                DoroUser user = validateAndExtractUser(token);
+                DoroUser user = verifier.verify(token);
                 if (user != null) {
                     DoroUserContext.setCurrentUser(user);
                     if (user.userId() != null) {
@@ -168,119 +147,5 @@ public class DoroJwtAuthFilter extends OncePerRequestFilter {
             }
         }
         return null;
-    }
-
-    private DoroUser validateAndExtractUser(String token) {
-        String[] parts = token.split("\\.");
-        if (parts.length < 2) {
-            return null;
-        }
-
-        Jws<Claims> claimsJws = parser.parseSignedClaims(token);
-
-        if (!REQUIRED_ALGORITHM.equals(claimsJws.getHeader().getAlgorithm())) {
-            throw new IllegalStateException("Unsupported JWT algorithm");
-        }
-
-        Claims claims = claimsJws.getPayload();
-        if (claims.getExpiration() == null) {
-            throw new IllegalStateException("JWT without exp claim is rejected");
-        }
-        verifyIssuer(claims);
-        verifyAudience(claims);
-        String clientId = verifyOAuthClient(claims);
-
-        String sub = claims.getSubject();
-        String email = claims.get("email", String.class);
-        String sid = claims.get("sid", String.class);
-        Integer uidx = claims.get("uidx", Integer.class);
-
-        UUID userId = (sub != null) ? UUID.fromString(sub) : null;
-        UUID sessionId = (sid != null) ? UUID.fromString(sid) : null;
-        int userIndex = (uidx != null) ? uidx : 0;
-        String role = claims.get("role", String.class);
-
-        if (!passesRevocationCheck(sessionId, token, claims)) {
-            return null;
-        }
-
-        return new DoroUser(userId, email, sessionId, userIndex, role != null ? role : "USER", clientId);
-    }
-
-    /** JWT 검증이 끝난 뒤 IAM 에 세션 유효성을 확인한다. false 이면 요청을 익명으로 처리한다. */
-    private boolean passesRevocationCheck(UUID sessionId, String token, Claims claims) {
-        if (revocationMode == RevocationCheck.OFF || revocationChecker == null) {
-            return true;
-        }
-        if (sessionId == null) {
-            if (sidlessWarned.compareAndSet(false, true)) {
-                log.warn("Session revocation check skipped: token has no sid claim (logged once)");
-            }
-            return true;
-        }
-        Verdict verdict = revocationChecker.check(sessionId, token, claims.getExpiration().getTime());
-        boolean enforce = revocationMode == RevocationCheck.ENFORCE;
-        switch (verdict) {
-            case ACTIVE:
-                return true;
-            case REVOKED:
-                if (enforce) {
-                    log.warn("Rejected request with revoked session: sid={}", sessionId);
-                    return false;
-                }
-                log.warn("Session is revoked (mode=WARN, request allowed): sid={}", sessionId);
-                return true;
-            default:
-                if (enforce && !revocationFailOpen) {
-                    log.warn("Rejected request: session state unavailable and fail-open=false: sid={}", sessionId);
-                    return false;
-                }
-                return true;
-        }
-    }
-
-    /**
-     * OAuth 클라이언트가 받은 토큰(cid)은 허용 목록에 있는 클라이언트의 것만 통과시킨다. 일반 로그인 토큰(cid 없음)은 영향이 없다.
-     * 허용하지 않으면 제3자 앱의 토큰이 이 서비스의 모든 보호 API 에서 사용자 본인의 전권으로 동작하게 된다.
-     *
-     * @return 토큰의 클라이언트 ID, 일반 토큰이면 null
-     */
-    private String verifyOAuthClient(Claims claims) {
-        String clientId = claims.get("cid", String.class);
-        if (clientId == null || clientId.isBlank()) {
-            return null;
-        }
-        if (!acceptedOAuthClientIds.contains(clientId)) {
-            throw new IllegalStateException("OAuth client token is not accepted (doro.iam.oauth-client-ids does not include it)");
-        }
-        return clientId;
-    }
-
-    private void verifyIssuer(Claims claims) {
-        if (issuerValidation == IssuerValidation.OFF || expectedIssuer == null || expectedIssuer.isBlank()) {
-            return;
-        }
-        if (expectedIssuer.equals(claims.getIssuer())) {
-            return;
-        }
-        if (issuerValidation == IssuerValidation.ENFORCE) {
-            throw new IllegalStateException("JWT issuer mismatch");
-        }
-        log.warn("JWT issuer mismatch (mode=WARN): expected={}, actual={}", expectedIssuer, claims.getIssuer());
-    }
-
-    private void verifyAudience(Claims claims) {
-        Set<String> audience = claims.getAudience();
-        if (requiredAudience.isEmpty()) {
-            // audience 를 설정하지 않은 서비스는 aud 가 없는 일반 액세스 토큰만 받는다. aud 가 있는 토큰은 특정 클라이언트용
-            // (OIDC id_token 등)이라 API 인증으로 쓰이면 토큰 혼동이 된다.
-            if (audience != null && !audience.isEmpty()) {
-                throw new IllegalStateException("JWT with an audience is not an access token (doro.iam.audience is not configured)");
-            }
-            return;
-        }
-        if (audience == null || !audience.contains(requiredAudience)) {
-            throw new IllegalStateException("JWT audience mismatch");
-        }
     }
 }

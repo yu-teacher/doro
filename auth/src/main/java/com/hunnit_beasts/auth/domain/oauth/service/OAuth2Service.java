@@ -11,6 +11,7 @@ import com.hunnit_beasts.auth.domain.oauth.service.OAuthClientRegistry.ResolvedC
 import com.hunnit_beasts.auth.domain.oauth.store.AuthorizationCodeData;
 import com.hunnit_beasts.auth.domain.oauth.store.AuthorizationCodeStore;
 import com.hunnit_beasts.auth.domain.session.entity.UserSession;
+import com.hunnit_beasts.auth.domain.session.service.SessionRevocationService;
 import com.hunnit_beasts.auth.domain.session.service.SessionService;
 import com.hunnit_beasts.auth.domain.user.entity.User;
 import com.hunnit_beasts.auth.domain.user.repository.UserRepository;
@@ -48,6 +49,7 @@ public class OAuth2Service {
 
     private final UserRepository userRepository;
     private final SessionService sessionService;
+    private final SessionRevocationService sessionRevocationService;
     private final JwtTokenProvider jwtTokenProvider;
     private final RefreshTokenService refreshTokenService;
     private final AuthorizationCodeStore codeStore;
@@ -275,6 +277,23 @@ public class OAuth2Service {
                 session.getId(), session.getUserIndex(), null, null);
     }
 
+    /**
+     * RFC 7009 토큰 폐기. 이 클라이언트의 OAuth 세션에 속한 리프레시 토큰이면 IAM 세션을 끝내고(킬스위치 포함) 토큰을 무효화한다.
+     * 알 수 없는 토큰, 다른 클라이언트의 토큰, 일반 로그인 세션의 토큰은 아무것도 하지 않고 조용히 지나간다
+     * (호출자에게 토큰의 존재 여부를 알리지 않기 위한 RFC 7009 §2.2 의 동작).
+     */
+    public void revoke(String token, String clientId) {
+        requireText(token, "token");
+        requireText(clientId, "client_id");
+        ResolvedClient client = clientRegistry.resolveForToken(clientId);
+        UserSession owner = refreshTokenService.findSessionByRawToken(token).orElse(null);
+        if (owner == null || !isOAuthSessionOf(owner, client.clientId())) {
+            return;
+        }
+        sessionRevocationService.revokeOwnSession(owner.getUserId(), owner.getId(), "OAUTH_REVOKE");
+        log.info("OAuth session revoked by client: clientId={}, sessionId={}", client.clientId(), owner.getId());
+    }
+
     /** OAuth 클라이언트용으로 만들어진 세션인지(어떤 클라이언트든). 일반 로그인 경로가 이런 세션의 토큰을 받지 않게 하는 데 쓴다. */
     public static boolean isOAuthSession(UserSession session) {
         return OAuth2Constants.SESSION_IP_MARKER.equals(session.getIpAddress())
@@ -339,6 +358,7 @@ public class OAuth2Service {
         config.put("authorization_endpoint", issuer + "/oauth2/authorize");
         config.put("token_endpoint", issuer + "/oauth2/token");
         config.put("userinfo_endpoint", issuer + "/oauth2/userinfo");
+        config.put("revocation_endpoint", issuer + "/oauth2/revoke");
         config.put("jwks_uri", issuer + "/.well-known/jwks.json");
         config.put("response_types_supported", List.of(OAuth2Constants.RESPONSE_TYPE_CODE));
         config.put("response_modes_supported", List.of("query"));

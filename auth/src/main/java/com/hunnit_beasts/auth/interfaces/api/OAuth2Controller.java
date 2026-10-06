@@ -96,6 +96,21 @@ public class OAuth2Controller {
         return redirectToConsent(request);
     }
 
+    /**
+     * RFC 7009 토큰 폐기(폼). 성공이든 알 수 없는 토큰이든 200 으로 응답한다. 클라이언트(예: 블로그 BFF)가 로그아웃할 때
+     * 자기 리프레시 토큰을 폐기해 IAM 세션까지 끝낸다.
+     */
+    @PostMapping(value = "/oauth2/revoke", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+    public ResponseEntity<?> revoke(HttpServletRequest request) {
+        try {
+            requireBodyParametersOnly(request);
+            oAuth2Service.revoke(param(request, "token"), param(request, "client_id"));
+            return noStore(ResponseEntity.ok()).build();
+        } catch (OAuth2Exception e) {
+            return oauthError(e.getType(), e.getMessage());
+        }
+    }
+
     /** JSON(camelCase) 토큰 요청 — 기존 ApiResponse 계약 유지. */
     @PostMapping(value = "/oauth2/token", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<ApiResponse<TokenResponse>> exchangeTokenJson(
