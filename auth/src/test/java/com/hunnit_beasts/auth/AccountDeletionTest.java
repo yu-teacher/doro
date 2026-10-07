@@ -2,7 +2,9 @@ package com.hunnit_beasts.auth;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hunnit_beasts.auth.common.exception.AuthException;
 import com.hunnit_beasts.auth.core.totp.TotpService;
+import com.hunnit_beasts.auth.domain.session.service.SessionService;
 import com.hunnit_beasts.auth.domain.auth.service.AuthService;
 import com.hunnit_beasts.auth.domain.credential.entity.Credential;
 import com.hunnit_beasts.auth.domain.credential.repository.CredentialRepository;
@@ -33,6 +35,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.atLeastOnce;
@@ -66,6 +69,8 @@ class AccountDeletionTest {
     private AuthService authService;
     @Autowired
     private TotpService totpService;
+    @Autowired
+    private SessionService sessionService;
     @Autowired
     private AccountPurgeService purgeService;
     @Autowired
@@ -190,11 +195,14 @@ class AccountDeletionTest {
         assertThat(statusOf(account.id())).isEqualTo("PENDING_DELETION");
         assertThat(jdbc.queryForObject("select count(*) from user_sessions where user_id = ? and is_active = true",
                 Integer.class, account.id())).isZero();
-        // 요청에 쓴 토큰과 다른 기기의 토큰 모두 거부된다
-        mockMvc.perform(get("/api/v1/users/me").header("Authorization", "Bearer " + account.token()))
-                .andExpect(status().isUnauthorized());
-        mockMvc.perform(get("/api/v1/users/me").header("Authorization", "Bearer " + secondDeviceToken))
-                .andExpect(status().isUnauthorized());
+        // 서브 서비스(SDK)가 쓰는 토큰 확인은 DB 가 기준이다: 요청에 쓴 세션과 다른 기기의 세션 모두 거부된다.
+        // (IAM 자체 필터의 즉시 차단은 Redis 블랙리스트에 의존하므로, Redis 가 없는 CI 에서도 같은 결과가 나오게 DB 로 검증한다)
+        List<UUID> sessionIds = jdbc.queryForList("select id from user_sessions where user_id = ?", UUID.class, account.id());
+        assertThat(sessionIds).isNotEmpty();
+        for (UUID sessionId : sessionIds) {
+            assertThatThrownBy(() -> sessionService.assertSessionLive(sessionId)).isInstanceOf(AuthException.class);
+        }
+        assertThat(secondDeviceToken).isNotBlank();
     }
 
     @Test
