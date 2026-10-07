@@ -131,7 +131,8 @@ public class AuthService {
         User user = userRepository.findByEmailIgnoreCase(email)
                 .orElseThrow(() -> new AuthException(ErrorCode.USER_NOT_FOUND, "Doro 계정을 찾을 수 없습니다."));
 
-        if (!user.isActive()) {
+        // 탈퇴 유예 중인 계정은 다시 로그인해 복구할 수 있어야 하므로 조회를 막지 않는다.
+        if (!user.isActive() && !user.isPendingDeletion()) {
             throw new AuthException(ErrorCode.ACCOUNT_SUSPENDED, "이용이 정지된 계정입니다.");
         }
 
@@ -143,7 +144,8 @@ public class AuthService {
         User user = userRepository.findByEmailIgnoreCase(request.email())
                 .orElseThrow(() -> new AuthException(ErrorCode.INVALID_CREDENTIALS));
 
-        if (!user.isActive()) {
+        // 탈퇴 유예 중인 계정은 비밀번호를 확인한 뒤 세션을 발급할 때 복구한다. (비밀번호 검증 전에는 상태를 드러내지 않는다)
+        if (!user.isActive() && !user.isPendingDeletion()) {
             throw new AuthException(ErrorCode.ACCOUNT_SUSPENDED);
         }
 
@@ -190,6 +192,12 @@ public class AuthService {
 
         User user = userRepository.findById(session.userId())
                 .orElseThrow(() -> new AuthException(ErrorCode.USER_NOT_FOUND));
+
+        // 티켓 발급 이후에 정지·영구 탈퇴된 계정은 OTP 가 맞아도 세션을 받지 못한다.
+        if (!user.isActive() && !user.isPendingDeletion()) {
+            pendingTwoFactorTickets.remove(request.tempTicket());
+            throw new AuthException(ErrorCode.ACCOUNT_SUSPENDED);
+        }
 
         Credential credential = credentialRepository.findByUserId(session.userId())
                 .orElseThrow(() -> new AuthException(ErrorCode.INVALID_CREDENTIALS));
@@ -334,6 +342,19 @@ public class AuthService {
     }
 
     private TokenResponse issueSessionAndTokens(User user, String deviceInfo, String ipAddress, String userAgent) {
+        if (user.isPendingDeletion()) {
+            // 비밀번호(와 2FA)를 통과했으므로 본인이 맞다. 유예 기간 안에 로그인했으니 탈퇴를 취소한다.
+            // 영구 처리와 경쟁할 수 있어 조건부 UPDATE 로 복구하고, 그사이 처리됐다면 세션을 발급하지 않는다.
+            int restored = userRepository.restoreIfPendingDeletion(
+                    user.getId(), UserStatus.ACTIVE, UserStatus.PENDING_DELETION, Instant.now());
+            if (restored == 0) {
+                throw new AuthException(ErrorCode.ACCOUNT_SUSPENDED);
+            }
+            // 영구 처리가 Guard 튜플을 먼저 지웠을 수 있으므로 되살린다. (멱등)
+            userRelationSyncService.syncUserTuples(user, user.getRole() != null ? user.getRole() : UserRole.USER);
+            log.info("Account deletion cancelled by login during the grace period: userId={}", user.getId());
+        }
+
         UserSession session = sessionService.createSession(
                 user.getId(),
                 deviceInfo,

@@ -168,4 +168,24 @@ public class GuardClient {
             return 0;
         }
     }
+
+    /**
+     * 관계 튜플 일괄 삭제. {@link #deleteTuples} 와 달리 실패를 삼키지 않고 예외로 알린다.
+     * 호출 측이 실패하면 상태를 바꾸지 않고 다시 시도할 수 있어야 하는 흐름(회원 영구 탈퇴)에서 쓴다.
+     */
+    public int deleteTuplesOrThrow(List<TupleDto> tuples) {
+        if (tuples == null || tuples.isEmpty()) {
+            return 0;
+        }
+        GuardResponse<Map<String, Integer>> response = restClient.method(HttpMethod.DELETE)
+                .uri("/api/v1/guard/tuples")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(tuples)
+                .retrieve()
+                .body(new ParameterizedTypeReference<GuardResponse<Map<String, Integer>>>() {});
+        if (response == null || response.data() == null || !response.data().containsKey("deletedCount")) {
+            throw new IllegalStateException("Doro Guard returned an unexpected deleteTuples response");
+        }
+        return response.data().get("deletedCount");
+    }
 }

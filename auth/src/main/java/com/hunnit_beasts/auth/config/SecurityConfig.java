@@ -52,6 +52,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         .requestMatchers("/oauth2/**").permitAll()
+                        // 서브 서비스 전용(게이트웨이 미라우팅, 개인정보 없음). 컨트롤러가 프록시 경유 요청을 거부한다.
+                        .requestMatchers(HttpMethod.GET, "/internal/v1/deleted-users").permitAll()
                         .requestMatchers("/.well-known/**").permitAll()
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()

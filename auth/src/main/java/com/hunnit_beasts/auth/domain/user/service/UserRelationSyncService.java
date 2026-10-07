@@ -3,6 +3,7 @@ package com.hunnit_beasts.auth.domain.user.service;
 import com.hunnit_beasts.auth.common.log.LogMasking;
 import com.hunnit_beasts.auth.domain.user.entity.User;
 import com.hunnit_beasts.auth.domain.user.entity.UserRole;
+import com.hunnit_beasts.auth.domain.user.entity.UserStatus;
 import com.hunnit_beasts.auth.domain.user.repository.UserRepository;
 import com.hunnit_beasts.auth.infrastructure.guard.GuardClient;
 import com.hunnit_beasts.auth.infrastructure.guard.GuardClient.TupleDto;
@@ -24,6 +25,21 @@ public class UserRelationSyncService {
     private final GuardClient guardClient;
     private final UserRepository userRepository;
 
+    /** 사용자 역할에서 파생되는 모든 Guard 튜플(시스템 멤버십 + 이 사용자를 대상으로 한 관리 관계). */
+    private static List<TupleDto> roleTuples(String userId) {
+        return List.of(
+                TupleDto.of("system", "doro", "super_admin", "user", userId),
+                TupleDto.of("system", "doro", "admin", "user", userId),
+                TupleDto.of("user", userId, "manager", "system", "doro", "admin"),
+                TupleDto.of("user", userId, "super_manager", "system", "doro", "super_admin")
+        );
+    }
+
+    /** 영구 탈퇴 시 사용자의 IAM 튜플을 모두 지운다. Guard 장애는 예외로 전파해 호출 측이 다시 시도하게 한다. */
+    public void removeUserTuplesOrThrow(UUID userId) {
+        guardClient.deleteTuplesOrThrow(roleTuples(userId.toString()));
+    }
+
     /**
      * 사용자 권한/역할 변경에 따른 Zanzibar 튜플 동기화
      */
@@ -33,12 +49,7 @@ public class UserRelationSyncService {
                 LogMasking.maskEmail(user.getEmail()), newRole);
 
         // 1. 기존 잠재적 상위 권한 튜플 정리 (안전한 교체)
-        List<TupleDto> tuplesToDelete = List.of(
-                TupleDto.of("system", "doro", "super_admin", "user", userId),
-                TupleDto.of("system", "doro", "admin", "user", userId),
-                TupleDto.of("user", userId, "manager", "system", "doro", "admin"),
-                TupleDto.of("user", userId, "super_manager", "system", "doro", "super_admin")
-        );
+        List<TupleDto> tuplesToDelete = roleTuples(userId);
         guardClient.deleteTuples(tuplesToDelete);
 
         // 2. 신규 역할에 따른 정규 튜플 등록
@@ -75,6 +86,10 @@ public class UserRelationSyncService {
         try {
             List<User> allUsers = userRepository.findAll();
             for (User user : allUsers) {
+                // 영구 탈퇴한 계정의 튜플을 되살리지 않는다.
+                if (user.getStatus() == UserStatus.DELETED) {
+                    continue;
+                }
                 syncUserTuples(user, user.getRole() != null ? user.getRole() : UserRole.USER);
             }
             log.info("Completed initial Zanzibar relation tuple synchronization for {} users.", allUsers.size());

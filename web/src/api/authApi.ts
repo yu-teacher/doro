@@ -1,5 +1,5 @@
 import { apiClient } from './client';
-import { LoginData, TokenResponse, TotpSetupData, SessionResponseDto, UserProfileData } from '../types/auth';
+import { AccountDeletionResult, LoginData, TokenResponse, TotpSetupData, SessionResponseDto, UserProfileData } from '../types/auth';
 
 export const authApi = {
   // 1. 회원가입
@@ -49,6 +49,17 @@ export const authApi = {
   changePassword: async (data: { currentPassword: string; newPassword: string }) => {
     const response = await apiClient.put<{ success: boolean }>('/api/v1/users/me/password', data);
     return response.data;
+  },
+
+  // 6-1. 회원탈퇴 요청 (비밀번호 재확인, 2FA 사용 시 OTP 코드 포함)
+  requestAccountDeletion: async (data: { password: string; totpCode?: string }) => {
+    // 이 요청은 401 에서 토큰을 갱신해 다시 보내지 않으므로, 먼저 인증된 요청으로 액세스 토큰을 최신으로 만든다.
+    await apiClient.get('/api/v1/users/me');
+    const response = await apiClient.post<{ success: boolean; data: AccountDeletionResult }>(
+      '/api/v1/users/me/deletion',
+      data
+    );
+    return response.data.data;
   },
 
   // 7. 2FA 등록 시작 (QR 코드 URI 발급)

@@ -4,6 +4,8 @@ import { useAuthStore } from '../store/authStore';
 import { authApi } from '../api/authApi';
 import { SessionResponseDto, TotpSetupData, UserProfileData } from '../types/auth';
 import { AvatarModal } from '../components/profile/AvatarModal';
+import { DeleteAccountSection } from '../components/profile/DeleteAccountSection';
+import { deletionNotice } from '../utils/accountDeletion';
 import { QRCodeSVG } from 'qrcode.react';
 import {
   Shield,
@@ -36,7 +38,7 @@ import { UserRole } from '../types/auth';
 export const MyAccountPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { accounts, activeAccountIndex, updateActiveProfile } = useAuthStore();
+  const { accounts, activeAccountIndex, updateActiveProfile, removeAccountByEmail } = useAuthStore();
   const activeAccount = accounts[activeAccountIndex] || accounts[0];
 
   const [activeTab, setActiveTab] = useState<'home' | 'info' | 'security' | 'sessions' | 'apps' | 'admin'>('home');
@@ -236,6 +238,14 @@ export const MyAccountPage: React.FC = () => {
     } finally {
       setSavingName(false);
     }
+  };
+
+  // 서버가 탈퇴를 접수하면 모든 세션이 이미 끝났으므로, 이 계정을 기기에서 지우고 로그인 화면에서 안내한다.
+  const handleDeletionRequested = (scheduledPurgeAt: string) => {
+    if (activeAccount) {
+      removeAccountByEmail(activeAccount.email);
+    }
+    navigate('/login', { replace: true, state: { notice: deletionNotice(scheduledPurgeAt) } });
   };
 
   const handleChangePassword = async (e: React.FormEvent) => {
@@ -794,6 +804,11 @@ export const MyAccountPage: React.FC = () => {
                   </div>
                 </div>
               </div>
+
+              {/* 2FA 사용 여부를 알아야 올바른 입력칸을 보여 줄 수 있으므로 프로필을 불러온 뒤에만 보여 준다. */}
+              {profile && (
+                <DeleteAccountSection role={profile.role} hasTotp={profile.hasTotp} onRequested={handleDeletionRequested} />
+              )}
             </div>
           )}
 

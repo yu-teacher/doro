@@ -45,6 +45,11 @@ export interface LoginData {
   tokens?: TokenResponse;
 }
 
+/** 회원탈퇴 요청 결과. 이 시각이 지나면 개인정보가 영구 삭제되고, 그 전에 다시 로그인하면 취소된다. */
+export interface AccountDeletionResult {
+  scheduledPurgeAt: string;
+}
+
 export interface SessionResponseDto {
   sessionId: string;
   userId: string;

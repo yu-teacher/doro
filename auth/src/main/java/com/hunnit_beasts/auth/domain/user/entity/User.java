@@ -7,6 +7,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.time.Instant;
 import java.util.UUID;
 
 @Entity
@@ -35,6 +36,14 @@ public class User extends BaseTimeEntity {
     @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false, length = 30)
     private UserRole role;
+
+    /** 탈퇴를 요청한 시각. PENDING_DELETION 인 동안에만 값이 있다. */
+    @Column(name = "deletion_requested_at")
+    private Instant deletionRequestedAt;
+
+    /** 개인정보를 영구 익명화한 시각. DELETED 인 계정에만 값이 있다. */
+    @Column(name = "deleted_at")
+    private Instant deletedAt;
 
     @Builder
     public User(UUID id, String email, String name, String profileImageUrl, UserStatus status, UserRole role) {
@@ -70,5 +79,14 @@ public class User extends BaseTimeEntity {
 
     public boolean isActive() {
         return this.status == UserStatus.ACTIVE;
+    }
+
+    public boolean isPendingDeletion() {
+        return this.status == UserStatus.PENDING_DELETION;
+    }
+
+    public void requestDeletion(Instant now) {
+        this.status = UserStatus.PENDING_DELETION;
+        this.deletionRequestedAt = now;
     }
 }

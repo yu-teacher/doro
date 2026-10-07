@@ -21,6 +21,11 @@ public interface UserSessionRepository extends JpaRepository<UserSession, UUID> 
 
     List<UserSession> findByUserIdAndIpAddressAndUserAgentAndIsActiveTrue(UUID userId, String ipAddress, String userAgent);
 
+    /** 영구 탈퇴 시 IP·User-Agent 등 세션 흔적을 지운다. 리프레시 토큰은 FK ON DELETE CASCADE 로 함께 삭제된다. */
+    @Modifying
+    @Query("DELETE FROM UserSession s WHERE s.userId = :userId")
+    int deleteAllByUserId(@Param("userId") UUID userId);
+
     @Modifying
     @Query("UPDATE UserSession s SET s.isActive = false WHERE s.userId = :userId")
     void deactivateAllByUserId(@Param("userId") UUID userId);

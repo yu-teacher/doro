@@ -61,6 +61,10 @@ doro:
     allowed-origin-patterns: ${DORO_CORS_ALLOWED_ORIGIN_PATTERNS:https://varen05.asuscomm.com,http://192.168.0.101:*,http://localhost:*,http://127.0.0.1:*}
   iam:
     issuer: https://auth.doro.local
+    account-deletion:
+      grace-days: ${DORO_IAM_ACCOUNT_DELETION_GRACE_DAYS:30} # 탈퇴 요청 후 이 기간 안에 로그인하면 복구, 지나면 개인정보 익명화
+      purge-interval-ms: ${DORO_IAM_ACCOUNT_DELETION_PURGE_INTERVAL_MS:3600000}
+      purge-batch-size: 100
     jwt:
       access-token-validity-seconds: ${DORO_IAM_ACCESS_TOKEN_TTL_SECONDS:900} # 기본 15분. 로그인 유지는 30일 리프레시 토큰(회전)이 담당한다
       refresh-token-validity-seconds: 2592000 # 30일 (1달)
