@@ -20,7 +20,9 @@ jobs:
   # 운영 서비스와 같은 호스트이므로 CPU/메모리를 제한한다.
   test:
     name: Test (backend + web)
-    runs-on: self-hosted
+    # 기본은 mini 러너. 저장소 변수 TEST_RUNS_ON(예: ["self-hosted","notebook"])을 설정하면 테스트만 다른 러너(노트북)에서 실행한다.
+    # 배포(deploy)는 항상 mini 에서 한다. 노트북이 꺼져 있어 테스트가 대기하면 변수를 지우거나 수동 실행의 skip_tests 를 쓴다.
+    runs-on: ${{ fromJSON(vars.TEST_RUNS_ON || '"self-hosted"') }}
     if: ${{ !inputs.skip_tests }}
     timeout-minutes: 30
 
