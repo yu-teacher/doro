@@ -146,7 +146,7 @@ export const LogViewerPage: React.FC = () => {
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-black tracking-tight">시스템 관제 및 중앙 로그</h1>
                 <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-500/30 border border-indigo-400/40 text-indigo-200">
-                  Loki & Promtail 연동
+                  Loki & Alloy 연동
                 </span>
               </div>
               <p className="text-xs text-slate-300/80 mt-1">

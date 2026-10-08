@@ -34,8 +34,8 @@
 ---
 
 ### 4. Doro 관측성(Observability) 및 분산 추적 표준 (PLG 스택)
-- **도커 stdout 표준 출력 & Promtail 연동**:
-  - 파일 직접 쓰기나 인메모리 버퍼링을 지양하고, 모든 애플리케이션 로그는 표준 출력(`stdout`/`stderr`)으로 방출하여 Promtail이 컨테이너 메타데이터(서비스명, 컨테이너 ID)와 함께 Loki로 자동 수집할 수 있도록 할 것.
+- **도커 stdout 표준 출력 & 로그 수집기(Alloy) 연동**:
+  - 파일 직접 쓰기나 인메모리 버퍼링을 지양하고, 모든 애플리케이션 로그는 표준 출력(`stdout`/`stderr`)으로 방출하여 서버별 수집기(Grafana Alloy)가 컨테이너 메타데이터(서비스명=`service` 라벨, 컨테이너명)와 함께 중앙 Loki(노트북)로 자동 수집할 수 있도록 할 것. 수집기 설정은 `monitoring/log-shipper/`, 중앙 저장소는 `monitoring/central-logs/`.
 - **분산 추적(Distributed Tracing) & MDC 정합성**:
   - 인바운드 HTTP 요청 시 `X-Trace-Id` 헤더(없을 시 신규 UUID)를 추출하여 SLF4J MDC에 `traceId`, `userId`, `clientIp`를 바인딩할 것.
   - 마이크로서비스 간 통신(HTTP, gRPC, Redis Pub-Sub/Stream) 시 `traceId`를 헤더/메타데이터로 필수 전파(Propagation)하여, Grafana에서 단일 트랜잭션 전 구간의 로그를 한 번에 조회할 수 있게 보장할 것.
@@ -69,7 +69,7 @@
 
 4. **도커 오케스트레이션 및 관측성 연동**:
    - `docker-compose.yml`에 신규 서비스 컨테이너를 등록하고 `doro-network`에 연결할 것.
-   - 모든 로그는 `stdout` 표준 출력(SLF4J)으로 방출하고 `X-Trace-Id`를 전파하여 Promtail/Loki가 자동 수집하도록 구성할 것.
+   - 모든 로그는 `stdout` 표준 출력(SLF4J)으로 방출하고 `X-Trace-Id`를 전파하여 수집기(Alloy)와 중앙 Loki가 자동 수집하도록 구성할 것.
 
 5. **CI/CD 자동 배포 검증**:
    - 신규 서비스를 추가한 뒤 커밋 & 푸시하여, GitHub Actions Self-Hosted Runner가 미니 서버에 신규 서비스 컨테이너를 자동으로 빌드 및 무중단 배포하고 정상 가동(`healthy`)함을 확인할 것.

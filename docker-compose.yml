@@ -138,52 +138,6 @@ services:
     networks:
       - doro-network
 
-  loki:
-    image: grafana/loki:3.3.2
-    container_name: doro-loki
-    user: "0:0"
-    restart: unless-stopped
-    ports:
-      - "${LOKI_BIND:-127.0.0.1}:${LOKI_PORT:-3100}:3100"
-    volumes:
-      - ./monitoring/loki/loki-config.yaml:/etc/loki/local-config.yaml:ro
-      - doro_lokidata:/tmp/loki
-    command: -config.file=/etc/loki/local-config.yaml
-    networks:
-      - doro-network
-
-  promtail:
-    image: grafana/promtail:3.3.2
-    container_name: doro-promtail
-    restart: unless-stopped
-    volumes:
-      - ./monitoring/promtail/promtail-config.yaml:/etc/promtail/config.yml:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
-    command: -config.file=/etc/promtail/config.yml
-    depends_on:
-      - loki
-    networks:
-      - doro-network
-
-  grafana:
-    image: grafana/grafana:11.4.0
-    container_name: doro-grafana
-    restart: unless-stopped
-    ports:
-      - "${GRAFANA_BIND:-127.0.0.1}:${GRAFANA_PORT:-3001}:3000"
-    environment:
-      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
-      - GF_USERS_ALLOW_SIGN_UP=false
-    volumes:
-      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
-      - doro_grafanadata:/var/lib/grafana
-    depends_on:
-      - loki
-    networks:
-      - doro-network
-
 networks:
   doro-network:
     driver: bridge
@@ -191,7 +145,5 @@ networks:
 volumes:
   doro_pgdata:
   doro_redisdata:
-  doro_lokidata:
-  doro_grafanadata:
 
 

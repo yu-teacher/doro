@@ -106,13 +106,13 @@ IAM(`doro_auth`)과 Guard(`doro_guard`)는 각자 DB를 쓰고, 서브 서비스
 
 ## ⚙️ 운영 품질
 - **CI** `main` 푸시마다 컨테이너 안에서 백엔드·웹 테스트를 돌리고, **통과해야 배포**합니다.
-- **관측성** 모든 로그를 stdout으로 내보내 Promtail → Loki → Grafana로 수집, `traceId`를 HTTP와 SDK → Guard gRPC로 전파합니다.
+- **관측성** 모든 로그를 stdout으로 내보내 서버별 수집기(Grafana Alloy) → 중앙 Loki → Grafana로 수집, `traceId`를 HTTP와 SDK → Guard gRPC로 전파합니다.
 - **보안 기본기** 게이트웨이 CSP, 서비스 간 호출자 토큰, 시크릿 로그 금지, 입력 검증, 업로드·XSS 방어(블로그).
 
 ## 🚀 실행
 ```bash
 cp .env.example .env     # POSTGRES_PASSWORD 설정
-docker compose up -d     # Postgres · Redis · IAM · Guard · Portal · Loki · Grafana
+docker compose up -d     # Postgres · Redis · IAM · Guard · Portal
 ./gradlew test           # auth · guard · sdk 전체 테스트
 ```
 

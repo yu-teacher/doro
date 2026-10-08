@@ -24,7 +24,7 @@
 | `blog_web_upstream` | `doro-blog-web:80` | 블로그 프런트엔드(기본 메인 웹) |
 | `blog_api_upstream` | `doro-blog-backend:8082` | 블로그 백엔드 API |
 | `minio_upstream` | `doro-minio:9000` | 업로드 미디어(MinIO) |
-| `loki_upstream` | `loki:3100` | 로그 조회(Loki) |
+| `loki_upstream` | 중앙 Loki(노트북, IP 로 지정) | 로그 조회(Loki). 미니의 loki 컨테이너는 없앴다(`scripts/apply-gateway-loki.sh`). nginx 는 시작 때 이름을 해석하므로 컨테이너 이름이 아니라 IP 로 가리킨다 |
 | `menu_upstream` | `doro-menu:80` | 도로메뉴 서브 서비스 |
 
 **Guard(`guard-api`)는 업스트림에 없다. Guard 는 게이트웨이로 프록시하지 않는다**(8081/9090 은 내부 전용, §5).
@@ -59,7 +59,7 @@ nginx 의 평가 순서(이 순서를 모르고 location 을 추가하면 반드
 | location | 대상 | 비고 |
 |---|---|---|
 | `/media/` | `minio_upstream/doro-blog-media/` | 업로드 미디어. **sandbox CSP** 별도 적용(§4.3) |
-| `/loki/` | `loki_upstream/loki/` | **관리자 전용**: `auth_request /_auth_admin`, **GET/HEAD 만 허용**(`limit_except`, 나머지 메서드는 거부). 쓰기(push)는 Promtail 이 docker 네트워크로 직접 수행. 이 location 이 없으면 중앙 관제 로그 화면이 비게 된다 |
+| `/loki/` | `loki_upstream/loki/` | **관리자 전용**: `auth_request /_auth_admin`, **GET/HEAD 만 허용**(`limit_except`, 나머지 메서드는 거부). 쓰기(push)는 서버별 수집기(Alloy)가 중앙 Loki(노트북)에 직접 수행(이 경로로는 쓰지 않는다). 이 location 이 없으면 중앙 관제 로그 화면이 비게 된다 |
 | `/api/v1/auth` | `iam_upstream` | 로그인/가입/2FA/로그아웃/토큰 갱신 등. **끝 슬래시 없는 프리픽스**라 `/api/v1/auth` 로 *시작하는* 모든 경로가 걸린다 |
 | `/api/v1/sessions` | `iam_upstream` | 세션 관리, `sessions/current`(SDK 폐기 확인). 끝 슬래시 없음 |
 | `/api/v1/admin/users` | `iam_upstream` | 사용자 관리(목록, 역할 변경, 2FA 초기화). 끝 슬래시 없음 |
@@ -131,7 +131,7 @@ default                                              → blog_api_upstream  (블
 - **Guard**(REST 8081, gRPC 9090): 프록시하지 않는다. 서비스 인증 기본이 `OFF` 이고 TLS 가 없으므로 외부에 노출하면 안 된다. `/api/v1/guard/**` 는 게이트웨이에 location 이 없어 **블로그 API(`/api/v1/`)로 흘러가므로**, Guard API 가 게이트웨이로 열린다고 오해하지 말 것.
 - **IAM 관리자 OAuth 클라이언트 API `/api/v1/admin/oauth/clients`**: 현재 location 이 없고(`/api/v1/admin/users` 만 IAM) `/api/v1/` 에 걸려 **블로그 API 로 간다.** 게이트웨이 경유로 클라이언트를 등록하려면 location(§6 규칙에 따라 `/api/v1/admin/oauth` 추가)이 필요하다. `[코드: gateway/nginx.conf — 의도인지 누락인지 확인 필요]`
 - IAM 의 `/swagger-ui.html`, `/v3/api-docs`, `/actuator/**`, `/health`, IAM `GET /api/v1/admin/authz`(내부 `auth_request` 전용).
-- 데이터 저장소(PostgreSQL, Redis, Loki, Grafana, Guard)는 compose 에서 기본 `127.0.0.1` 바인딩이다. 포털(3000)과 auth(8080)의 호스트 포트는 compose 기본이 `0.0.0.0` 이므로(`WEB_BIND`/`AUTH_BIND`) 운영에서는 `.env` 로 `127.0.0.1` 로 제한하고 외부에는 80/443 만 연다(서버 실제 값은 `[미검증]`).
+- 데이터 저장소(PostgreSQL, Redis, Guard)는 compose 에서 기본 `127.0.0.1` 바인딩이다. 포털(3000)과 auth(8080)의 호스트 포트는 compose 기본이 `0.0.0.0` 이므로(`WEB_BIND`/`AUTH_BIND`) 운영에서는 `.env` 로 `127.0.0.1` 로 제한하고 외부에는 80/443 만 연다(서버 실제 값은 `[미검증]`).
 
 ---
 
@@ -176,7 +176,7 @@ default                                              → blog_api_upstream  (블
 
 ## 8. 배포·운영 — **게이트웨이는 CI 로 배포되지 않는다**
 
-- `.github/workflows/deploy.yml` 은 compose 서비스(postgres, redis, auth-api, guard-api, web, loki, promtail, grafana)만 빌드·배포한다. **`gateway/nginx.conf` 를 바꿔 커밋·푸시해도 서버의 게이트웨이에는 반영되지 않는다.** 블로그/메뉴도 이 워크플로 밖이다.
+- `.github/workflows/deploy.yml` 은 compose 서비스(postgres, redis, auth-api, guard-api, web)만 빌드·배포한다. **`gateway/nginx.conf` 를 바꿔 커밋·푸시해도 서버의 게이트웨이에는 반영되지 않는다.** 블로그/메뉴도 이 워크플로 밖이다.
 - 반영 절차(수동):
   1. 서버의 **현재 게이트웨이 설정을 백업**한다(실패 시 즉시 되돌릴 사본을 반드시 남긴다).
   2. 저장소의 `gateway/nginx.conf` 를 서버의 게이트웨이 설정 위치에 복사한다.

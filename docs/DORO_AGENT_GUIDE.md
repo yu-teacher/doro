@@ -39,7 +39,7 @@ IAM ──(REST, 관리자 판정·역할 튜플 동기화)──▶ Guard
 
 - 서비스별 **독립 DB** 규칙: IAM=`doro_auth`, Guard=`doro_guard`(compose 기준), 서브서비스=`service_{name}`. [코드: `docker-compose.yml`, `AGENTS.md`]
 - DB 는 공용 PostgreSQL 컨테이너 하나에 여러 DB. Redis 는 **IAM 이 쓴다**(JWT 키, 킬스위치, OAuth 인가 코드). **Guard 는 Redis 를 쓰지 않는다**(compose 가 Redis 환경변수를 넘기지만 무시됨). [코드]
-- 호스트 포트 바인딩 기본값: Postgres/Redis/Guard/Loki/Grafana 는 `127.0.0.1`, auth(8080)·web(3000)은 `0.0.0.0`(`*_BIND` 로 변경). 운영에서는 외부에 22/80/443 만 연다. [코드: compose, `.env.example`]
+- 호스트 포트 바인딩 기본값: Postgres/Redis/Guard 는 `127.0.0.1`, auth(8080)·web(3000)은 `0.0.0.0`(`*_BIND` 로 변경). 운영에서는 외부에 22/80/443 만 연다. [코드: compose, `.env.example`]
 
 ### 1.1 "통합 로그인"은 두 가지 방식이 공존한다
 
