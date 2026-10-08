@@ -41,8 +41,8 @@ SUM_REMOTE="$(ssh "${SSH_OPTS[@]}" "$HOST" "sha256sum /tmp/runner-$SLUG.tgz | cu
 [ "$SUM_LOCAL" = "$SUM_REMOTE" ] || die "복사한 파일의 체크섬이 다르다"
 
 log "== 등록 =="
-# 토큰은 명령 인자(프로세스 목록에 보인다) 대신 표준입력으로 넘긴다.
-printf '%s' "$TOKEN" | ssh "${SSH_OPTS[@]}" "$HOST" bash -s -- "$DEST" "$REPO" "$NAME" "$LABEL" "$CPUS" "$MEMORY" "$SLUG" <<'REMOTE'
+# 원격 스크립트는 파일로 보내고, 표준입력은 토큰 전달에만 쓴다(명령 인자로 주면 프로세스 목록에 보인다).
+cat > "$TMP/remote-setup.sh" <<'REMOTE'
 set -Eeuo pipefail
 dest="$1"; repo="$2"; name="$3"; label="$4"; cpus="$5"; memory="$6"; slug="$7"
 read -r token
@@ -54,6 +54,8 @@ cd "$HOME/$dest"
 # ci-test.sh 가 읽는 한도. 노트북은 운영 서비스가 없으니 mini 보다 넉넉하게 준다.
 printf 'CI_CPUS=%s\nCI_MEMORY=%s\n' "$cpus" "$memory" >> .env
 REMOTE
+scp -q "${SSH_OPTS[@]}" "$TMP/remote-setup.sh" "$HOST:/tmp/remote-setup-$SLUG.sh"
+printf '%s\n' "$TOKEN" | ssh "${SSH_OPTS[@]}" "$HOST" "bash /tmp/remote-setup-$SLUG.sh '$DEST' '$REPO' '$NAME' '$LABEL' '$CPUS' '$MEMORY' '$SLUG'; rc=\$?; rm -f /tmp/remote-setup-$SLUG.sh; exit \$rc"
 
 cat <<MSG
 
