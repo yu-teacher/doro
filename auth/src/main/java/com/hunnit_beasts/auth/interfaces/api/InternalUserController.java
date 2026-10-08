@@ -21,7 +21,8 @@ import java.util.List;
 
 /**
  * 서브 서비스(블로그 등) 전용 내부 API. 게이트웨이가 라우팅하지 않는 /internal 경로이며 Docker 내부 네트워크에서만
- * 닿는다. 응답은 영구 탈퇴한 사용자의 ID 와 시각뿐이라 개인정보가 없다.
+ * 닿고, 호출자 서비스 토큰(헤더 X-Doro-Service-Token)을 {@code InternalApiAuthFilter} 가 검사한다.
+ * 응답은 영구 탈퇴한 사용자의 ID 와 시각뿐이라 개인정보가 없다.
  */
 @RestController
 @RequestMapping("/internal/v1")

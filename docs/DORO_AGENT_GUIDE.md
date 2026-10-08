@@ -422,6 +422,7 @@ Doro 의 보안 기능은 **단계적으로 켤 수 있게** 설계돼 있다. �
 | 기능 | 켜는 방법 | 효과 |
 |---|---|---|
 | **Guard 서비스 인증** | `DORO_GUARD_SECURITY_MODE=WARN` 으로 호출자를 확인한 뒤 `ENFORCE`. 호출자별 토큰 `DORO_GUARD_SERVICE_TOKENS=auth:<토큰>,blog:<토큰>:schema-write` (`scripts/split-guard-tokens.sh` 가 전환·검증·자동 복구) | 서비스가 아닌 호출 차단, 호출자 식별, 스키마 교체는 `schema-write` 권한이 있는 호출자만 |
+| **내부 API 호출자 인증**(`/internal/**`) | `DORO_IAM_INTERNAL_TOKENS=blog:<토큰>[,호출자:<토큰>…]`(토큰 32자 이상 무작위, 형식 오류·짧은 토큰·이름 중복이면 **기동 실패**), 호출자는 헤더 `X-Doro-Service-Token` 으로 보낸다. 모드 `DORO_IAM_INTERNAL_AUTH_MODE`: **ENFORCE(기본)**, 도입 중에는 `WARN`(실패를 경고만 하고 통과), `OFF`. 게이트웨이를 거친 요청(`X-Forwarded-For`/`X-Real-IP`)은 토큰이 맞아도 **404** | 네트워크 격리에만 기대지 않고 호출자를 확인, 토큰 없는 요청은 401(표준 오류 본문), 토큰 값은 로그에 남지 않음 |
 | **Guard 튜플/스키마 검증** | `DORO_GUARD_VALIDATION_MODE=WARN` → 로그 확인 → `ENFORCE` | 스키마에 없는 타입/릴레이션 튜플, 오타·미선언 타입 스키마 거부 |
 | **JWT 개인키 암호화** | `DORO_IAM_JWT_KEY_ENCRYPTION_SECRET` (AES-256-GCM, 기존 키 자동 이전). 키 회전은 `previous-key-id` + `previous-public-key-pem` | Redis 에 보관하는 서명 키를 저장 시 암호화, 무중단 키 교체 |
 | **세션 폐기 즉시 반영** | SDK `doro.iam.revocation-check: WARN` → `ENFORCE` | 로그아웃/세션 종료가 서브 서비스에 즉시 반영 (캐시·백오프·fail-open 설정 제공) |
@@ -452,6 +453,7 @@ Doro 의 보안 기능은 **단계적으로 켤 수 있게** 설계돼 있다. �
 
 - ❌ USER_GUIDE/README 의 엔드포인트·필드를 그대로 복사해 코드를 쓰지 말 것 — 이 문서와 코드로 대조.
 - ❌ `POST /api/v1/guard/schema` 에 자기 타입만 보내지 말 것.
+- ❌ `/internal/**` 을 게이트웨이에 라우팅하지 말 것(내부 API 는 Docker 내부 네트워크 전용이고 호출자 토큰으로 한 번 더 지킨다). 내부 API 토큰 값을 코드·로그·문서·채팅에 남기지 말 것.
 - ❌ Guard 포트(8081/9090)를 게이트웨이나 외부에 노출하지 말 것. Guard 서비스 토큰 값을 코드·로그·문서·채팅에 남기지 말 것.
 - ❌ `DoroUser.role` 이나 클레임으로 관리자 권한을 판정하지 말 것(Guard 에 위임).
 - ❌ `@CurrentDoroUser UUID` 를 null 검사 없이 쓰지 말 것.
@@ -546,6 +548,7 @@ curl -s -o /dev/null -w '%{http_code}\n' \
 
 ## 14. 변경 이력
 
+- **2026-10-08** — 내부 API(`/internal/v1/deleted-users`) 호출자 인증 추가: 호출자별 서비스 토큰(`X-Doro-Service-Token`, `DORO_IAM_INTERNAL_TOKENS`), 모드 `DORO_IAM_INTERNAL_AUTH_MODE`(기본 ENFORCE), 게이트웨이 경유 요청은 항상 404. 블로그는 `DORO_IAM_INTERNAL_TOKEN` 으로 토큰을 보낸다.
 - **2026-10-02** — 현재 코드(`12d6582`) 기준으로 본문 전체 재작성. 2026-09-30 본문(커밋 `84b8da7` + working tree)과 부록(`hardening/phase1` 브랜치 메모)을 합치고 각 항목을 다시 검증했다. 부록의 운영 메모는 §13 으로 줄여 옮겼다.
   - **해결됨(2026-09-30 본문에서 결함으로 적었던 것)**:
     - 액세스 토큰 24시간 → 기본 **15분**(`DORO_IAM_ACCESS_TOKEN_TTL_SECONDS`).

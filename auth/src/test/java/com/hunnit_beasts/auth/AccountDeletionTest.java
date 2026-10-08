@@ -410,8 +410,11 @@ class AccountDeletionTest {
 
     // ---------------- 서브 서비스용 탈퇴 ID 목록 ----------------
 
+    /** application-test.yaml 의 테스트 전용 내부 API 호출자 토큰 */
+    private static final String INTERNAL_TOKEN = "test-only-internal-token-0123456789abcdef0123456789abcdef";
+
     private JsonNode feed(String query) throws Exception {
-        String body = mockMvc.perform(get("/internal/v1/deleted-users" + query))
+        String body = mockMvc.perform(get("/internal/v1/deleted-users" + query).header("X-Doro-Service-Token", INTERNAL_TOKEN))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         return objectMapper.readTree(body).path("data");
@@ -457,15 +460,36 @@ class AccountDeletionTest {
         assertThat(feedContains(feed("?since=" + Instant.now().plusSeconds(60)), account.id())).isFalse();
         assertThat(feed("?limit=0&since=" + Instant.now().minusSeconds(60)).path("items").size()).isLessThanOrEqualTo(1);
         assertThat(feed("?limit=100000").path("items").size()).isLessThanOrEqualTo(500);
-        mockMvc.perform(get("/internal/v1/deleted-users?since=not-a-time")).andExpect(status().isBadRequest());
+        mockMvc.perform(get("/internal/v1/deleted-users?since=not-a-time").header("X-Doro-Service-Token", INTERNAL_TOKEN))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("탈퇴 ID 목록은 호출자 서비스 토큰이 있어야만 받을 수 있다: 없거나 틀린 토큰은 401, 짧거나 한 글자만 다른 토큰도 거부")
+    void deletedUsersFeedRequiresCallerToken() throws Exception {
+        mockMvc.perform(get("/internal/v1/deleted-users")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/internal/v1/deleted-users").header("X-Doro-Service-Token", "")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/internal/v1/deleted-users").header("X-Doro-Service-Token", "wrong-token")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/internal/v1/deleted-users").header("X-Doro-Service-Token", INTERNAL_TOKEN.substring(1)))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/internal/v1/deleted-users").header("X-Doro-Service-Token", INTERNAL_TOKEN + "x"))
+                .andExpect(status().isUnauthorized());
+        // 사용자 JWT(Bearer)는 내부 API 호출자 인증을 대신하지 못한다
+        mockMvc.perform(get("/internal/v1/deleted-users").header("Authorization", "Bearer not-a-real-token"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("AUTH_40101"));
+        mockMvc.perform(get("/internal/v1/deleted-users").header("X-Doro-Service-Token", INTERNAL_TOKEN)).andExpect(status().isOk());
     }
 
     @Test
     @DisplayName("게이트웨이를 거친 요청(X-Forwarded-For, X-Real-IP)에는 이 내부 경로가 없는 것처럼 404 로 응답한다")
     void deletedUsersFeedIsHiddenFromProxiedRequests() throws Exception {
-        mockMvc.perform(get("/internal/v1/deleted-users").header("X-Forwarded-For", "203.0.113.9"))
+        mockMvc.perform(get("/internal/v1/deleted-users").header("X-Forwarded-For", "203.0.113.9").header("X-Doro-Service-Token", INTERNAL_TOKEN))
                 .andExpect(status().isNotFound());
-        mockMvc.perform(get("/internal/v1/deleted-users").header("X-Real-IP", "203.0.113.9"))
+        mockMvc.perform(get("/internal/v1/deleted-users").header("X-Real-IP", "203.0.113.9").header("X-Doro-Service-Token", INTERNAL_TOKEN))
                 .andExpect(status().isNotFound());
+        // 토큰이 없어도(401 로 존재를 드러내지 않고) 404
+        mockMvc.perform(get("/internal/v1/deleted-users").header("X-Forwarded-For", "203.0.113.9")).andExpect(status().isNotFound());
     }
 }

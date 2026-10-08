@@ -61,6 +61,11 @@ doro:
     allowed-origin-patterns: ${DORO_CORS_ALLOWED_ORIGIN_PATTERNS:https://varen05.asuscomm.com,http://192.168.0.101:*,http://localhost:*,http://127.0.0.1:*}
   iam:
     issuer: https://auth.doro.local
+    # 서브 서비스 전용 내부 API(/internal/**) 호출자 인증. 호출자마다 이름과 토큰(최소 32자)을 '이름:토큰,이름:토큰' 으로 준다.
+    # mode: OFF(검사 안 함) | WARN(실패를 경고만 하고 통과: 호출자에 토큰을 배포하는 동안 확인용) | ENFORCE(기본, 실패는 401)
+    internal-auth:
+      mode: ${DORO_IAM_INTERNAL_AUTH_MODE:ENFORCE}
+      tokens: ${DORO_IAM_INTERNAL_TOKENS:}
     account-deletion:
       grace-days: ${DORO_IAM_ACCOUNT_DELETION_GRACE_DAYS:30} # 탈퇴 요청 후 이 기간 안에 로그인하면 복구, 지나면 개인정보 익명화
       purge-interval-ms: ${DORO_IAM_ACCOUNT_DELETION_PURGE_INTERVAL_MS:3600000}

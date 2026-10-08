@@ -32,6 +32,10 @@ doro:
     allowed-origin-patterns: http://localhost:*,http://127.0.0.1:*
   iam:
     issuer: https://auth.doro.local
+    # 내부 API 호출자 인증(테스트 전용 토큰). 운영 기본값은 ENFORCE.
+    internal-auth:
+      mode: ENFORCE
+      tokens: ci-blog:test-only-internal-token-0123456789abcdef0123456789abcdef
     jwt:
       access-token-validity-seconds: 86400
       refresh-token-validity-seconds: 2592000
