@@ -79,6 +79,13 @@ HTTP_TIMEOUT_SEC="${HTTP_TIMEOUT_SEC:-10}"
 AUDIT_DIR="${AUDIT_DIR:-$HOME/audit-archive}"
 AUDIT_PULL="${AUDIT_PULL:-$AUDIT_DIR/audit-pull.py}"
 AUDIT_MAX_AGE_HOURS="${AUDIT_MAX_AGE_HOURS:-3}"
+# 점검과 기록은 하되 텔레그램으로는 보내지 않을 점검 이름(공백으로 구분). 보조 서버처럼 꺼져도 서비스가 멈추지 않는 것들이다.
+QUIET_CHECKS="${QUIET_CHECKS:-notebook_ssh logs_notebook logs_pi}"
+# 경고(warn) 단계(예: 인증서 만료 21일 미만)도 알릴지. 기본은 알리지 않고 실패(fail) 단계만 알린다.
+NOTIFY_WARN="${NOTIFY_WARN:-false}"
+# 미니 서버가 살아 있어야 성립하는 점검. 미니 SSH 가 실패한 회차에는 이 점검들의 알림을 보내지 않는다(결과일 뿐이라 "미니 다운" 한 통이면 충분하다).
+MINI_DEPENDENT_CHECKS="${MINI_DEPENDENT_CHECKS:-web_portal web_blog_api web_party tls_cert}"
+MINI_DOWN=false
 STATE="$DIR/state"
 NOW="$(date +%s)"
 mkdir -p "$STATE"
@@ -129,7 +136,13 @@ record() {
     FAILS=$((FAILS + 1))
     [ "$STATUS" != "$status" ] && syslog warning "$name $status: $msg"
     STATUS="$status"
-    if [ "$FAILS" -ge "$CONFIRM_FAILS" ] && [ "$NOTIFIED" = 0 ]; then
+    # 조용한 점검이나 경고 단계(NOTIFY_WARN=false)는 상태와 기록만 남기고 알리지 않는다.
+    local quiet=false
+    case " $QUIET_CHECKS " in *" $name "*) quiet=true ;; esac
+    [ "$status" = warn ] && [ "$NOTIFY_WARN" != true ] && quiet=true
+    if [ "$MINI_DOWN" = true ]; then case " $MINI_DEPENDENT_CHECKS " in *" $name "*) quiet=true ;; esac; fi
+    if [ "$quiet" = true ]; then :
+    elif [ "$FAILS" -ge "$CONFIRM_FAILS" ] && [ "$NOTIFIED" = 0 ]; then
       notify "$([ "$status" = fail ] && echo '🔴' || echo '🟡') $name: $msg"; NOTIFIED=1; LAST_NOTIFY="$NOW"
     elif [ "$NOTIFIED" = 1 ] && [ $((NOW - LAST_NOTIFY)) -ge $((REMIND_HOURS * 3600)) ]; then
       notify "⏰ 아직 이상: $name ($(fmt_duration $((NOW - SINCE))) 경과) - $msg"; LAST_NOTIFY="$NOW"
@@ -142,7 +155,7 @@ record() {
 tcp_open() { timeout 4 bash -c "exec 3<>/dev/tcp/$1/$2" 2>/dev/null; }
 
 # ---- 1) 서버 응답
-tcp_open "$MINI_HOST" 22     && record mini_ssh ok "SSH 응답" || record mini_ssh fail "미니 SSH(22) 응답 없음"
+if tcp_open "$MINI_HOST" 22; then record mini_ssh ok "SSH 응답"; else MINI_DOWN=true; record mini_ssh fail "미니 SSH(22) 응답 없음 (웹·인증서 점검 알림은 함께 생략)"; fi
 tcp_open "$NOTEBOOK_HOST" 22 && record notebook_ssh ok "SSH 응답" || record notebook_ssh fail "노트북 SSH(22) 응답 없음"
 
 # ---- 2) 서비스(게이트웨이 경유, 사용자가 보는 경로 그대로)
