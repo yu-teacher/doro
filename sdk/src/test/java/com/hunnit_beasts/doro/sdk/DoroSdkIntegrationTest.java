@@ -110,7 +110,7 @@ class DoroSdkIntegrationTest {
         UUID userId = UUID.randomUUID();
         String token = createTestJwt(userId, "engineer@doro.local", 0);
 
-        when(mockGuardClient.check(eq("document"), eq("doc-123"), eq("viewer"), eq(userId.toString())))
+        when(mockGuardClient.checkOrThrow(eq("document"), eq("doc-123"), eq("viewer"), eq(userId.toString())))
                 .thenReturn(true);
 
         mockMvc.perform(get("/api/v1/documents/doc-123")
@@ -127,7 +127,7 @@ class DoroSdkIntegrationTest {
         UUID userId = UUID.randomUUID();
         String token = createTestJwt(userId, "guest@doro.local", 0);
 
-        when(mockGuardClient.check(eq("document"), eq("doc-999"), eq("viewer"), eq(userId.toString())))
+        when(mockGuardClient.checkOrThrow(eq("document"), eq("doc-999"), eq("viewer"), eq(userId.toString())))
                 .thenReturn(false);
 
         mockMvc.perform(get("/api/v1/documents/doc-999")

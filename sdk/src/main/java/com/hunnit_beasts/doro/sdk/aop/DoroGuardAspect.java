@@ -94,8 +94,8 @@ public class DoroGuardAspect {
             subjectId = currentUser.userId().toString();
         }
 
-        // 3. Doro Guard gRPC Check 호출
-        boolean allowed = guardClient.check(namespace, objectId, relation, subjectId);
+        // 3. Doro Guard gRPC Check 호출. 장애는 거부로 바꾸지 않고 DoroGuardUnavailableException(→ 503)으로 전달한다.
+        boolean allowed = guardClient.checkOrThrow(namespace, objectId, relation, subjectId);
 
         if (!allowed) {
             log.warn("DoroGuard Access Denied for user={} on {}:{}#{}", subjectId, namespace, objectId, relation);

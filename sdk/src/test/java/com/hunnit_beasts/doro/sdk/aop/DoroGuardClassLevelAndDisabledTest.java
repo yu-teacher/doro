@@ -55,7 +55,7 @@ class DoroGuardClassLevelAndDisabledTest {
         DoroGuardClient client = Mockito.mock(DoroGuardClient.class);
         UUID userId = UUID.randomUUID();
         loginAs(userId);
-        when(client.check("board_post", "p1", "viewer", userId.toString())).thenReturn(false);
+        when(client.checkOrThrow("board_post", "p1", "viewer", userId.toString())).thenReturn(false);
 
         assertThatThrownBy(() -> proxy(client).read("p1")).isInstanceOf(DoroAccessDeniedException.class);
     }
@@ -66,7 +66,7 @@ class DoroGuardClassLevelAndDisabledTest {
         DoroGuardClient client = Mockito.mock(DoroGuardClient.class);
         UUID userId = UUID.randomUUID();
         loginAs(userId);
-        when(client.check("board_post", "p1", "viewer", userId.toString())).thenReturn(true);
+        when(client.checkOrThrow("board_post", "p1", "viewer", userId.toString())).thenReturn(true);
 
         assertThat(proxy(client).read("p1")).isEqualTo("read p1");
     }
@@ -77,10 +77,10 @@ class DoroGuardClassLevelAndDisabledTest {
         DoroGuardClient client = Mockito.mock(DoroGuardClient.class);
         UUID userId = UUID.randomUUID();
         loginAs(userId);
-        when(client.check("board_post", "p1", "editor", userId.toString())).thenReturn(true);
+        when(client.checkOrThrow("board_post", "p1", "editor", userId.toString())).thenReturn(true);
 
         assertThat(proxy(client).write("p1")).isEqualTo("write p1");
-        verify(client, never()).check("board_post", "p1", "viewer", userId.toString());
+        verify(client, never()).checkOrThrow("board_post", "p1", "viewer", userId.toString());
     }
 
     @Test

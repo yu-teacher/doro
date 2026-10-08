@@ -72,7 +72,7 @@ class DoroGuardSpelAdvancedEdgeCaseTest {
     void testNestedDtoSpelResolution() {
         DocumentRequest req = new DocumentRequest(new MetaDto("doc-nested-999", "Architecture"), "Body content");
 
-        when(mockGuardClient.check(eq("document"), eq("doc-nested-999"), eq("editor"), eq(currentUserId.toString())))
+        when(mockGuardClient.checkOrThrow(eq("document"), eq("doc-nested-999"), eq("editor"), eq(currentUserId.toString())))
                 .thenReturn(true);
 
         String result = proxyService.updateWithNestedDto(req);
@@ -84,7 +84,7 @@ class DoroGuardSpelAdvancedEdgeCaseTest {
     void testCustomSubjectDelegatedCheck() {
         String targetUserId = UUID.randomUUID().toString();
 
-        when(mockGuardClient.check(eq("document"), eq("doc-1"), eq("viewer"), eq(targetUserId)))
+        when(mockGuardClient.checkOrThrow(eq("document"), eq("doc-1"), eq("viewer"), eq(targetUserId)))
                 .thenReturn(true);
 
         boolean allowed = proxyService.checkOtherUserPermission("doc-1", targetUserId);
@@ -104,7 +104,7 @@ class DoroGuardSpelAdvancedEdgeCaseTest {
     @Test
     @DisplayName("엣지케이스: SpEL 대상 파라미터가 null 일 때 NPE 없이 안전하게 거절 처리")
     void testNullParameterHandledGracefully() {
-        when(mockGuardClient.check(eq("document"), eq(""), eq("viewer"), eq(currentUserId.toString())))
+        when(mockGuardClient.checkOrThrow(eq("document"), eq(""), eq("viewer"), eq(currentUserId.toString())))
                 .thenReturn(false);
 
         assertThatThrownBy(() -> proxyService.getNullable(null))

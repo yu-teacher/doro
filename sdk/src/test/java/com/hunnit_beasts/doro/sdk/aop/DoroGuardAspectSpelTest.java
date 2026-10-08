@@ -59,7 +59,7 @@ class DoroGuardAspectSpelTest {
     @Test
     @DisplayName("SpEL 파라미터 바인딩: @DoroGuard(namespace, object='#docId', relation='viewer') 정상 승인")
     void testSpelParameterBindingSuccess() {
-        when(mockGuardClient.check(eq("document"), eq("doc-100"), eq("viewer"), eq(testUserId.toString())))
+        when(mockGuardClient.checkOrThrow(eq("document"), eq("doc-100"), eq("viewer"), eq(testUserId.toString())))
                 .thenReturn(true);
 
         String result = proxyService.getDocument("doc-100");
@@ -69,7 +69,7 @@ class DoroGuardAspectSpelTest {
     @Test
     @DisplayName("단축형 SpEL 표현식: @DoroGuard('document:#docId#editor') 권한 부족 시 DoroAccessDeniedException 발생")
     void testShorthandSpelAccessDenied() {
-        when(mockGuardClient.check(eq("document"), eq("doc-200"), eq("editor"), eq(testUserId.toString())))
+        when(mockGuardClient.checkOrThrow(eq("document"), eq("doc-200"), eq("editor"), eq(testUserId.toString())))
                 .thenReturn(false);
 
         assertThatThrownBy(() -> proxyService.updateDocument("doc-200", "New Title"))
