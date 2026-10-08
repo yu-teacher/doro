@@ -43,7 +43,8 @@ jobs:
     name: Build & Deploy on Mini Server
     needs: test
     # test 가 성공했거나(또는 수동 실행에서 의도적으로 건너뛴 경우)에만 배포한다. 실패/취소면 배포하지 않는다.
-    if: ${{ always() && (needs.test.result == 'success' || needs.test.result == 'skipped') }}
+    # always() 를 쓰면 취소 요청이 와도 이 작업이 계속 대기·실행되어 Cancel workflow 가 먹지 않는다. !cancelled() 는 같은 조건에서 취소를 존중한다.
+    if: ${{ !cancelled() && (needs.test.result == 'success' || needs.test.result == 'skipped') }}
     # 운영 서버(mini)에서만 배포한다. 다른 셀프호스티드 러너(노트북 등)가 이 작업을 가져가지 않도록 mini 라벨을 명시한다.
     runs-on: [self-hosted, mini]
 
