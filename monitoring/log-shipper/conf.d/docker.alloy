@@ -18,6 +18,13 @@ discovery.relabel "containers" {
     regex         = "/(.*)"
     target_label  = "container"
   }
+  // 포털의 관리자 로그 조회 화면(web/src/api/logApi.ts)이 service 라벨(= 컨테이너 이름)로 서비스를 고르고 목록을 만든다.
+  // 예전 Promtail 이 붙이던 라벨과 같은 값을 유지한다.
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "service"
+  }
 }
 
 loki.source.docker "containers" {
