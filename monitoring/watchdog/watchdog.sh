@@ -5,6 +5,8 @@
 #   ~/watchdog/watchdog.sh             # 한 번 점검 (cron 이 2분마다 실행)
 #   ~/watchdog/watchdog.sh --verbose   # 점검 결과를 화면에도 출력
 #   ~/watchdog/watchdog.sh --status    # 마지막 점검 결과만 출력(점검하지 않음)
+#   ~/watchdog/watchdog.sh --find-chat-id    # 텔레그램 봇에게 말을 건 뒤 실행: 내 chat ID 를 찾아 출력(토큰은 .env 에서 읽는다)
+#   ~/watchdog/watchdog.sh --test-telegram   # 설정한 텔레그램으로 시험 메시지 한 통을 보낸다
 #
 # - 결과는 syslog(logger, 태그 doro-watchdog)로 남긴다 -> journal -> 중앙 Loki 로 수집된다. 파일에 직접 쓰지 않는다.
 # - 일시적 실패에 알림이 울리지 않게, 연속 CONFIRM_FAILS 번 실패해야 알린다. 계속 실패하면 REMIND_HOURS 마다 다시 알린다.
@@ -18,7 +20,52 @@ ENV_FILE="${WATCHDOG_ENV:-$DIR/.env}"
 [ -f "$ENV_FILE" ] && . "$ENV_FILE"
 
 MODE="run"; VERBOSE=false
-for a in "$@"; do case "$a" in --verbose) VERBOSE=true ;; --status) MODE="status" ;; esac; done
+for a in "$@"; do case "$a" in --verbose) VERBOSE=true ;; --status) MODE="status" ;; --find-chat-id) MODE="find-chat-id" ;; --test-telegram) MODE="test-telegram" ;; esac; done
+
+# 텔레그램 설정 도우미: 토큰은 표준입력(curl -K -)으로만 넘기고, 화면과 로그에는 출력하지 않는다.
+tg_call() { # <메서드> [curl 추가 인자...]
+  local method="$1"; shift
+  printf 'url = "https://api.telegram.org/bot%s/%s"\n' "$TELEGRAM_BOT_TOKEN" "$method" | curl -sS -m 15 -K - "$@"
+}
+case "$MODE" in
+  find-chat-id)
+    [ -n "${TELEGRAM_BOT_TOKEN:-}" ] || { echo "~/watchdog/.env 에 TELEGRAM_BOT_TOKEN 을 먼저 넣으세요." >&2; exit 2; }
+    tg_call getUpdates | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print("응답을 읽지 못했습니다. 토큰이 맞는지, 인터넷 연결이 되는지 확인하세요."); sys.exit(1)
+if not d.get("ok"):
+    print("텔레그램이 요청을 거절했습니다(토큰이 틀렸을 수 있습니다):", d.get("description", "")); sys.exit(1)
+seen = {}
+for u in d.get("result", []):
+    m = u.get("message") or u.get("edited_message") or u.get("channel_post") or {}
+    c = m.get("chat")
+    if c:
+        seen[c["id"]] = (c.get("type"), c.get("first_name") or c.get("title") or c.get("username") or "")
+if not seen:
+    print("받은 메시지가 없습니다. 텔레그램에서 내 봇과 대화를 열고 Start 를 누른 뒤 아무 메시지를 보내고 다시 실행하세요.")
+    sys.exit(1)
+for cid, (ctype, name) in seen.items():
+    print(f"chat id: {cid}   (종류: {ctype}, 이름: {name})")
+print("→ 본인 대화(종류 private)의 숫자를 ~/watchdog/.env 의 TELEGRAM_CHAT_ID 에 넣으세요.")
+'
+    exit $? ;;
+  test-telegram)
+    { [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_CHAT_ID:-}" ]; } || { echo "~/watchdog/.env 에 TELEGRAM_BOT_TOKEN 과 TELEGRAM_CHAT_ID 를 먼저 넣으세요." >&2; exit 2; }
+    tg_call sendMessage --data-urlencode "chat_id=$TELEGRAM_CHAT_ID" --data-urlencode "text=✅ 워치독 알림 시험입니다 ($(hostname), $(date '+%F %T'))" \
+      | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print("응답을 읽지 못했습니다."); sys.exit(1)
+print("전송 성공: 휴대폰/앱에서 메시지를 확인하세요." if d.get("ok") else "전송 실패: " + str(d.get("description", "")))
+sys.exit(0 if d.get("ok") else 1)
+'
+    exit $? ;;
+esac
 
 : "${MINI_HOST:?설정 필요: MINI_HOST}" "${NOTEBOOK_HOST:?설정 필요: NOTEBOOK_HOST}" "${PUBLIC_HOST:?설정 필요: PUBLIC_HOST}" "${LOKI_URL:?설정 필요: LOKI_URL}"
 BACKUP_DIR="${BACKUP_DIR:-$HOME/doro-backups}"
