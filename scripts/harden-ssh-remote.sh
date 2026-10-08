@@ -32,8 +32,11 @@ for host in "${HOSTS[@]}"; do
   if ! key_login_ok "$host"; then
     log "ERROR: $host 에 키로 접속되지 않는다. 비밀번호 로그인을 끄면 못 들어가므로 건너뛴다."; FAILED+=("$host"); continue
   fi
-  # 서버에서 sudo 로 harden-ssh.sh 를 실행한다. -t 는 sudo 비밀번호 프롬프트용이다(스크립트는 표준입력으로 전달).
-  if ssh -t "$host" "sudo bash -s -- $MODE" < "$HERE/harden-ssh.sh"; then
+  # 서버에서 sudo 로 harden-ssh.sh 를 실행한다. 스크립트를 표준입력으로 흘리면 ssh 가 터미널(-t)을 만들지 않아
+  # sudo 가 비밀번호를 물을 수 없으므로, 홈 폴더에 임시 파일로 올려 실행하고 끝나면 지운다(/tmp 는 쓰지 않는다: 바꿔치기 방지).
+  remote_script=".harden-ssh-$$.sh"
+  scp -q -o BatchMode=yes "$HERE/harden-ssh.sh" "$host:$remote_script" || { log "ERROR: $host 로 스크립트를 올리지 못했다"; FAILED+=("$host"); continue; }
+  if ssh -t "$host" "sudo bash ~/$remote_script $MODE; rc=\$?; rm -f ~/$remote_script; exit \$rc"; then
     if [ "$MODE" = "--apply" ]; then
       key_login_ok "$host" && log "  적용 후 키 로그인 확인: OK" || { log "ERROR: 적용 후 키 로그인이 안 된다. 서버에서 즉시: sudo rm /etc/ssh/sshd_config.d/10-doro-hardening.conf && sudo systemctl reload ssh"; FAILED+=("$host"); continue; }
       if ssh -o BatchMode=yes -o PreferredAuthentications=password -o PubkeyAuthentication=no -o ConnectTimeout=10 "$host" true 2>&1 | grep -q "Permission denied"; then
