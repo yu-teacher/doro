@@ -22,7 +22,7 @@ jobs:
     name: Test (backend + web)
     # 기본은 mini 러너. 저장소 변수 TEST_RUNS_ON(예: ["self-hosted","notebook"])을 설정하면 테스트만 다른 러너(노트북)에서 실행한다.
     # 배포(deploy)는 항상 mini 에서 한다. 노트북이 꺼져 있어 테스트가 대기하면 변수를 지우거나 수동 실행의 skip_tests 를 쓴다.
-    runs-on: ${{ fromJSON(vars.TEST_RUNS_ON || '"self-hosted"') }}
+    runs-on: ${{ fromJSON(vars.TEST_RUNS_ON || '["self-hosted","mini"]') }}
     if: ${{ !inputs.skip_tests }}
     timeout-minutes: 30
 
@@ -44,7 +44,8 @@ jobs:
     needs: test
     # test 가 성공했거나(또는 수동 실행에서 의도적으로 건너뛴 경우)에만 배포한다. 실패/취소면 배포하지 않는다.
     if: ${{ always() && (needs.test.result == 'success' || needs.test.result == 'skipped') }}
-    runs-on: self-hosted
+    # 운영 서버(mini)에서만 배포한다. 다른 셀프호스티드 러너(노트북 등)가 이 작업을 가져가지 않도록 mini 라벨을 명시한다.
+    runs-on: [self-hosted, mini]
 
     steps:
       - name: 📥 Checkout repository
