@@ -86,6 +86,28 @@ jobs:
         run: |
           docker compose up -d --build --remove-orphans
 
+      # 게이트웨이(nginx)는 compose 밖에 있고, 업스트림(포털·IAM 등) 이름을 시작·reload 때만 해석해 IP 를 기억한다.
+      # 위에서 컨테이너가 다시 만들어져 IP 가 바뀌면 게이트웨이가 옛 IP 로 접속해 502(Host is unreachable)가 난다.
+      # 그래서 배포 직후 설정을 검증하고(nginx -t) 무중단으로 reload 해 이름을 다시 해석시킨 뒤, 게이트웨이 경유 응답까지 확인한다.
+      - name: 🔁 Reload gateway (re-resolve upstream IPs)
+        env:
+          GATEWAY_CONTAINER: doro-gateway
+        run: |
+          if ! docker inspect "$GATEWAY_CONTAINER" >/dev/null 2>&1; then
+            echo "::warning::$GATEWAY_CONTAINER 컨테이너가 없어 reload 를 건너뛴다"
+            exit 0
+          fi
+          docker exec "$GATEWAY_CONTAINER" nginx -t
+          docker exec "$GATEWAY_CONTAINER" nginx -s reload
+          # reload 직후 새 worker 가 뜰 때까지 짧게 재시도하며 게이트웨이 경유 응답을 확인한다(포털 로그인 화면).
+          for i in $(seq 1 15); do
+            code="$(curl -sk -o /dev/null -w '%{http_code}' -m 5 https://127.0.0.1/login || true)"
+            if [ "$code" = "200" ]; then echo "gateway /login: $code"; exit 0; fi
+            sleep 2
+          done
+          echo "::error::reload 후 게이트웨이 경유 /login 이 200 이 아니다(마지막 응답: ${code:-없음})"
+          exit 1
+
       - name: 🔍 Verify Health Status
         run: |
           set -a; . ./.env; set +a
