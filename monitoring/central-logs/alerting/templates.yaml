@@ -1,0 +1,18 @@
+# 텔레그램 알림 메시지 틀(한국어). 심각도에 따라 🔴(심각)/🟡(경고)를 붙이고, 해제는 🟢 한 줄로 보낸다.
+# 값(A=.. B=..)이나 무음(Silence) 링크 같은 군더더기는 넣지 않는다. 서버 이름은 host 라벨에서 가져온다.
+apiVersion: 1
+templates:
+  - orgId: 1
+    name: doro-telegram
+    template: |
+      {{ define "doro.telegram" -}}
+      {{ range .Alerts.Firing -}}
+      {{ if eq .Labels.severity "critical" }}🔴{{ else }}🟡{{ end }} {{ .Labels.alertname }}
+      서버: {{ .Labels.host }}
+      {{ .Annotations.summary }}
+      {{ .Annotations.description }}
+      {{ end -}}
+      {{ range .Alerts.Resolved -}}
+      🟢 해제: {{ .Labels.alertname }} ({{ .Labels.host }})
+      {{ end -}}
+      {{ end }}

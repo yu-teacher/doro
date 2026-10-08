@@ -51,8 +51,15 @@ services:
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      # 알림 메시지의 링크가 접속 방식(ssh -L 3300:127.0.0.1:3300)과 맞도록 한다.
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3300}
+      # 알림 설정(alerting-active/*.yaml)의 $__env{...} 로 쓰인다. 비어 있으면 알림 설정을 켜지 않는다(enable-alerting.sh 참고).
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      SSH_ALLOWED_SRC_REGEX: ${SSH_ALLOWED_SRC_REGEX:-}
     volumes:
       - ./grafana-datasources.yaml:/etc/grafana/provisioning/datasources/loki.yaml:ro
+      - ./alerting-active:/etc/grafana/provisioning/alerting:ro
       - grafana-data:/var/lib/grafana
     ports:
       - "127.0.0.1:${GRAFANA_PORT:-3300}:3000"

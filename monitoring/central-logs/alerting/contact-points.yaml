@@ -1,0 +1,14 @@
+# 알림을 보낼 곳: 텔레그램. 토큰과 chat ID 는 컨테이너 환경변수($__env{...})로 받는다(~/central-logs/.env). 파일에는 비밀 값을 적지 않는다.
+apiVersion: 1
+contactPoints:
+  - orgId: 1
+    name: telegram
+    receivers:
+      - uid: telegram-main
+        type: telegram
+        disableResolveMessage: false
+        settings:
+          bottoken: $__env{TELEGRAM_BOT_TOKEN}
+          # 숫자만 있는 값은 YAML 이 숫자로 읽어 Grafana(문자열을 기대)가 거부하므로 따옴표로 문자열을 강제한다.
+          chatid: "$__env{TELEGRAM_CHAT_ID}"
+          message: '{{ template "doro.telegram" . }}'

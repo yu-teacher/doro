@@ -1,0 +1,168 @@
+# 감사 로그 기반 알림 규칙(Loki). 1분마다 평가한다. 기준값은 아래 thr 로 조정한다.
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: audit-logs
+    folder: Doro 감사
+    interval: 1m
+    rules:
+      # 일시중지: SSH 가 LAN 에서만 접속되고 비밀번호 로그인이 막혀 있어 알림은 끔. 인터넷에 22번을 열면 isPaused 를 false 로
+      - uid: ssh-failed-logins
+        title: SSH 로그인 실패 급증
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: loki
+            model:
+              datasource: {type: loki, uid: loki}
+              expr: 'sum by (host) (count_over_time({job="auth"} |~ "Failed password|Invalid user|authentication failure|Connection closed by (invalid|authenticating) user" [10m]))'
+              queryType: instant
+              instant: true
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+              datasource: {type: __expr__, uid: __expr__}
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [10]}
+              refId: C
+              datasource: {type: __expr__, uid: __expr__}
+        isPaused: true
+        noDataState: OK
+        execErrState: Error
+        for: 0m
+        annotations:
+          summary: "최근 10분 동안 SSH 로그인 실패나 존재하지 않는 사용자 시도가 많다"
+          description: "비밀번호 로그인은 막혀 있어 정상 사용에서는 거의 없다. 스캔이나 잘못된 설정을 확인한다. (Grafana Explore: {job=\"auth\"})"
+        labels:
+          severity: warning
+          category: ssh
+      - uid: ssh-unknown-source
+        title: 허용 목록 밖 IP 에서 SSH 로그인 성공
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: {from: 300, to: 0}
+            datasourceUid: loki
+            model:
+              datasource: {type: loki, uid: loki}
+              expr: 'sum by (host) (count_over_time({job="auth"} |= "Accepted publickey" !~ "from ($__env{SSH_ALLOWED_SRC_REGEX}) port" [5m]))'
+              queryType: instant
+              instant: true
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+              datasource: {type: __expr__, uid: __expr__}
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [0]}
+              refId: C
+              datasource: {type: __expr__, uid: __expr__}
+        noDataState: OK
+        execErrState: Error
+        for: 0m
+        annotations:
+          summary: "처음 보는 IP 에서 SSH 로그인에 성공했다"
+          description: "허용 IP 목록에 없는 주소에서 키 로그인이 성공했다. 본인이면 노트북 ~/central-logs/.env 의 SSH_ALLOWED_SRC_REGEX 에 추가한다."
+        labels:
+          severity: critical
+          category: ssh
+      - uid: sudo-at-night
+        title: 새벽(03-07시)에 sudo 사용
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: loki
+            model:
+              datasource: {type: loki, uid: loki}
+              expr: 'sum by (host) (count_over_time({log_type="audit"} |= "sudo" |= "COMMAND=" [10m]))'
+              queryType: instant
+              instant: true
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+              datasource: {type: __expr__, uid: __expr__}
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [0]}
+              refId: C
+              datasource: {type: __expr__, uid: __expr__}
+        noDataState: OK
+        execErrState: Error
+        for: 0m
+        annotations:
+          summary: "새벽 시간대에 sudo 명령이 실행됐다"
+          description: "03:00~07:00(한국 시간)에만 알린다. 본인이 아니라면 즉시 접속 기록을 확인한다."
+        labels:
+          severity: warning
+          category: night-sudo
+      # 일시중지: 본인의 비밀번호 오타에도 울려 오탐이 많아 알림은 끔. 필요하면 isPaused 를 false 로
+      - uid: sudo-failures
+        title: sudo 인증 실패 반복
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: loki
+            model:
+              datasource: {type: loki, uid: loki}
+              expr: 'sum by (host) (count_over_time({log_type="audit"} |~ "sudo.*(incorrect password attempts|authentication failure)" [10m]))'
+              queryType: instant
+              instant: true
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+              datasource: {type: __expr__, uid: __expr__}
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [2]}
+              refId: C
+              datasource: {type: __expr__, uid: __expr__}
+        isPaused: true
+        noDataState: OK
+        execErrState: Error
+        for: 0m
+        annotations:
+          summary: "최근 10분 동안 sudo 인증 실패가 반복됐다"
+          description: "비밀번호를 여러 번 틀렸거나 다른 사람이 시도했을 수 있다."
+        labels:
+          severity: warning
+          category: sudo

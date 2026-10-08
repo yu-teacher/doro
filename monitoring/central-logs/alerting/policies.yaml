@@ -1,0 +1,25 @@
+# 알림 전달 정책: 모든 알림은 텔레그램으로. 같은 이름·같은 서버의 알림은 묶어서 보내고, 계속되면 6시간마다 다시 보낸다.
+# 새벽 sudo 알림(category=night-sudo)은 03:00~07:00(한국 시간)에만 울린다(밤 작업을 02시까지 하는 경우가 있어 그 이후부터).
+apiVersion: 1
+policies:
+  - orgId: 1
+    receiver: telegram
+    group_by: [alertname, host]
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 6h
+    routes:
+      - receiver: telegram
+        object_matchers:
+          - ["category", "=", "night-sudo"]
+        mute_time_intervals: [daytime-kst]
+muteTimes:
+  - orgId: 1
+    name: daytime-kst
+    time_intervals:
+      - times:
+          - start_time: "07:00"
+            end_time: "24:00"
+          - start_time: "00:00"
+            end_time: "03:00"
+        location: Asia/Seoul
