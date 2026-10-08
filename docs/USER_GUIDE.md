@@ -94,7 +94,7 @@ curl -s $IAM/health            # {"status":"UP"}
 curl -s $IAM/actuator/health   # IAM
 curl -s $GUARD/actuator/health # Guard
 ```
-IAM은 `/swagger-ui.html`, `/v3/api-docs`, Guard도 같은 경로에 Swagger를 제공합니다.
+IAM 은 로컬 개발용으로 `/swagger-ui.html`, `/v3/api-docs` 에 Swagger 를 제공하지만 **기본은 꺼져 있습니다**(`DORO_IAM_SWAGGER_ENABLED=true` 로 켭니다). Guard도 같은 경로에 Swagger를 제공합니다.
 
 ---
 
@@ -187,7 +187,7 @@ curl -s $IAM/api/v1/users/me -H "Authorization: Bearer $TOKEN"
 curl -s -X POST $IAM/api/v1/auth/lookup -H 'Content-Type: application/json' -d '{"email":"dev@example.com"}'
 # {"success":true,"data":{"email":"dev@example.com","name":"Doro Dev","profileImageUrl":null},"timestamp":"..."}
 ```
-없으면 `404 USER_NOT_FOUND`, 이용 정지 계정이면 `403 ACCOUNT_SUSPENDED`. 포털의 "이메일 → 비밀번호" 2단계 로그인 화면용입니다. 계정 존재 여부가 드러나므로 IP당 10분에 30회로 제한됩니다. (`profileImageUrl: null`로 나가는지는 `(미검증)`입니다.)
+없으면 `404 USER_NOT_FOUND`. 정지된 계정이어도 응답은 같고, 정지 사실은 로그인에서 올바른 비밀번호를 낸 뒤에야 `403 ACCOUNT_SUSPENDED` 로 알려 줍니다. 포털의 "이메일 → 비밀번호" 2단계 로그인 화면용입니다. 계정 존재 여부가 드러나므로 IP당 10분에 30회로 제한됩니다. (`profileImageUrl: null`로 나가는지는 `(미검증)`입니다.)
 
 #### 로그인 실패 케이스
 
@@ -211,7 +211,8 @@ TOTP(RFC 6238): HMAC-SHA1, 30초, 6자리, 시간 오차 ±1스텝 허용. **같
 #### 1) 시크릿 발급 `POST /api/v1/auth/2fa/setup` (Bearer)
 
 ```bash
-curl -s -X POST $IAM/api/v1/auth/2fa/setup -H "Authorization: Bearer $TOKEN"
+curl -s -X POST $IAM/api/v1/auth/2fa/setup -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"currentPassword":"<현재 비밀번호>"}'
 ```
 ```json
 {
@@ -347,6 +348,8 @@ curl -s -X PATCH $IAM/api/v1/users/me -H "Authorization: Bearer $TOKEN" -H 'Cont
 curl -s -X PUT $IAM/api/v1/users/me/password -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"currentPassword":"Password123!","newPassword":"NewPassword456!"}'
 ```
+비밀번호 변경은 현재 비밀번호를 다시 확인합니다. 틀리면 `401 INVALID_CREDENTIALS` 이고 **로그인과 같은 실패 횟수(5회 시 15분 잠금 `403 ACCOUNT_LOCKED`)에 합산**되며, IP 단위 요청 제한도 로그인과 같은 규칙이 적용됩니다. 성공하면 현재 세션을 제외한 모든 세션이 종료됩니다.
+
 `UserProfileResponse`:
 ```json
 {
@@ -360,7 +363,7 @@ curl -s -X PUT $IAM/api/v1/users/me/password -H "Authorization: Bearer $TOKEN" -
   "createdAt": "2026-10-02T00:00:00Z"
 }
 ```
-- `name`은 2~50자(공백만이면 무시). `profileImageUrl`은 `data:` URL 포함 최대 1,048,576자(`DORO_IAM_PROFILE_IMAGE_MAX_LENGTH`), 넘으면 `400 INVALID_INPUT_VALUE`.
+- `name`은 2~50자(공백만이면 무시). `profileImageUrl`은 `data:` URL 포함 최대 1,048,576자(`DORO_IAM_PROFILE_IMAGE_MAX_LENGTH`)이고 `https://` 주소 또는 이미지 `data:` URL(png·jpeg·gif·webp·svg+xml)만 허용합니다. 넘거나 허용되지 않는 형식이면 `400 INVALID_INPUT_VALUE`.
 - 비밀번호 변경: `newPassword` 8~64자. 현재 비밀번호가 틀리면 `401 INVALID_CREDENTIALS`(잠금 카운터에는 합산되지 않음). 성공하면 **현재 세션을 제외한 내 모든 세션이 종료**됩니다.
 
 ---

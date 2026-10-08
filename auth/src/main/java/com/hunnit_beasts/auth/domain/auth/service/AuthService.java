@@ -131,11 +131,7 @@ public class AuthService {
         User user = userRepository.findByEmailIgnoreCase(email)
                 .orElseThrow(() -> new AuthException(ErrorCode.USER_NOT_FOUND, "Doro 계정을 찾을 수 없습니다."));
 
-        // 탈퇴 유예 중인 계정은 다시 로그인해 복구할 수 있어야 하므로 조회를 막지 않는다.
-        if (!user.isActive() && !user.isPendingDeletion()) {
-            throw new AuthException(ErrorCode.ACCOUNT_SUSPENDED, "이용이 정지된 계정입니다.");
-        }
-
+        // 계정 상태(정지·탈퇴 유예)는 비밀번호를 확인하기 전에 드러내지 않는다. 정지 여부는 로그인에서 올바른 비밀번호를 낸 뒤에 알려 준다.
         return new AccountLookupResponse(user.getEmail(), user.getName(), user.getProfileImageUrl());
     }
 
@@ -143,11 +139,6 @@ public class AuthService {
     public LoginResponse login(LoginRequest request, String ipAddress, String userAgent) {
         User user = userRepository.findByEmailIgnoreCase(request.email())
                 .orElseThrow(() -> new AuthException(ErrorCode.INVALID_CREDENTIALS));
-
-        // 탈퇴 유예 중인 계정은 비밀번호를 확인한 뒤 세션을 발급할 때 복구한다. (비밀번호 검증 전에는 상태를 드러내지 않는다)
-        if (!user.isActive() && !user.isPendingDeletion()) {
-            throw new AuthException(ErrorCode.ACCOUNT_SUSPENDED);
-        }
 
         Credential credential = credentialRepository.findByUserId(user.getId())
                 .orElseThrow(() -> new AuthException(ErrorCode.INVALID_CREDENTIALS));
@@ -161,6 +152,11 @@ public class AuthService {
             log.warn("Invalid password attempt for user {}. Failed count: {}",
                     LogMasking.maskEmail(user.getEmail()), credential.getFailedAttempts() + 1);
             throw new AuthException(ErrorCode.INVALID_CREDENTIALS);
+        }
+
+        // 계정 상태는 비밀번호를 확인한 뒤에야 알려 준다(탈퇴 유예 중인 계정은 아래 세션 발급 때 복구한다).
+        if (!user.isActive() && !user.isPendingDeletion()) {
+            throw new AuthException(ErrorCode.ACCOUNT_SUSPENDED);
         }
 
         // 2FA 등록 여부 확인 (2FA 계정은 OTP 까지 통과해야 실패 카운트를 초기화한다)
@@ -225,12 +221,22 @@ public class AuthService {
 
     /** 2FA 등록 시작: 시크릿을 "대기" 상태로만 저장한다. verifyTotp 로 코드를 확인해야 활성화된다. */
     @Transactional
-    public TotpSetupResponse setupTotp(UUID userId) {
+    public TotpSetupResponse setupTotp(UUID userId, String currentPassword) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new AuthException(ErrorCode.USER_NOT_FOUND));
 
         Credential credential = credentialRepository.findByUserId(userId)
                 .orElseThrow(() -> new AuthException(ErrorCode.INVALID_CREDENTIALS));
+
+        // 액세스 토큰만으로는 2FA 기기를 등록할 수 없다: 현재 비밀번호로 다시 확인하고, 실패는 로그인과 같은 잠금 횟수에 합산한다.
+        if (credential.isLocked()) {
+            throw new AuthException(ErrorCode.ACCOUNT_LOCKED);
+        }
+        if (!passwordEncoder.matches(currentPassword, credential.getPasswordHash())) {
+            credentialService.recordFailedAttempt(userId);
+            throw new AuthException(ErrorCode.INVALID_CREDENTIALS, "현재 비밀번호가 일치하지 않습니다.");
+        }
+        credential.resetFailedAttempts();
 
         if (credential.hasActiveTotp()) {
             throw new AuthException(ErrorCode.INVALID_INPUT, "이미 2단계 인증이 활성화되어 있습니다. 해제한 뒤 다시 설정해 주세요.");

@@ -2,6 +2,7 @@ package com.hunnit_beasts.auth.config;
 
 import com.hunnit_beasts.auth.core.token.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -26,6 +27,9 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final CorsConfig corsConfig;
 
+    @Value("${springdoc.api-docs.enabled:false}")
+    private boolean swaggerEnabled;
+
     /**
      * 이 서비스의 인증은 JWT 필터가 전담하고 폼/Basic 로그인은 꺼 두었다. UserDetailsService 가 하나도 없으면
      * Spring Boot 가 기본 사용자를 자동 생성하고 "Using generated security password" 로 비밀번호를 로그에 남기므로,
@@ -49,20 +53,24 @@ public class SecurityConfig {
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))
                 )
-                .authorizeHttpRequests(auth -> auth
+                .authorizeHttpRequests(auth -> {
+                    // API 문서는 꺼져 있는 것이 기본이다. 로컬 개발에서 켠 경우에만 인증 없이 연다.
+                    if (swaggerEnabled) {
+                        auth.requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html").permitAll();
+                    }
+                    auth
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         .requestMatchers("/oauth2/**").permitAll()
                         // 서브 서비스 전용(게이트웨이 미라우팅, 개인정보 없음). 호출자 인증과 프록시 경유 요청 거부는 InternalApiAuthFilter 가 맡는다.
                         .requestMatchers(HttpMethod.GET, "/internal/v1/deleted-users").permitAll()
                         .requestMatchers("/.well-known/**").permitAll()
-                        .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
                         .requestMatchers("/actuator/**").hasAnyRole("ADMIN", "SUPER_ADMIN")
                         .requestMatchers(HttpMethod.GET, "/health").permitAll()
                         .requestMatchers("/error").permitAll()
                         .requestMatchers("/api/v1/admin/**").hasAnyRole("ADMIN", "SUPER_ADMIN")
-                        .anyRequest().authenticated()
-                )
+                        .anyRequest().authenticated();
+                })
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

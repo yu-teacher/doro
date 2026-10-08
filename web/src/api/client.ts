@@ -18,7 +18,10 @@ const PUBLIC_AUTH_PATHS = [
   '/api/v1/auth/lookup',
   '/api/v1/auth/token/refresh',
   // 비밀번호 재확인이 필요한 요청. 실패가 서버의 잠금 횟수에 합산되므로 401 에서 갱신 후 재전송하지 않는다.
+  // (호출하는 쪽이 먼저 authApi 의 토큰 갱신 단계를 거친다.)
   '/api/v1/users/me/deletion',
+  '/api/v1/users/me/password',
+  '/api/v1/auth/2fa/setup',
 ];
 
 const LOGIN_PATH = '/login';

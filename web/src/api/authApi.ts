@@ -47,6 +47,8 @@ export const authApi = {
 
   // 6. 비밀번호 변경
   changePassword: async (data: { currentPassword: string; newPassword: string }) => {
+    // 이 요청은 401 에서 토큰을 갱신해 다시 보내지 않으므로(실패가 잠금 횟수에 두 번 합산되지 않게), 먼저 토큰을 최신으로 만든다.
+    await apiClient.get('/api/v1/users/me');
     const response = await apiClient.put<{ success: boolean }>('/api/v1/users/me/password', data);
     return response.data;
   },
@@ -63,8 +65,10 @@ export const authApi = {
   },
 
   // 7. 2FA 등록 시작 (QR 코드 URI 발급)
-  setup2fa: async () => {
-    const response = await apiClient.post<{ success: boolean; data: TotpSetupData }>('/api/v1/auth/2fa/setup');
+  // 현재 비밀번호로 다시 확인한다(액세스 토큰만으로는 인증 기기를 등록할 수 없다). 401 재전송은 하지 않으므로 먼저 토큰을 최신으로 만든다.
+  setup2fa: async (currentPassword: string) => {
+    await apiClient.get('/api/v1/users/me');
+    const response = await apiClient.post<{ success: boolean; data: TotpSetupData }>('/api/v1/auth/2fa/setup', { currentPassword });
     return response.data.data;
   },
 

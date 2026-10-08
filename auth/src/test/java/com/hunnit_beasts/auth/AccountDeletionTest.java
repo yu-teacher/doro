@@ -209,7 +209,7 @@ class AccountDeletionTest {
     @DisplayName("2FA 사용자는 OTP 코드가 없거나 틀리면 탈퇴할 수 없고, 올바른 코드면 탈퇴된다")
     void twoFactorUsersMustProvideTheCode() throws Exception {
         Account account = account();
-        String secret = authService.setupTotp(account.id()).secret();
+        String secret = authService.setupTotp(account.id(), PASSWORD).secret();
         authService.verifyTotp(account.id(), totpCode(secret, 0));
 
         assertThat(requestDeletion(account, PASSWORD, null)).isEqualTo(401);

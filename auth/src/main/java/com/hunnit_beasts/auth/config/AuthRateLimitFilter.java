@@ -123,6 +123,10 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
                 default -> null;
             };
         }
+        // 비밀번호 변경은 현재 비밀번호를 확인하므로 로그인과 같은 IP 제한을 적용한다(계정 잠금은 계정 단위라 IP 단위 시도를 못 막는다).
+        if ("PUT".equals(request.getMethod()) && "/api/v1/users/me/password".equals(uri)) {
+            return Bucket.LOGIN;
+        }
         // 브라우저가 Bearer 없이 이동해 오는 인가 요청만 제한한다(Bearer 가 있는 포털의 fetch 는 인증된 호출).
         if ("GET".equals(request.getMethod()) && "/oauth2/authorize".equals(uri) && !hasBearer(request)) {
             return Bucket.TOKEN;

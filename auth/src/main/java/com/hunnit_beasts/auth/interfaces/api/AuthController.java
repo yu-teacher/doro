@@ -3,6 +3,7 @@ package com.hunnit_beasts.auth.interfaces.api;
 import com.hunnit_beasts.auth.common.exception.AuthException;
 import com.hunnit_beasts.auth.common.web.ClientIpResolver;
 import com.hunnit_beasts.auth.common.exception.ErrorCode;
+import com.hunnit_beasts.auth.common.exception.FieldValidationException;
 import com.hunnit_beasts.auth.common.response.ApiResponse;
 import com.hunnit_beasts.auth.domain.auth.dto.*;
 import com.hunnit_beasts.auth.domain.auth.service.AuthService;
@@ -56,11 +57,16 @@ public class AuthController {
 
     @PostMapping("/2fa/setup")
     public ResponseEntity<ApiResponse<TotpSetupResponse>> setupTotp(
-            @AuthenticationPrincipal UUID userId) {
+            @AuthenticationPrincipal UUID userId,
+            @RequestBody(required = false) TotpSetupRequest request) {
+        // 인증 여부를 본문 검증보다 먼저 판단한다(인증 없는 요청이 본문 오류 400 으로 보이지 않게).
         if (userId == null) {
             throw new AuthException(ErrorCode.UNAUTHORIZED, "로그인이 필요한 요청입니다.");
         }
-        TotpSetupResponse response = authService.setupTotp(userId);
+        if (request == null || request.currentPassword() == null || request.currentPassword().isBlank()) {
+            throw new FieldValidationException("currentPassword", "현재 비밀번호를 입력해 주세요.");
+        }
+        TotpSetupResponse response = authService.setupTotp(userId, request.currentPassword());
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 

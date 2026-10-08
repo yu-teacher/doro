@@ -105,7 +105,7 @@ class AuthSecurityEdgeCaseTest {
         UUID userId = authService.signup(new SignUpRequest(email, "Password123!", "Totp Edge User"));
 
         // 2FA 설정 및 활성화 (setup 은 대기 상태로만 저장하므로 코드를 확인해야 활성화된다)
-        authService.setupTotp(userId);
+        authService.setupTotp(userId, "Password123!");
         String pendingSecret = credentialRepository.findByUserId(userId).orElseThrow().getPendingTotpSecret();
         authService.verifyTotp(userId, currentCode(pendingSecret));
 

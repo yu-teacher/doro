@@ -15,7 +15,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest
+@SpringBootTest(properties = "springdoc.api-docs.enabled=true")
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class CorsAndSwaggerHealthTest {

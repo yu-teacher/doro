@@ -63,7 +63,7 @@ class TwoFactorEnrollmentTest {
         String email = uniqueEmail();
         UUID userId = newUser(email);
 
-        authService.setupTotp(userId);
+        authService.setupTotp(userId, PASSWORD);
 
         assertThat(credential(userId).hasActiveTotp()).isFalse();
         assertThat(credential(userId).hasPendingTotp()).isTrue();
@@ -75,7 +75,7 @@ class TwoFactorEnrollmentTest {
     void enrollmentRequiresValidCode() {
         String email = uniqueEmail();
         UUID userId = newUser(email);
-        authService.setupTotp(userId);
+        authService.setupTotp(userId, PASSWORD);
 
         assertThatThrownBy(() -> authService.verifyTotp(userId, "000000"))
                 .isInstanceOfSatisfying(AuthException.class, e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.INVALID_2FA_CODE));
@@ -92,10 +92,10 @@ class TwoFactorEnrollmentTest {
     @DisplayName("이미 2FA 가 활성화된 계정에서 setup 을 다시 호출하면 거부된다 (기존 시크릿을 덮어쓰지 못한다)")
     void setupIsRejectedWhenAlreadyActive() {
         UUID userId = newUser(uniqueEmail());
-        authService.setupTotp(userId);
+        authService.setupTotp(userId, PASSWORD);
         authService.verifyTotp(userId, code(credential(userId).getPendingTotpSecret(), 0));
 
-        assertThatThrownBy(() -> authService.setupTotp(userId))
+        assertThatThrownBy(() -> authService.setupTotp(userId, PASSWORD))
                 .isInstanceOfSatisfying(AuthException.class, e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.INVALID_INPUT));
     }
 
@@ -104,7 +104,7 @@ class TwoFactorEnrollmentTest {
     void disableRequiresValidCode() {
         String email = uniqueEmail();
         UUID userId = newUser(email);
-        authService.setupTotp(userId);
+        authService.setupTotp(userId, PASSWORD);
         String secret = credential(userId).getPendingTotpSecret();
         authService.verifyTotp(userId, code(secret, 0));
 

@@ -6,6 +6,7 @@ import com.hunnit_beasts.auth.common.exception.FieldValidationException;
 import com.hunnit_beasts.auth.common.log.LogMasking;
 import com.hunnit_beasts.auth.domain.credential.entity.Credential;
 import com.hunnit_beasts.auth.domain.credential.repository.CredentialRepository;
+import com.hunnit_beasts.auth.domain.credential.service.CredentialService;
 import com.hunnit_beasts.auth.domain.session.service.SessionRevocationService;
 import com.hunnit_beasts.auth.domain.user.dto.ChangePasswordRequest;
 import com.hunnit_beasts.auth.domain.user.dto.UpdateProfileRequest;
@@ -31,6 +32,7 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final CredentialRepository credentialRepository;
+    private final CredentialService credentialService;
     private final PasswordEncoder passwordEncoder;
     private final GuardClient guardClient;
     private final UserRelationSyncService userRelationSyncService;
@@ -70,6 +72,11 @@ public class UserService {
         if (image != null && image.length() > profileImageMaxLength) {
             throw new FieldValidationException("profileImageUrl",
                     "프로필 이미지는 " + profileImageMaxLength + "자 이하여야 합니다.");
+        }
+
+        if (!ProfileImageUrl.isAllowed(image)) {
+            throw new FieldValidationException("profileImageUrl",
+                    "프로필 이미지는 https 주소 또는 이미지 data URL 만 사용할 수 있습니다.");
         }
 
         user.updateProfile(request.name(), image);
@@ -163,9 +170,16 @@ public class UserService {
         Credential credential = credentialRepository.findByUserId(userId)
                 .orElseThrow(() -> new AuthException(ErrorCode.USER_NOT_FOUND));
 
+        // 본인 확인은 로그인과 같은 실패 카운트(잠금)를 공유해, 탈취된 토큰으로 현재 비밀번호를 무차별 대입하지 못하게 한다.
+        if (credential.isLocked()) {
+            throw new AuthException(ErrorCode.ACCOUNT_LOCKED);
+        }
         if (!passwordEncoder.matches(request.currentPassword(), credential.getPasswordHash())) {
+            credentialService.recordFailedAttempt(userId);
             throw new AuthException(ErrorCode.INVALID_CREDENTIALS, "현재 비밀번호가 일치하지 않습니다.");
         }
+        // 같은 트랜잭션에서 이 엔티티를 바로 수정하므로 별도 트랜잭션이 아니라 엔티티로 초기화한다(낡은 값 덮어쓰기 방지).
+        credential.resetFailedAttempts();
 
         String encodedNewPassword = passwordEncoder.encode(request.newPassword());
         credential.updatePassword(encodedNewPassword);

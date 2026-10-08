@@ -162,7 +162,7 @@ class EmailAndProfileFixesTest {
                 .andExpect(jsonPath("$.code").value("INVALID_INPUT_VALUE"));
 
         mockMvc.perform(patch("/api/v1/users/me").header("Authorization", "Bearer " + me.token())
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"profileImageUrl\":\"" + "x".repeat(100) + "\"}"))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"profileImageUrl\":\"" + ("data:image/png;base64," + "A".repeat(78)) + "\"}"))
                 .andExpect(status().isOk());
     }
 

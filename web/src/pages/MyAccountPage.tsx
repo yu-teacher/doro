@@ -151,6 +151,7 @@ export const MyAccountPage: React.FC = () => {
   // 2FA 등록 상태
   const [totpSetupData, setTotpSetupData] = useState<TotpSetupData | null>(null);
   const [totpVerifyCode, setTotpVerifyCode] = useState('');
+  const [totpSetupPassword, setTotpSetupPassword] = useState('');
   const [totpLoading, setTotpLoading] = useState(false);
   const [totpSuccessMessage, setTotpSuccessMessage] = useState<string | null>(null);
   const [totpErrorMessage, setTotpErrorMessage] = useState<string | null>(null);
@@ -315,12 +316,21 @@ export const MyAccountPage: React.FC = () => {
   };
 
   const handleStart2faSetup = async () => {
-    setTotpLoading(true);
     setTotpErrorMessage(null);
     setTotpSuccessMessage(null);
+    if (profile?.hasTotp) {
+      setTotpErrorMessage('이미 2단계 인증이 활성화되어 있습니다. 해제한 뒤 다시 설정해 주세요.');
+      return;
+    }
+    if (totpSetupPassword.length === 0) {
+      setTotpErrorMessage('현재 비밀번호를 입력해 주세요.');
+      return;
+    }
+    setTotpLoading(true);
     try {
-      const data = await authApi.setup2fa();
+      const data = await authApi.setup2fa(totpSetupPassword);
       setTotpSetupData(data);
+      setTotpSetupPassword('');
     } catch (err: unknown) {
       setTotpErrorMessage(getErrorMessage(err, '2FA 설정 정보를 불러오지 못했습니다.'));
     } finally {
@@ -929,10 +939,19 @@ export const MyAccountPage: React.FC = () => {
                     )}
                   </div>
                 ) : !totpSetupData ? (
-                  <div className="mt-6 pt-6 border-t border-slate-100 flex items-center justify-between">
+                  <div className="mt-6 pt-6 border-t border-slate-100 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <div className="text-xs font-bold text-slate-800">Authenticator 2FA 등록</div>
                       <div className="text-[11px] text-slate-400">Google Authenticator, Authy, 1Password 지원</div>
+                      <input
+                        type="password"
+                        value={totpSetupPassword}
+                        onChange={(e) => setTotpSetupPassword(e.target.value)}
+                        placeholder="현재 비밀번호 확인"
+                        autoComplete="current-password"
+                        aria-label="2FA 등록을 위한 현재 비밀번호"
+                        className="mt-2 w-full sm:w-64 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-medium"
+                      />
                     </div>
                     <button
                       onClick={handleStart2faSetup}

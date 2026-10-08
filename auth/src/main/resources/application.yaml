@@ -131,9 +131,13 @@ management:
       show-details: when_authorized
 
 springdoc:
+  # API 문서(Swagger UI)는 운영에서 끄는 것이 기본이다. 로컬 개발에서만 DORO_IAM_SWAGGER_ENABLED=true 로 켠다.
+  # 켠 경우에만 SecurityConfig 가 인증 없이 열어 준다. 꺼져 있으면 경로 자체가 없다.
   api-docs:
+    enabled: ${DORO_IAM_SWAGGER_ENABLED:false}
     path: /v3/api-docs
   swagger-ui:
+    enabled: ${DORO_IAM_SWAGGER_ENABLED:false}
     path: /swagger-ui.html
     operations-sorter: method
 

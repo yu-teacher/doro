@@ -78,14 +78,14 @@ IAM ──(REST, 관리자 판정·역할 튜플 동기화)──▶ Guard
 | `POST /api/v1/auth/signup` | `{email, password(8~64자), name(2~50자)}` | `{userId}` (201) | 이메일은 trim+소문자로 저장, 중복 검사는 대소문자 무시(409 `EMAIL_ALREADY_EXISTS`) |
 | `POST /api/v1/auth/login` | `{email, password, deviceInfo?}` | `{requires2fa, tempTicket?, tokens?}` | `clientIp/userAgent` 는 서버가 추출. 2FA 계정은 `requires2fa:true`+`tempTicket`, 아니면 `tokens` |
 | `POST /api/v1/auth/2fa/login` | `{tempTicket, code(6자리 숫자), deviceInfo?}` | `TokenResponse` | |
-| `POST /api/v1/auth/2fa/setup` | (Bearer) | `{secret, qrUri}` | 시크릿을 **대기(pending)** 로만 저장. 이미 활성이면 400 |
+| `POST /api/v1/auth/2fa/setup` | (Bearer) `{currentPassword}` | `{secret, qrUri}` | 현재 비밀번호로 재확인(틀리면 401, 로그인과 같은 잠금 횟수에 합산). 시크릿을 **대기(pending)** 로만 저장. 이미 활성이면 400 |
 | `POST /api/v1/auth/2fa/verify` | (Bearer) `{code}` | 없음 | 대기 중이면 **코드 확인 후 활성화**, 이미 활성이면 코드 검증만. 실패는 잠금 카운트에 합산 |
 | `POST /api/v1/auth/2fa/disable` | (Bearer) `{code}` | 없음 | **현재 OTP 코드로 재인증**해야 해제. 실패는 잠금 카운트에 합산 |
 | `POST /api/v1/auth/token/refresh` | `{refreshToken}` | `TokenResponse` | RTR. 이전 토큰 즉시 폐기 |
 | `POST /api/v1/auth/logout[?sessionId=<uuid>]` | (Bearer) | 없음 | **Bearer 필수**. `sessionId` 생략 시 토큰의 `sid`(현재 세션). **본인 세션만** 종료(남의 세션/없는 세션은 404 `SESSION_NOT_FOUND`) |
-| `POST /api/v1/auth/lookup` | `{email}` | `{email,name,profileImageUrl}` | 없으면 404 `USER_NOT_FOUND` → 계정 존재 여부 노출(요청 제한으로만 완화) |
+| `POST /api/v1/auth/lookup` | `{email}` | `{email,name,profileImageUrl}` | 없으면 404 `USER_NOT_FOUND` → 계정 존재 여부 노출(요청 제한으로만 완화). 정지·탈퇴 유예 여부는 드러내지 않는다 |
 | `GET /api/v1/users/me` | (Bearer) | `{id,email,name,profileImageUrl,status,role,hasTotp,createdAt}` | |
-| `PATCH /api/v1/users/me` | (Bearer) `{name?, profileImageUrl?}` | 프로필 | 이미지 길이 상한 `doro.iam.profile.image-max-length`(기본 1048576자) |
+| `PATCH /api/v1/users/me` | (Bearer) `{name?, profileImageUrl?}` | 프로필 | 이미지 길이 상한 `doro.iam.profile.image-max-length`(기본 1048576자). 값은 `https://` 주소나 이미지 `data:` URL(png·jpeg·gif·webp·svg+xml)만 허용, 빈 문자열은 이미지 제거 |
 | `PUT /api/v1/users/me/password` | (Bearer) `{currentPassword, newPassword(8~64자)}` | 없음 | 성공하면 **현재 세션을 제외한 모든 세션 종료** |
 | `GET /api/v1/sessions` | (Bearer) | 활성 세션 목록 | |
 | `GET /api/v1/sessions/current` | (Bearer) | 204 | 현재 토큰의 세션이 DB 기준 유효한지. 무효면 401 `SESSION_EXPIRED`, 계정 정지면 403. SDK 의 폐기 확인이 사용(§4.1) |
