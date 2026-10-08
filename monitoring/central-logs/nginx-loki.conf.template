@@ -1,0 +1,19 @@
+# Loki 앞단: 허용한 서버에서 오는 요청만 통과시킨다. 변수는 컨테이너 환경변수(LOKI_ALLOW_*)로 채워진다.
+server {
+    listen 8080;
+
+    # 자체 점검용: 내용 없이 응답만 확인한다.
+    location = /gateway-health {
+        access_log off;
+        return 200 "ok\n";
+    }
+
+    location / {
+        allow ${LOKI_ALLOW_1};
+        allow ${LOKI_ALLOW_2};
+        deny all;
+        client_max_body_size 10m;
+        proxy_pass http://loki:3100;
+        proxy_set_header Host $host;
+    }
+}

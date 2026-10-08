@@ -1,0 +1,28 @@
+// 컨테이너가 있는 서버(미니)만: doro-* 컨테이너의 표준 출력 로그를 보낸다.
+// CI 가 잠깐 쓰는 테스트 컨테이너(ci-pg-*, 임의 이름)는 이름 규칙으로 제외한다.
+
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "containers" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/doro-.*"
+    action        = "keep"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+}
+
+loki.source.docker "containers" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.containers.output
+  labels     = { "job" = "docker" }
+  forward_to = [loki.write.central.receiver]
+}

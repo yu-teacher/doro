@@ -1,0 +1,43 @@
+// 모든 서버 공통: SSH/sudo 기록과 systemd journal 을 중앙 Loki 로 보낸다.
+// auth.log 는 감사 로그라서 log_type="audit" 라벨을 붙인다(Loki 에서 1년 보관).
+
+local.file_match "auth" {
+  path_targets = [{
+    "__path__" = "/host/var/log/auth.log",
+    "job"      = "auth",
+    "log_type" = "audit",
+  }]
+}
+
+loki.source.file "auth" {
+  targets    = local.file_match.auth.targets
+  forward_to = [loki.write.central.receiver]
+}
+
+loki.relabel "journal" {
+  forward_to = []
+
+  rule {
+    source_labels = ["__journal__systemd_unit"]
+    target_label  = "unit"
+  }
+  rule {
+    source_labels = ["__journal_priority_keyword"]
+    target_label  = "level"
+  }
+}
+
+loki.source.journal "system" {
+  path          = "/host/var/log/journal"
+  max_age       = "12h"
+  relabel_rules = loki.relabel.journal.rules
+  labels        = { "job" = "journal" }
+  forward_to    = [loki.write.central.receiver]
+}
+
+loki.write "central" {
+  endpoint {
+    url = sys.env("LOKI_URL") + "/loki/api/v1/push"
+  }
+  external_labels = { "host" = sys.env("HOST_NAME") }
+}
