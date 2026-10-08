@@ -164,9 +164,9 @@ default                                              → blog_api_upstream  (블
 | `= /oauth2/consent` | 프록시하지 않고 `index.html` 반환(SPA 라우트). 아래 `/oauth2/` 보다 우선 |
 | `/oauth2/` | → `auth-api:8080/oauth2/` |
 | `/.well-known/` | → `auth-api:8080/.well-known/` |
-| `= /_auth_admin` | `internal`, IAM `GET /api/v1/admin/authz` |
-| `/loki/` | `auth_request` + GET/HEAD 만 → `loki:3100/loki/` |
 | `= /50x.html` | 오류 페이지 |
+
+로그 조회(`/loki/`)와 그 관리자 인가 확인(`/_auth_admin`)은 포털 컨테이너가 아니라 **공개 게이트웨이**가 처리한다(중앙 Loki 로 전달). 포털 nginx 에는 이 location 이 없다.
 
 - 포털은 `BrowserRouter` 에 **`basename` 을 쓰지 않는다**(루트 기준 라우트). 과거 문서의 `/portal` 하위 경로 마운트·`basename="/portal"` 규칙은 현재 코드에 해당하지 않는다. Vite `base` 도 기본값이다.
 - 포털 컨테이너의 `/api/` 는 IAM 전체를 프록시하지만 **공개 게이트웨이는 그렇지 않다**(§2·§5의 경로 목록이 기준). 로컬에서 포털(3000)로 되는 호출이 게이트웨이에서는 다른 곳으로 갈 수 있으니 게이트웨이 기준으로 확인한다.
