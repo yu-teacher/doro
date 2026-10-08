@@ -30,8 +30,9 @@ DORO_DIR="${DORO_DIR:-$HOME/doro}"
 BLOG_DIR="${BLOG_DIR:-$HOME/doro-blog}"
 TOOLBOX_IMAGE="${TOOLBOX_IMAGE:-postgres:16-alpine}"   # tar/gzip 와 pg 클라이언트가 들어 있는 이미 있는 이미지
 REDIS_IMAGE="${REDIS_IMAGE:-redis:7-alpine}"
-# 같은 디스크 밖의 사본 위치(rsync/ssh). 예: pi-backup:./  비어 있으면 오프사이트 복사를 건너뛴다. ~/ops/backup.env 로도 지정할 수 있다.
-OFFSITE_TARGET="${OFFSITE_TARGET:-}"
+# 같은 디스크 밖의 사본 위치(rsync/ssh). 공백으로 여러 곳을 줄 수 있다. 예: "pi-backup:./ notebook-backup:./"
+# 비어 있으면 오프사이트 복사를 건너뛴다. ~/ops/backup.env 로도 지정할 수 있다. (예전 단일 OFFSITE_TARGET 도 계속 읽는다)
+OFFSITE_TARGETS="${OFFSITE_TARGETS:-${OFFSITE_TARGET:-}}"
 
 STATUS_FILE="$ROOT/STATUS"
 LOG_FILE="$ROOT/backup.log"
@@ -168,19 +169,30 @@ prune() { # prune <디렉터리> <보관 개수>
 }
 
 offsite_copy() {
-  if [ -z "$OFFSITE_TARGET" ]; then
+  if [ -z "$OFFSITE_TARGETS" ]; then
     set_status offsite "NOT_CONFIGURED"
-    log "오프사이트 복사: 설정되지 않음 (OFFSITE_TARGET 비어 있음). 같은 디스크에만 보관 중이다."
+    log "오프사이트 복사: 설정되지 않음 (OFFSITE_TARGETS 비어 있음). 같은 디스크에만 보관 중이다."
     return 0
   fi
   # --delete 를 쓰지 않는다: 로컬 백업이 실수/랜섬웨어로 지워져도 오프사이트 사본은 남아야 한다.
-  # 오래된 세대의 정리는 받는 쪽(pi)이 자체 보관 정책으로 한다. -H 는 주간/월간 하드링크를 보존한다.
-  if rsync -aH --exclude '.lock' -e 'ssh -o BatchMode=yes -o ConnectTimeout=15' "$ROOT/" "$OFFSITE_TARGET/"; then
+  # 오래된 세대의 정리는 받는 쪽이 자체 보관 정책으로 한다. -H 는 주간/월간 하드링크를 보존한다.
+  # 한 곳이 실패해도 나머지 대상은 계속 복사한다. 전체 상태(offsite)는 모든 곳이 성공해야 OK 이고, 곳별 상태는 offsite_<이름> 에 남긴다.
+  local target name failed=""
+  for target in $OFFSITE_TARGETS; do
+    name="${target%%:*}"
+    if rsync -aH --exclude '.lock' -e 'ssh -o BatchMode=yes -o ConnectTimeout=15' "$ROOT/" "$target/"; then
+      set_status "offsite_$name" "OK $(date +%FT%T%z)"
+      log "오프사이트 복사 완료: $target"
+    else
+      set_status "offsite_$name" "FAIL $(date +%FT%T%z)"
+      failed="$failed $name"
+      log "WARN: 오프사이트 복사 실패 ($target). 로컬 백업과 다른 대상은 정상이다."
+    fi
+  done
+  if [ -z "$failed" ]; then
     set_status offsite "OK $(date +%FT%T%z)"
-    log "오프사이트 복사 완료: $OFFSITE_TARGET"
   else
-    set_status offsite "FAIL $(date +%FT%T%z)"
-    log "WARN: 오프사이트 복사 실패 ($OFFSITE_TARGET). 로컬 백업은 정상이다."
+    set_status offsite "FAIL $(date +%FT%T%z) (실패:${failed})"
   fi
 }
 
