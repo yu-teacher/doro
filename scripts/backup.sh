@@ -81,14 +81,25 @@ do_backup() {
   # 1) PostgreSQL: 역할(globals) + 데이터베이스별 custom 포맷 덤프
   pg_exec 'pg_dumpall -U "$POSTGRES_USER" --globals-only' > "$dir/globals.sql"
   [ -s "$dir/globals.sql" ] || die "globals 덤프가 비어 있다"
-  local db tables total_tables=0
+  local db toc defined tables total_tables=0
   for db in $(list_databases); do
     pg_exec "pg_dump -U \"\$POSTGRES_USER\" -Fc $db" > "$dir/$db.dump"
     [ -s "$dir/$db.dump" ] || die "$db 덤프가 비어 있다"
-    tables="$(pg_exec 'pg_restore --list' < "$dir/$db.dump" | grep -c 'TABLE DATA' || true)"
-    [ "$tables" -gt 0 ] || die "$db 덤프를 읽을 수 없거나 테이블 데이터가 없다"
+    # 덤프 목차를 읽어 확인한다. 읽을 수 없는 덤프(손상)와 "테이블이 아직 없는 DB"는 다르다:
+    #  - 새 서비스의 DB 는 첫 배포(Flyway) 전까지 테이블이 0개다. 지킬 데이터가 없으므로 이때만 데이터 검사를 건너뛴다.
+    #  - 테이블이 정의돼 있는데 데이터 항목이 없거나 목차를 못 읽으면 덤프가 잘못된 것이므로 실패한다.
+    # 목차 줄: "<id>; <oid> <oid> TABLE <schema> <table> <owner>" (데이터는 "TABLE DATA")
+    toc="$(pg_exec 'pg_restore --list' < "$dir/$db.dump")" || die "$db 덤프를 읽을 수 없다"
+    printf '%s\n' "$toc" | grep -q '^;' || die "$db 덤프의 목차가 비어 있다"
+    defined="$(printf '%s\n' "$toc" | awk '$4=="TABLE" && $5!="DATA"' | wc -l | tr -d ' ')"
+    tables="$(printf '%s\n' "$toc" | grep -c 'TABLE DATA' || true)"
+    if [ "$defined" -eq 0 ]; then
+      log "  PostgreSQL $db: $(du -h "$dir/$db.dump" | cut -f1), 테이블이 아직 없는 DB(첫 배포 전인 서비스). 덤프는 보관하고 데이터 검사는 건너뛴다"
+    else
+      [ "$tables" -gt 0 ] || die "$db 덤프에 테이블 ${defined}개가 있는데 테이블 데이터가 없다"
+      log "  PostgreSQL $db: $(du -h "$dir/$db.dump" | cut -f1), 테이블 데이터 ${tables}개"
+    fi
     total_tables=$((total_tables + tables))
-    log "  PostgreSQL $db: $(du -h "$dir/$db.dump" | cut -f1), 테이블 데이터 ${tables}개"
   done
 
   # 2) MinIO 데이터 볼륨 (블로그 이미지)
@@ -222,7 +233,7 @@ do_verify_restore() {
     docker exec -i "$RESTORE_NAME" pg_restore -U postgres -d "$db" --no-owner --no-privileges --exit-on-error < "$dump" \
       || die "$db 복원 중 오류"
     # pg_restore --list 의 TABLE DATA 줄: "<id>; 0 <oid> TABLE DATA <schema> <table> <owner>"
-    expected="$(docker exec -i "$RESTORE_NAME" pg_restore --list < "$dump" | grep 'TABLE DATA' | awk '{print $7}' | sort | tr '\n' ' ')"
+    expected="$(docker exec -i "$RESTORE_NAME" pg_restore --list < "$dump" | grep 'TABLE DATA' | awk '{print $7}' | sort | tr '\n' ' ' || true)"
     restored="$(echo "select table_name from information_schema.tables where table_schema='public' and table_type='BASE TABLE' order by 1" \
       | docker exec -i "$RESTORE_NAME" psql -U postgres -d "$db" -tA | tr '\n' ' ')"
     for t in $expected; do
