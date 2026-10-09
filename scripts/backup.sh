@@ -20,6 +20,8 @@ KEEP_DAILY="${KEEP_DAILY:-7}"
 KEEP_WEEKLY="${KEEP_WEEKLY:-4}"
 KEEP_MONTHLY="${KEEP_MONTHLY:-6}"
 MIN_FREE_MB="${MIN_FREE_MB:-2000}"
+# 다른 백업(예: 같은 시각의 다른 서비스 배포 백업)이 잠금을 쥐고 있으면 실패하지 않고 이 시간까지 기다린다. 배포와 정기 백업이 겹쳐도 배포가 중단되지 않게 한다.
+LOCK_WAIT_SEC="${BACKUP_LOCK_WAIT_SEC:-900}"
 STALE_HOURS="${STALE_HOURS:-30}"
 RESTORE_STALE_DAYS="${RESTORE_STALE_DAYS:-9}"
 
@@ -62,7 +64,7 @@ latest_daily() { ls -1d "$ROOT"/daily/[0-9]* 2>/dev/null | sort | tail -1 || tru
 do_backup() {
   mkdir -p "$ROOT"/daily "$ROOT"/weekly "$ROOT"/monthly
   exec 9>"$ROOT/.lock"
-  flock -n 9 || die "다른 백업이 실행 중이다"
+  flock -w "$LOCK_WAIT_SEC" 9 || die "다른 백업이 ${LOCK_WAIT_SEC}초가 지나도록 끝나지 않았다"
 
   local free_mb; free_mb="$(df --output=avail -BM "$ROOT" | tail -1 | tr -dc 0-9)"
   [ "$free_mb" -gt "$MIN_FREE_MB" ] || die "디스크 여유가 ${free_mb}MB 로 부족하다 (최소 ${MIN_FREE_MB}MB)"
@@ -211,7 +213,7 @@ offsite_copy() {
 do_verify_restore() {
   mkdir -p "$ROOT"
   exec 9>"$ROOT/.lock"
-  flock -n 9 || die "다른 백업/검증이 실행 중이다"
+  flock -w "$LOCK_WAIT_SEC" 9 || die "다른 백업/검증이 ${LOCK_WAIT_SEC}초가 지나도록 끝나지 않았다"
   local backup; backup="$(latest_daily)"
   [ -n "$backup" ] || die "검증할 백업이 없다"
   log "== 복원 테스트: $backup =="
