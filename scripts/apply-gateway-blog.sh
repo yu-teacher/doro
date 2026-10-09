@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 서버(mini)에서 실행한다: 게이트웨이(nginx.conf)에서 블로그를 /blog/ 아래로 옮긴다. 변환은 gateway_blog_switch.py 가 한다(같은 코드를 로컬 시험에도 쓴다).
 #   단계 1: /blog, /blog/api/ 경로를 "추가"한다. 기존 경로는 그대로라 사용자에게 보이는 변화가 없다.
+#   단계 5: 옛 블로그 주소의 임시 이동(302)을 영구 이동(301)으로 바꾼다(안정된 것을 확인한 뒤에만. 301 은 브라우저가 기억한다).
 #   단계 4: 단계 3 의 허브 규칙에 /index.html 을 추가한다(허브 서비스 워커가 앱 셸을 미리 캐시할 때 /blog 로 이동돼 블로그 화면이 저장되던 문제).
 #   단계 3: 허브 PWA 파일(/sw.js, /manifest.webmanifest, 아이콘)을 포털로 보내는 규칙을 추가한다(단계 2 이후, 허브를 PWA 로 배포하기 전에).
 #   단계 2: / 를 허브(포털)로, 나머지 알 수 없는 경로를 /blog 로 임시 이동(302)시키고, Referer 추측 두 곳의 기본값을 포털/IAM 으로 바꾼다.
@@ -28,7 +29,7 @@ while [ $# -gt 0 ]; do
     *) echo "알 수 없는 옵션: $1" >&2; exit 2 ;;
   esac
 done
-[ "$STAGE" = 1 ] || [ "$STAGE" = 2 ] || [ "$STAGE" = 3 ] || [ "$STAGE" = 4 ] || { echo "--stage 1, 2, 3 또는 4 가 필요하다" >&2; exit 2; }
+[ "$STAGE" = 1 ] || [ "$STAGE" = 2 ] || [ "$STAGE" = 3 ] || [ "$STAGE" = 4 ] || [ "$STAGE" = 5 ] || { echo "--stage 1~5 중 하나가 필요하다" >&2; exit 2; }
 log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 die() { log "ERROR: $*"; exit 1; }
 [ -f "$CONF" ] || die "$CONF 가 없다"
@@ -91,13 +92,15 @@ if [ "$STAGE" = 1 ]; then
   check "새 경로 /blog/ 가 열린다" 200 /blog/
   check "/blog 는 /blog/ 로" 302 /blog /blog/
   check "블로그 API(새 주소)" 200 "/blog/api/v1/posts?page=0&size=1"
-elif [ "$STAGE" = 3 ] || [ "$STAGE" = 4 ]; then
+elif [ "$STAGE" = 3 ] || [ "$STAGE" = 4 ] || [ "$STAGE" = 5 ]; then
+  OLD_MOVE=302; [ "$STAGE" = 5 ] && OLD_MOVE=301
   check "메인은 허브" 200 /
-  check "옛 블로그 주소는 /blog 로" 302 /@doro /blog/@doro
+  check "옛 블로그 주소는 /blog 로" "$OLD_MOVE" /@doro /blog/@doro
+  [ "$STAGE" = 5 ] && check "옛 주소의 쿼리 문자열 유지" 301 "/tags?tag=java" "/blog/tags?tag=java"
   check "블로그(새 주소)" 200 /blog/
   check "허브 서비스 워커 파일은 포털이 준다" "$HUB_SW_WANT" /sw.js
   check "허브 매니페스트" "$HUB_SW_WANT" /manifest.webmanifest
-  [ "$STAGE" = 4 ] && check "허브 앱 셸 /index.html 은 포털이 준다(/blog 로 이동하지 않는다)" 200 /index.html
+  [ "$STAGE" -ge 4 ] && check "허브 앱 셸 /index.html 은 포털이 준다(/blog 로 이동하지 않는다)" 200 /index.html
 else
   check "메인은 허브" 200 /
   check "옛 블로그 주소는 /blog 로" 302 /@doro /blog/@doro

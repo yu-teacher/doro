@@ -5,6 +5,7 @@
 
 stage 1 (추가만): /blog, /blog/api/ 경로를 새로 만든다. 기존 경로(/ 가 블로그, /api/v1/ 가 블로그 API)는 그대로 둔다. 사용자에게 보이는 변화가 없다.
 stage 2 (전환):  / 를 허브(포털)로, 나머지 알 수 없는 경로를 /blog 로 보내고(임시 이동 302), Referer 추측 두 곳의 기본값을 포털/IAM 으로 바꾼다.
+stage 5 (영구 이동): 옛 블로그 주소의 임시 이동(302)을 영구 이동(301)으로 바꾼다. 안정된 것을 확인한 뒤에만 적용한다(브라우저가 301 을 오래 기억해서 되돌리기 어렵다).
 stage 4 (허브 PWA 보정): stage 3 에 /index.html 을 추가한다. 허브 서비스 워커가 앱 셸 /index.html 을 미리 캐시하는데 stage 2 의 /blog 이동에 걸려 블로그 화면이 캐시되던 문제를 막는다.
 stage 3 (허브 PWA): 허브의 서비스 워커·매니페스트·아이콘 같은 루트 파일(/sw.js, /manifest.webmanifest ...)을 포털로 보낸다(안 그러면 stage 2 의 /blog 이동에 걸린다).
 
@@ -118,7 +119,7 @@ def stage1(conf):
 
 
 def stage2(conf):
-    if "return 302 /blog$request_uri;" in conf:
+    if "return 302 /blog$request_uri;" in conf or "return 301 /blog$request_uri;" in conf:
         return conf, "SAME"
     if "location /blog/ {" not in conf:
         sys.exit("stage 2 는 stage 1(/blog/ 경로 추가)이 먼저 적용돼 있어야 한다")
@@ -136,7 +137,7 @@ def stage2(conf):
 def stage3(conf):
     if "# 9-1b. 허브 PWA 파일" in conf:
         return conf, "SAME"
-    if "return 302 /blog$request_uri;" not in conf:
+    if "return 302 /blog$request_uri;" not in conf and "return 301 /blog$request_uri;" not in conf:
         sys.exit("stage 3 는 stage 2(허브 전환)가 먼저 적용돼 있어야 한다")
     if count(conf, STAGE3_ANCHOR) != 1:
         sys.exit(f"stage 3 앵커('블로그 컨테이너에 있던 루트 파일')를 정확히 1개 찾지 못했다(찾은 수: {count(conf, STAGE3_ANCHOR)})")
@@ -155,12 +156,22 @@ def stage4(conf):
     return conf.replace(OLD_HUB_RE, NEW_HUB_RE, 1), "CHANGE"
 
 
+def stage5(conf):
+    if "return 301 /blog$request_uri;" in conf:
+        return conf, "SAME"
+    if count(conf, "return 302 /blog$request_uri;") != 1:
+        sys.exit(f"stage 5 는 stage 2(옛 주소 이동 302)가 먼저 적용돼 있어야 한다(찾은 수: {count(conf, 'return 302 /blog$request_uri;')})")
+    conf = conf.replace("return 302 /blog$request_uri;", "return 301 /blog$request_uri;", 1)
+    conf = conf.replace("#      처음에는 임시 이동(302)으로 둔다: 301 은 브라우저가 영구 기억해서, 문제가 생겨 되돌려도 이미 방문한 사람은 계속 /blog/ 로 간다.\n        #      안정되면 아래 302 를 301 로 바꾼다.", "#      안정된 것을 확인하고 영구 이동(301)으로 바꿨다. 301 은 브라우저가 기억하므로 되돌려도 이미 방문한 사람은 계속 /blog/ 로 간다.", 1)
+    return conf, "CHANGE"
+
+
 def main():
-    if len(sys.argv) != 4 or sys.argv[3] not in ("1", "2", "3", "4"):
-        sys.exit("사용법: gateway_blog_switch.py <입력> <출력> <1|2|3|4>")
+    if len(sys.argv) != 4 or sys.argv[3] not in ("1", "2", "3", "4", "5"):
+        sys.exit("사용법: gateway_blog_switch.py <입력> <출력> <1|2|3|4|5>")
     src, out, stage = sys.argv[1], sys.argv[2], sys.argv[3]
     conf = open(src, encoding="utf-8").read()
-    new, state = {"1": stage1, "2": stage2, "3": stage3, "4": stage4}[stage](conf)
+    new, state = {"1": stage1, "2": stage2, "3": stage3, "4": stage4, "5": stage5}[stage](conf)
     open(out, "w", encoding="utf-8").write(new)
     print(f"{state} {stage}")
 
