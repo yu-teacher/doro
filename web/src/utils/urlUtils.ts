@@ -77,5 +77,8 @@ export const resolveOptionalHttpUrl = (value: string | undefined | null): string
 /** Doro Guard OpenAPI 문서 URL (VITE_GUARD_DOCS_URL). 미설정이면 null */
 export const getGuardDocsUrl = (): string | null => resolveOptionalHttpUrl(import.meta.env.VITE_GUARD_DOCS_URL);
 
+/** 중앙 Grafana 콘솔 URL (VITE_GRAFANA_URL). 미설정이면 null 이고 로그 화면의 링크를 숨긴다 */
+export const getGrafanaUrl = (): string | null => resolveOptionalHttpUrl(import.meta.env.VITE_GRAFANA_URL);
+
 /** Doro IAM OpenAPI 문서 URL (VITE_IAM_DOCS_URL). 미설정이면 null */
 export const getIamDocsUrl = (): string | null => resolveOptionalHttpUrl(import.meta.env.VITE_IAM_DOCS_URL);

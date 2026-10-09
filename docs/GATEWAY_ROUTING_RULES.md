@@ -3,6 +3,7 @@
 본 문서는 DORO 플랫폼의 게이트웨이(nginx)에 서비스를 추가하거나 API 경로를 바꿀 때 생기는 라우팅 충돌·누락을 막기 위한 에이전트/개발자 필수 규칙이다. **기준은 `gateway/nginx.conf`(게이트웨이)와 `web/nginx.conf`(포털 컨테이너 내부)이며, 이 문서와 설정이 다르면 설정이 맞다.**
 
 - 검증 기준 커밋: `12d6582` (2026-10-02), 설정 파일을 전부 읽고 작성. 실제 서버에 배포된 설정과의 일치 여부는 `[미검증]`(§8 참고).
+- **2026-10-09 주소 개편**: 메인(`/`)은 허브, 블로그는 `/blog/`. 서버 설정과 `gateway/nginx.conf` 를 맞췄다(서버 값이 기준). 반영 절차와 라우팅 시험은 `scripts/apply-gateway-blog.sh`, `scripts/gateway_blog_switch.py`, `scripts/test-gateway-routing.sh`(기대 목록 `scripts/gateway-routing/`)에 있다.
 - 인증·인가 연동 사실은 `docs/DORO_AGENT_GUIDE.md` 를 본다.
 
 ---
@@ -21,7 +22,7 @@
 |---|---|---|
 | `portal_upstream` | `web:80` | 포털(통합 계정 센터) SPA |
 | `iam_upstream` | `auth-api:8080` | IAM(인증, OAuth/OIDC, 관리자 API) |
-| `blog_web_upstream` | `doro-blog-web:80` | 블로그 프런트엔드(기본 메인 웹) |
+| `blog_web_upstream` | `doro-blog-web:80` | 블로그 프런트엔드(`/blog/` 아래) |
 | `blog_api_upstream` | `doro-blog-backend:8082` | 블로그 백엔드 API |
 | `minio_upstream` | `doro-minio:9000` | 업로드 미디어(MinIO) |
 | `loki_upstream` | 중앙 Loki(노트북, IP 로 지정) | 로그 조회(Loki). 미니의 loki 컨테이너는 없앴다(`scripts/apply-gateway-loki.sh`). nginx 는 시작 때 이름을 해석하므로 컨테이너 이름이 아니라 IP 로 가리킨다 |
@@ -67,18 +68,23 @@ nginx 의 평가 순서(이 순서를 모르고 location 을 추가하면 반드
 | `/iam/` | `iam_upstream/` | `/iam` 접두어를 떼고 IAM 으로 전달(IAM 직접 접근용) |
 | `/oauth2/` | `iam_upstream/oauth2/` | OAuth/OIDC(`authorize`, `token`, `userinfo`). `= /oauth2/consent` 만 예외(포털) |
 | `/.well-known/` | `iam_upstream/.well-known/` | JWKS, OIDC discovery |
-| `/assets/` | **`$assets_upstream`**(referer 맵, §3) | 포털/블로그 빌드 산출물 구분 |
+| `/blog/api/` | `blog_api_upstream/api/` | 블로그 API(새 주소). `/blog` 접두어를 떼고 전달. 쓰기 제한(`blog_writes`) 적용 |
+| `/blog/` | `blog_web_upstream/` | 블로그 웹. `/blog` 를 떼고 전달(웹은 `VITE_BASE_PATH=/blog` 로 빌드돼 에셋이 `/blog/assets/`). `= /blog` 는 `/blog/` 로 302 |
+| `/assets/` | **`$assets_upstream`**(기본 포털, §3) | 포털 빌드 산출물(블로그 에셋은 `/blog/assets/` 로 와서 이 규칙을 타지 않는다) |
 | `/menu/` | `menu_upstream/` | 도로메뉴(`/menu` 접두어 제거) |
 | `/doro/` | `menu_upstream/doro/` | 도로메뉴 정적 자산 |
-| `/` | `blog_web_upstream` | **기본값**: 블로그 프런트엔드(메인 웹) |
+| `= /` | `portal_upstream` | **메인 주소: Doro 허브**(서비스 카드 + 계정) |
+| `= /robots.txt` | `portal_upstream` | 크롤러 규칙(루트에서만 읽힘). `/blog/` 의 비공개 영역 Disallow 포함 |
+| `~ ^/(doro-logo\.png\|favicon\.png)$` | `blog_web_upstream` | 이미 공유된 글의 `og:image` 가 가리키는 루트 파일 |
+| `/` | 302 → `/blog$request_uri` | **옛 블로그 주소**(`/@사용자/글`, `/tags` …)를 `/blog/` 아래로 보낸다(쿼리 유지). 안정되면 301 로 바꾼다 |
 
 ### 2.3 정규식 (프리픽스보다 우선)
 
 | location | 대상 | 비고 |
 |---|---|---|
-| `~ ^/(logs\|login\|signup\|account\|portal)(/.*)?$` | `portal_upstream` | 포털 SPA 라우트. 포털 SPA 의 실제 라우트는 `/login`, `/signup`, `/account`, `/logs`(+ 정확 일치 `/oauth2/consent`)이다. `/portal` 도 이 정규식에 걸려 포털로 가지만 SPA 에 전용 라우트는 없다(`*` 폴백 → 루트 리다이렉트) |
+| `~ ^/(logs\|login\|signup\|account\|portal)(/.*)?$` | `portal_upstream` | 포털 SPA 라우트. 포털 SPA 의 실제 라우트는 `/login`, `/signup`, `/account`, `/logs`(+ 정확 일치 `/oauth2/consent`)이다. `/portal` 도 이 정규식에 걸려 포털로 가며 허브(`/`)와 같은 화면이다 |
 
-위 목록에 없는 경로(예: `/swagger-ui.html`, `/v3/api-docs`, `/actuator/**`, `/health`)는 **IAM 으로 가지 않고** `/` 로 떨어져 블로그 프런트엔드가 받는다. 의도된 것이다 — 이 경로들을 게이트웨이로 노출하려면 별도 검토(인증/보안)가 필요하다.
+위 목록에 없는 경로(예: `/swagger-ui.html`, `/v3/api-docs`, `/actuator/**`, `/health`)는 **IAM 으로 가지 않고** `/` 로 떨어져 `/blog` 아래로 302 이동한다(블로그 프런트엔드가 받는다). 의도된 것이다 — 이 경로들을 게이트웨이로 노출하려면 별도 검토(인증/보안)가 필요하다.
 
 ---
 
@@ -88,19 +94,16 @@ nginx 의 평가 순서(이 순서를 모르고 location 을 추가하면 반드
 
 ### 3.1 `/assets/` → `$assets_upstream`
 ```
-default                                              → blog_web_upstream
-~*(logs|account|login|signup|oauth2|portal)         → portal_upstream   (대소문자 무시, referer 안에 해당 단어가 *어디든* 있으면)
+default                                              → portal_upstream
 ```
-포털과 블로그가 둘 다 Vite 빌드(`/assets/index-*.js` …)를 같은 경로로 내보내기 때문이다. **주의**: 블로그 URL 에 위 단어가 들어 있으면(예: `/posts/how-to-login`) 그 페이지의 `/assets/*` 요청이 포털로 가서 깨진다. referer 가 없는 직접 요청은 블로그로 간다.
+블로그가 `/blog/` 아래로 옮겨 에셋이 `/blog/assets/` 로 오므로 더 이상 `Referer` 로 추측하지 않는다(이전에는 포털/블로그가 같은 `/assets/` 를 나눠 써서 URL 에 `login` 같은 단어가 있으면 깨졌다).
 
 ### 3.2 `= /api/v1/users/me` → `$users_me_upstream`
-키는 `"$http_referer:$request_method"` 이다.
+키는 `"$http_referer:$request_method"` 이지만 지금은 규칙이 기본값 하나뿐이다.
 ```
-default                                              → blog_api_upstream  (블로그 프로필)
-~*(logs|account|login|signup|oauth2|portal):         → iam_upstream       (포털에서 온 요청)
-~:PATCH$                                             → iam_upstream       (PATCH 는 항상 IAM)
+default                                              → iam_upstream
 ```
-**주의**: 두 번째 규칙은 referer **문자열이 해당 단어로 끝나야**(바로 뒤가 `:`) 맞는다. `/account?tab=1`, `/account/`, `/oauth2/consent?client_id=...` 처럼 쿼리나 슬래시가 붙은 referer 는 맞지 않아 블로그 API 로 간다(`GET`). 새로 `/api/v1/users/me` 를 호출하는 포털 화면을 추가하면 이 점을 확인할 것. `PUT /api/v1/users/me` 는 IAM 에 없으므로(IAM 은 `GET`/`PATCH`) 포털에서 그 경로로 PUT 을 쓰지 않는다.
+루트의 `/api/v1/users/me` 는 IAM(포털)의 것이다. 블로그는 `/blog/api/v1/users/me` 를 쓴다.
 
 ---
 

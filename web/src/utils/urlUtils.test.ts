@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getBlogUrl, getGuardDocsUrl, getIamDocsUrl, resolveOptionalHttpUrl } from './urlUtils';
+import { getBlogUrl, getGrafanaUrl, getGuardDocsUrl, getIamDocsUrl, resolveOptionalHttpUrl } from './urlUtils';
 
 describe('resolveOptionalHttpUrl', () => {
   it('비어 있거나 공백이면 null', () => {
@@ -61,5 +61,23 @@ describe('getBlogUrl', () => {
   it('VITE_BLOG_URL 이 있으면 그 값을 쓴다', () => {
     vi.stubEnv('VITE_BLOG_URL', 'https://blog.example.test/');
     expect(getBlogUrl()).toBe('https://blog.example.test/');
+  });
+});
+
+describe('getGrafanaUrl', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('미설정이면 null 이라 링크를 숨긴다', () => {
+    vi.stubEnv('VITE_GRAFANA_URL', '');
+    expect(getGrafanaUrl()).toBeNull();
+  });
+
+  it('http(s) 주소만 허용한다', () => {
+    vi.stubEnv('VITE_GRAFANA_URL', 'https://grafana.example.test/');
+    expect(getGrafanaUrl()).toBe('https://grafana.example.test/');
+    vi.stubEnv('VITE_GRAFANA_URL', 'javascript:alert(1)');
+    expect(getGrafanaUrl()).toBeNull();
   });
 });

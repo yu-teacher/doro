@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { logApi, ParsedLogEntry } from '../api/logApi';
+import { getGrafanaUrl } from '../utils/urlUtils';
 import {
   Terminal,
   Search,
@@ -30,6 +31,7 @@ const SERVICE_LABELS: Record<string, { name: string; color: string }> = {
 
 export const LogViewerPage: React.FC = () => {
   const navigate = useNavigate();
+  const grafanaUrl = getGrafanaUrl();
   const { getActiveAccount } = useAuthStore();
   const activeAccount = getActiveAccount();
 
@@ -179,17 +181,19 @@ export const LogViewerPage: React.FC = () => {
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
 
-            {/* Grafana External Link */}
-            <a
-              href="http://localhost:3001"
-              target="_blank"
-              rel="noreferrer"
-              className="px-3.5 py-2 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-xs font-bold text-white flex items-center gap-1.5 transition-all"
-              title="Grafana 원본 콘솔 열기"
-            >
-              <span>Grafana</span>
-              <ExternalLink className="w-3.5 h-3.5" />
-            </a>
+            {/* Grafana External Link: VITE_GRAFANA_URL 이 있을 때만 보인다 */}
+            {grafanaUrl && (
+              <a
+                href={grafanaUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="px-3.5 py-2 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-xs font-bold text-white flex items-center gap-1.5 transition-all"
+                title="Grafana 원본 콘솔 열기"
+              >
+                <span>Grafana</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            )}
           </div>
         </div>
 
