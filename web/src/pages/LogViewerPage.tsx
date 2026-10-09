@@ -63,19 +63,19 @@ export const LogViewerPage: React.FC = () => {
     }
   }, [selectedService, selectedLevel, searchQuery]);
 
-  // 최초 로딩 및 수동 필터 변경 시 조회
+  // 최초 로딩 및 수동 필터 변경 시 조회. 관리자가 아니면 조회하지 않는다(아래에서 안내만 보여 준다).
   useEffect(() => {
-    fetchLogs();
-  }, [fetchLogs]);
+    if (isAdmin) fetchLogs();
+  }, [isAdmin, fetchLogs]);
 
   // 실시간 갱신 (3초 주기)
   useEffect(() => {
-    if (!isLive) return;
+    if (!isLive || !isAdmin) return;
     const interval = setInterval(() => {
       fetchLogs();
     }, 3000);
     return () => clearInterval(interval);
-  }, [isLive, fetchLogs]);
+  }, [isLive, isAdmin, fetchLogs]);
 
   // 클립보드 복사 핸들러
   const handleCopy = (text: string, id: string) => {
@@ -135,19 +135,19 @@ export const LogViewerPage: React.FC = () => {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+    <div className="max-w-7xl mx-auto px-3 sm:px-6 py-5 sm:py-8">
       {/* 1. Header Banner */}
       <div className="mb-6 p-6 sm:p-8 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-3xl text-white shadow-xl relative overflow-hidden">
         <div className="absolute right-0 top-0 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
-        <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-indigo-600/30 border border-indigo-400/30 flex items-center justify-center text-white text-2xl shadow-inner">
-              <Terminal className="w-7 h-7 text-indigo-300" />
+        <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5 sm:gap-6">
+          <div className="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0">
+            <div className="w-11 h-11 sm:w-14 sm:h-14 shrink-0 rounded-2xl bg-indigo-600/30 border border-indigo-400/30 flex items-center justify-center text-white text-2xl shadow-inner">
+              <Terminal className="w-6 h-6 sm:w-7 sm:h-7 text-indigo-300" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-black tracking-tight">시스템 관제 및 중앙 로그</h1>
-                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-500/30 border border-indigo-400/40 text-indigo-200">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <h1 className="text-xl sm:text-2xl font-black tracking-tight">시스템 관제 및 중앙 로그</h1>
+                <span className="whitespace-nowrap px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-500/30 border border-indigo-400/40 text-indigo-200">
                   Loki & Alloy 연동
                 </span>
               </div>
@@ -157,11 +157,11 @@ export const LogViewerPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             {/* Live Toggle */}
             <button
               onClick={() => setIsLive(!isLive)}
-              className={`px-3.5 py-2 rounded-2xl text-xs font-bold flex items-center gap-2 border transition-all cursor-pointer ${
+              className={`min-h-10 whitespace-nowrap px-3.5 py-2 rounded-2xl text-xs font-bold flex items-center gap-2 border transition-all cursor-pointer ${
                 isLive
                   ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300 shadow-sm'
                   : 'bg-slate-800 border-slate-700 text-slate-400'
@@ -175,8 +175,9 @@ export const LogViewerPage: React.FC = () => {
             <button
               onClick={fetchLogs}
               disabled={loading}
-              className="p-2.5 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-white transition-all cursor-pointer"
+              className="w-10 h-10 flex items-center justify-center rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-white transition-all cursor-pointer"
               title="새로고침"
+              aria-label="새로고침"
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
@@ -187,7 +188,7 @@ export const LogViewerPage: React.FC = () => {
                 href={grafanaUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="px-3.5 py-2 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-xs font-bold text-white flex items-center gap-1.5 transition-all"
+                className="min-h-10 px-3.5 py-2 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-xs font-bold text-white flex items-center gap-1.5 transition-all"
                 title="Grafana 원본 콘솔 열기"
               >
                 <span>Grafana</span>
@@ -225,7 +226,7 @@ export const LogViewerPage: React.FC = () => {
       </div>
 
       {/* 2. Controls & Filters Card */}
-      <div className="glass-card google-card-shadow rounded-3xl p-5 mb-6 space-y-4">
+      <div className="glass-card google-card-shadow rounded-3xl p-4 sm:p-5 mb-6 space-y-4">
         {/* Service Filters */}
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-bold text-slate-500 mr-1">서비스:</span>
@@ -235,7 +236,7 @@ export const LogViewerPage: React.FC = () => {
               <button
                 key={key}
                 onClick={() => setSelectedService(key)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                className={`min-h-9 whitespace-nowrap px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                   isSelected
                     ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-500/20'
                     : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
@@ -250,7 +251,7 @@ export const LogViewerPage: React.FC = () => {
         {/* Level & Search bar row */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2 border-t border-slate-100">
           {/* Level Filter Tabs */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-xs font-bold text-slate-500 mr-1">등급:</span>
             {[
               { id: 'all', label: '전체' },
@@ -263,7 +264,7 @@ export const LogViewerPage: React.FC = () => {
                 <button
                   key={lvl.id}
                   onClick={() => setSelectedLevel(lvl.id)}
-                  className={`px-2.5 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  className={`min-h-9 whitespace-nowrap px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                     isSelected
                       ? lvl.activeClass || 'bg-slate-900 text-white'
                       : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
@@ -283,12 +284,13 @@ export const LogViewerPage: React.FC = () => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Trace-Id, 사용자 ID, IP, 키워드 검색..."
-              className="w-full pl-10 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-medium"
+              className="w-full pl-10 pr-10 py-2.5 sm:py-2 bg-slate-50 border border-slate-200 rounded-xl text-base sm:text-xs focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-medium"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-2 text-xs text-slate-400 hover:text-slate-600 font-bold"
+                className="absolute right-1 top-0.5 w-9 h-9 text-xs text-slate-400 hover:text-slate-600 font-bold"
+                aria-label="검색어 지우기"
               >
                 ✕
               </button>
@@ -326,8 +328,8 @@ export const LogViewerPage: React.FC = () => {
                     log.level === 'ERROR' ? 'bg-rose-50/30' : ''
                   }`}
                 >
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-1.5">
-                    <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
                       {/* Time */}
                       <span className="text-slate-400 font-semibold">{log.formattedTime}</span>
 
@@ -354,7 +356,7 @@ export const LogViewerPage: React.FC = () => {
                         <button
                           onClick={() => handleTraceClick(log.traceId!)}
                           title="이 Trace-Id의 전 구간 로그만 필터링"
-                          className="px-2 py-0.5 rounded-md font-mono text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-colors flex items-center gap-1 cursor-pointer"
+                          className="min-h-9 px-2.5 py-1 rounded-md font-mono text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-colors flex items-center gap-1 cursor-pointer"
                         >
                           <Search className="w-2.5 h-2.5" />
                           trace:{log.traceId.length > 12 ? `${log.traceId.substring(0, 12)}...` : log.traceId}
@@ -368,10 +370,10 @@ export const LogViewerPage: React.FC = () => {
                     </div>
 
                     {/* Actions */}
-                    <div className="flex items-center gap-2 self-end sm:self-auto font-sans">
+                    <div className="flex items-center gap-1 self-end sm:self-auto font-sans -mr-1">
                       <button
                         onClick={() => handleCopy(log.raw, log.id)}
-                        className="px-2 py-1 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition-colors flex items-center gap-1 text-[11px] cursor-pointer"
+                        className="min-h-9 px-3 py-1 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition-colors flex items-center gap-1 text-[11px] cursor-pointer"
                         title="로그 원문 복사"
                       >
                         {copiedId === log.id ? (
@@ -384,8 +386,10 @@ export const LogViewerPage: React.FC = () => {
 
                       <button
                         onClick={() => setExpandedLogId(isExpanded ? null : log.id)}
-                        className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 cursor-pointer"
+                        className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 cursor-pointer"
                         title={isExpanded ? '접기' : '원문 펼치기'}
+                        aria-label={isExpanded ? '원문 접기' : '원문 펼치기'}
+                        aria-expanded={isExpanded}
                       >
                         {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                       </button>
