@@ -49,7 +49,7 @@ services:
     container_name: doro-auth-api
     restart: unless-stopped
     ports:
-      - "${AUTH_BIND:-0.0.0.0}:${AUTH_PORT:-8080}:8080"
+      - "${AUTH_BIND:-127.0.0.1}:${AUTH_PORT:-8080}:8080"
     environment:
       SPRING_PROFILES_ACTIVE: prod
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${AUTH_DB:-doro_auth}
@@ -102,9 +102,6 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${GUARD_DB:-doro_guard}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-doro_admin}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
-      SPRING_DATA_REDIS_HOST: redis
-      SPRING_DATA_REDIS_PORT: 6379
-      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       PORT: 8081
       GRPC_PORT: 9090
       DORO_GUARD_SECURITY_MODE: ${DORO_GUARD_SECURITY_MODE:-OFF}
@@ -118,8 +115,6 @@ services:
       DORO_LOG_LEVEL: ${DORO_LOG_LEVEL:-INFO}
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     networks:
       - doro-network
