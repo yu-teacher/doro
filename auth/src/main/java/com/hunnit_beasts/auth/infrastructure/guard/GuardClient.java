@@ -145,6 +145,26 @@ public class GuardClient {
     }
 
     /**
+     * 관계 튜플 일괄 등록. {@link #writeTuples} 와 달리 실패를 삼키지 않고 예외로 알린다.
+     * DB 변경과 함께 성공해야 하는 흐름(역할 변경)에서 쓴다.
+     */
+    public int writeTuplesOrThrow(List<TupleDto> tuples) {
+        if (tuples == null || tuples.isEmpty()) {
+            return 0;
+        }
+        GuardResponse<Map<String, Integer>> response = restClient.post()
+                .uri("/api/v1/guard/tuples")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(tuples)
+                .retrieve()
+                .body(new ParameterizedTypeReference<GuardResponse<Map<String, Integer>>>() {});
+        if (response == null || response.data() == null || !response.data().containsKey("writtenCount")) {
+            throw new IllegalStateException("Doro Guard returned an unexpected writeTuples response");
+        }
+        return response.data().get("writtenCount");
+    }
+
+    /**
      * 관계 튜플 일괄 삭제
      */
     public int deleteTuples(List<TupleDto> tuples) {

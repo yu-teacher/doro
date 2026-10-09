@@ -23,9 +23,12 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class JwtKeyProviderTest {
@@ -45,6 +48,15 @@ class JwtKeyProviderTest {
             store.put(inv.getArgument(0), inv.getArgument(1));
             return null;
         }).when(ops).set(anyString(), anyString());
+        // MSETNX 처럼 동작: 하나라도 이미 있으면 아무것도 쓰지 않는다
+        when(ops.multiSetIfAbsent(anyMap())).thenAnswer(inv -> {
+            Map<String, String> entries = inv.getArgument(0);
+            if (entries.keySet().stream().anyMatch(store::containsKey)) {
+                return false;
+            }
+            store.putAll(entries);
+            return true;
+        });
         return template;
     }
 
@@ -253,5 +265,85 @@ class JwtKeyProviderTest {
         ReflectionTestUtils.setField(p, "previousPublicKeyPem", pem("PUBLIC KEY", previous.getPublic().getEncoded()));
 
         assertThatThrownBy(p::init).isInstanceOf(IllegalStateException.class).hasMessageContaining("must differ");
+    }
+
+    // ---------------- A8: Redis 읽기 실패·동시 기동 ----------------
+
+    @Test
+    @DisplayName("Redis 에서 키를 읽지 못하면 새 키를 만들지 않고 기동을 중단한다 (있던 키와 다른 키로 서명하는 것을 막는다)")
+    void readFailureDoesNotGenerateNewKey() {
+        StringRedisTemplate template = mock(StringRedisTemplate.class);
+        @SuppressWarnings("unchecked")
+        ValueOperations<String, String> ops = mock(ValueOperations.class);
+        when(template.opsForValue()).thenReturn(ops);
+        when(ops.get(anyString())).thenThrow(new RuntimeException("redis down"));
+        JwtKeyProvider p = provider(template, "kid-1", SECRET);
+
+        assertThatThrownBy(p::init).isInstanceOf(IllegalStateException.class).hasMessageContaining("read");
+        verify(ops, never()).multiSetIfAbsent(anyMap());
+        verify(ops, never()).set(anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("새 키를 Redis 에 저장하지 못하면(재시작하면 사라질 키라서) 기동을 중단한다")
+    void writeFailureStopsStartup() {
+        StringRedisTemplate template = mock(StringRedisTemplate.class);
+        @SuppressWarnings("unchecked")
+        ValueOperations<String, String> ops = mock(ValueOperations.class);
+        when(template.opsForValue()).thenReturn(ops);
+        when(ops.get(anyString())).thenReturn(null);
+        when(ops.multiSetIfAbsent(anyMap())).thenThrow(new RuntimeException("redis down"));
+        JwtKeyProvider p = provider(template, "kid-1", SECRET);
+
+        assertThatThrownBy(p::init).isInstanceOf(IllegalStateException.class).hasMessageContaining("save");
+    }
+
+    @Test
+    @DisplayName("fail-on-key-store-error 를 끄면(테스트용) Redis 를 읽지 못해도 메모리 키로 기동한다")
+    void canStartWithoutRedisWhenFailureCheckIsDisabled() {
+        StringRedisTemplate template = mock(StringRedisTemplate.class);
+        @SuppressWarnings("unchecked")
+        ValueOperations<String, String> ops = mock(ValueOperations.class);
+        when(template.opsForValue()).thenReturn(ops);
+        when(ops.get(anyString())).thenThrow(new RuntimeException("redis down"));
+        when(ops.multiSetIfAbsent(anyMap())).thenThrow(new RuntimeException("redis down"));
+        JwtKeyProvider p = provider(template, "kid-1", SECRET);
+        ReflectionTestUtils.setField(p, "failOnKeyStoreError", false);
+
+        p.init();
+
+        assertThat(p.getPublicKey()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("두 인스턴스가 동시에 처음 기동해도 먼저 저장한 키 하나만 쓴다 (서로의 토큰을 검증할 수 있어야 한다)")
+    void secondInstanceAdoptsKeyStoredFirst() throws Exception {
+        Map<String, String> store = new HashMap<>();
+        JwtKeyProvider winner = provider(fakeRedis(store), "kid-1", SECRET);
+        winner.init();
+
+        // 두 번째 인스턴스는 처음 읽을 때는 비어 있었고(동시 기동), 저장하려는 순간 이미 첫 인스턴스가 저장해 둔 상태다
+        Map<String, String> racing = new HashMap<>();
+        StringRedisTemplate template = fakeRedis(racing);
+        @SuppressWarnings("unchecked")
+        ValueOperations<String, String> ops = template.opsForValue();
+        when(ops.multiSetIfAbsent(anyMap())).thenAnswer(inv -> {
+            racing.putAll(store);
+            return false;
+        });
+        JwtKeyProvider loser = provider(template, "kid-1", SECRET);
+        loser.init();
+
+        assertThat(loser.getPublicKey().getModulus()).isEqualTo(winner.getPublicKey().getModulus());
+    }
+
+    @Test
+    @DisplayName("처음 기동하면 개인키와 공개키가 함께 저장된다")
+    void firstStartStoresBothKeysTogether() {
+        Map<String, String> store = new HashMap<>();
+        provider(fakeRedis(store), "kid-1", SECRET).init();
+
+        assertThat(store).containsKeys(PRIV_KEY, PUB_KEY);
+        assertThat(store.get(PRIV_KEY)).startsWith(JwtKeyProvider.ENCRYPTED_PREFIX);
     }
 }

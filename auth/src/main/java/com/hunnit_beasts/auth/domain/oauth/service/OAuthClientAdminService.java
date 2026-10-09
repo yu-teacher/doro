@@ -6,6 +6,9 @@ import com.hunnit_beasts.auth.domain.oauth.dto.OAuthClientCreateRequest;
 import com.hunnit_beasts.auth.domain.oauth.dto.OAuthClientResponse;
 import com.hunnit_beasts.auth.domain.oauth.entity.OAuthClient;
 import com.hunnit_beasts.auth.domain.oauth.repository.OAuthClientRepository;
+import com.hunnit_beasts.auth.domain.session.entity.UserSession;
+import com.hunnit_beasts.auth.domain.session.repository.UserSessionRepository;
+import com.hunnit_beasts.auth.domain.session.service.SessionRevocationService;
 import com.hunnit_beasts.auth.infrastructure.guard.GuardClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,6 +33,8 @@ public class OAuthClientAdminService {
 
     private final OAuthClientRepository clientRepository;
     private final GuardClient guardClient;
+    private final UserSessionRepository sessionRepository;
+    private final SessionRevocationService sessionRevocationService;
     private final SecureRandom secureRandom = new SecureRandom();
 
     @Transactional
@@ -74,14 +79,23 @@ public class OAuthClientAdminService {
         return clientRepository.findAllByOrderByCreatedAtDesc().stream().map(OAuthClientResponse::from).toList();
     }
 
-    /** 소프트 삭제: is_active=false. 이후 해당 client_id 의 인가/토큰 요청은 모든 모드에서 거부된다. */
+    /** 클라이언트 비활성화로 세션을 끝낼 때의 종료 사유 */
+    static final String REASON_CLIENT_DEACTIVATED = "OAUTH_CLIENT_DEACTIVATED";
+
+    /**
+     * 소프트 삭제: is_active=false. 이후 해당 client_id 의 인가/토큰 요청은 모든 모드에서 거부된다.
+     * 이미 발급된 그 클라이언트의 세션도 함께 끝내(리프레시 토큰 폐기 + 킬스위치) 살아 있는 토큰이 남지 않게 한다.
+     */
     @Transactional
     public void deactivate(UUID adminId, String clientId) {
         requireAdmin(adminId);
         OAuthClient client = clientRepository.findByClientId(clientId)
                 .orElseThrow(() -> new AuthException(ErrorCode.OAUTH_CLIENT_NOT_FOUND));
         client.deactivate();
-        log.info("OAuth client deactivated: clientId={}, adminId={}", clientId, adminId);
+        List<UserSession> sessions = sessionRepository.findByUserAgentAndIsActiveTrue(
+                OAuth2Constants.SESSION_USER_AGENT_PREFIX + client.getClientId());
+        sessionRevocationService.revokeSessions(sessions, REASON_CLIENT_DEACTIVATED);
+        log.info("OAuth client deactivated: clientId={}, revokedSessions={}, adminId={}", clientId, sessions.size(), adminId);
     }
 
     private void requireAdmin(UUID adminId) {

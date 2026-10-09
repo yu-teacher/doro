@@ -142,7 +142,8 @@ public class UserService {
                 .orElseThrow(() -> new AuthException(ErrorCode.USER_NOT_FOUND));
 
         user.changeRole(newRole);
-        userRelationSyncService.syncUserTuples(user, newRole);
+        // Guard 동기화가 실패하면 예외가 트랜잭션을 되돌려 DB 역할도 바뀌지 않는다(강등했는데 관리자 튜플이 남는 상태 방지)
+        userRelationSyncService.syncUserTuplesOrThrow(user, newRole);
         // 기존 토큰의 역할 클레임이 새 역할과 어긋나므로 대상의 모든 세션을 종료해 다시 로그인하게 한다.
         sessionRevocationService.revokeOtherSessions(targetUserId, null, "ROLE_CHANGED");
         log.info("User role changed and Zanzibar ReBAC tuples synchronized: targetUserId={}, newRole={}, adminId={}",

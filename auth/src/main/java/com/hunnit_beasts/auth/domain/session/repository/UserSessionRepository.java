@@ -19,6 +19,9 @@ public interface UserSessionRepository extends JpaRepository<UserSession, UUID> 
     @Query("SELECT MAX(s.userIndex) FROM UserSession s WHERE s.userId = :userId AND s.isActive = true")
     Optional<Integer> findMaxActiveUserIndex(@Param("userId") UUID userId);
 
+    /** 같은 User-Agent 값을 가진 활성 세션 전체. OAuth 세션은 클라이언트별 마커를 User-Agent 에 넣어 만들므로 클라이언트 단위 조회에 쓴다. */
+    List<UserSession> findByUserAgentAndIsActiveTrue(String userAgent);
+
     List<UserSession> findByUserIdAndIpAddressAndUserAgentAndIsActiveTrue(UUID userId, String ipAddress, String userAgent);
 
     /** 영구 탈퇴 시 IP·User-Agent 등 세션 흔적을 지운다. 리프레시 토큰은 FK ON DELETE CASCADE 로 함께 삭제된다. */

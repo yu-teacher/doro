@@ -37,6 +37,9 @@ public enum ErrorCode {
     EMAIL_ALREADY_EXISTS(HttpStatus.CONFLICT, "AUTH_40901", "이미 사용 중인 이메일입니다."),
     OAUTH_CLIENT_ALREADY_EXISTS(HttpStatus.CONFLICT, "AUTH_40902", "이미 등록된 client_id 입니다."),
 
+    // 503 Service Unavailable
+    GUARD_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "AUTH_50301", "권한 서버(Guard)에 연결할 수 없어 처리하지 못했습니다. 잠시 후 다시 시도해 주세요."),
+
     // 500 Internal Server Error
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "AUTH_50001", "서버 내부 오류가 발생했습니다.");
 

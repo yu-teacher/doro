@@ -78,6 +78,14 @@ public class JwtKeyProvider {
     @Value("${doro.iam.jwt.redis-key-encryption-secret:}")
     private String redisKeyEncryptionSecret;
 
+    /**
+     * Redis 를 읽거나 새 키를 저장하지 못할 때 기동을 중단할지 여부(기본 true).
+     * 끄면 Redis 장애 때 메모리에만 있는 새 키로 뜨는데, 그 키는 재시작하면 사라지고 이미 발급된 모든 토큰이 무효가 된다.
+     * 테스트처럼 Redis 가 없는 환경에서만 끈다.
+     */
+    @Value("${doro.iam.jwt.fail-on-key-store-error:true}")
+    private boolean failOnKeyStoreError = true;
+
     /** 키 로테이션 중 이전 키의 kid. 이전 공개키(PEM)와 함께 지정하면 JWKS 에 함께 게시하고 검증에도 사용한다. */
     @Value("${doro.iam.jwt.previous-key-id:}")
     private String previousKeyId;
@@ -114,6 +122,12 @@ public class JwtKeyProvider {
                 cachedPriv = redisTemplate.opsForValue().get(REDIS_RSA_PRIV_KEY);
                 cachedPub = redisTemplate.opsForValue().get(REDIS_RSA_PUB_KEY);
             } catch (Exception e) {
+                // 읽지 못한 것과 '키가 없는 것'은 다르다. 읽기 실패를 없는 것으로 보고 새 키를 만들면,
+                // 이미 있는 키와 다른 키로 서명하게 되어 발급된 토큰이 모두 무효가 된다.
+                if (failOnKeyStoreError) {
+                    log.error("Could not read the JWT key pair from Redis. Refusing to generate a new key so existing tokens stay valid.", e);
+                    throw new IllegalStateException("Could not read the JWT key pair from Redis", e);
+                }
                 log.warn("Could not check Redis for JWT keys: {}", e.getMessage());
             }
             if (cachedPriv != null && cachedPub != null) {
@@ -128,20 +142,54 @@ public class JwtKeyProvider {
             KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
             keyGen.initialize(RSA_KEY_BITS);
             this.keyPair = keyGen.generateKeyPair();
-
-            if (redisTemplate != null) {
-                try {
-                    storeKeyPairInRedis(this.keyPair);
-                    log.info("Persisted new RSA-2048 KeyPair to Redis store. KeyId={}", keyId);
-                } catch (Exception e) {
-                    log.warn("Failed to save JWT keys to Redis: {}", e.getMessage());
-                }
-            }
-
-            log.info("Generated RSA-2048 KeyPair for JWT. KeyId={}", keyId);
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("Failed to initialize RSA KeyPair for JWT", e);
         }
+
+        if (redisTemplate != null) {
+            Boolean stored = null;
+            try {
+                stored = storeKeyPairInRedisIfAbsent(this.keyPair);
+            } catch (Exception e) {
+                if (failOnKeyStoreError) {
+                    log.error("Failed to save the new JWT key pair to Redis. Refusing to run with a key that would be lost on restart.", e);
+                    throw new IllegalStateException("Could not save the JWT key pair to Redis", e);
+                }
+                log.warn("Failed to save JWT keys to Redis: {}", e.getMessage());
+            }
+            if (Boolean.FALSE.equals(stored)) {
+                // 다른 인스턴스가 먼저 키를 저장했다. 방금 만든 키는 버리고 저장된 키를 쓴다(인스턴스마다 키가 다르면 서로의 토큰을 검증하지 못한다).
+                adoptKeyPairStoredByAnotherInstance();
+                return;
+            }
+            if (Boolean.TRUE.equals(stored)) {
+                log.info("Persisted new RSA-2048 KeyPair to Redis store. KeyId={}", keyId);
+            }
+        }
+        log.info("Generated RSA-2048 KeyPair for JWT. KeyId={}", keyId);
+    }
+
+    private void adoptKeyPairStoredByAnotherInstance() {
+        String priv = redisTemplate.opsForValue().get(REDIS_RSA_PRIV_KEY);
+        String pub = redisTemplate.opsForValue().get(REDIS_RSA_PUB_KEY);
+        if (priv == null || pub == null || !restoreKeyPairFromRedis(priv, pub)) {
+            throw new IllegalStateException("Another instance stored a JWT key pair in Redis but it could not be restored");
+        }
+        log.info("Using the JWT key pair another instance stored in Redis first. KeyId={}", keyId);
+    }
+
+    /** 개인키·공개키를 한 번에(MSETNX) 저장한다. 이미 있으면 아무것도 쓰지 않고 false 를 돌려준다. */
+    private Boolean storeKeyPairInRedisIfAbsent(KeyPair pair) {
+        String privBase64 = Base64.getEncoder().encodeToString(pair.getPrivate().getEncoded());
+        String pubBase64 = Base64.getEncoder().encodeToString(pair.getPublic().getEncoded());
+        String privValue;
+        if (hasEncryptionSecret()) {
+            privValue = encrypt(privBase64);
+        } else {
+            privValue = privBase64;
+            logPlaintextStorageWarning();
+        }
+        return redisTemplate.opsForValue().multiSetIfAbsent(Map.of(REDIS_RSA_PRIV_KEY, privValue, REDIS_RSA_PUB_KEY, pubBase64));
     }
 
     /**

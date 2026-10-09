@@ -39,6 +39,8 @@ doro:
     jwt:
       access-token-validity-seconds: 86400
       refresh-token-validity-seconds: 2592000
+      # 테스트에는 Redis 가 없어도 기동해야 한다(운영은 기본값 true 로 키를 읽지 못하면 기동을 중단한다)
+      fail-on-key-store-error: false
     rate-limit:
       enabled: false
     session:

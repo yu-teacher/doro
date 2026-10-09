@@ -12,6 +12,7 @@ import com.hunnit_beasts.auth.domain.user.service.UserService;
 import com.hunnit_beasts.auth.infrastructure.guard.GuardClient;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -108,8 +109,11 @@ class EmailAndProfileFixesTest {
         loginToken(local + "@Doro.Local");
     }
 
+    // V9 의 CHECK(email = lower(email))가 있는 PostgreSQL 에서는 혼합 대소문자 행을 만들 수 없다(그 자체가 목적이다).
+    // 제약이 없는 H2 단위 테스트에서만 과거 데이터에 대한 방어 코드를 검증한다.
     @Test
     @DisplayName("A6: 과거 데이터(혼합 대소문자로 저장된 행)도 어떤 대소문자로든 로그인되고 재가입은 막힌다")
+    @DisabledIfEnvironmentVariable(named = "TEST_PG_URL", matches = ".+")
     void legacyMixedCaseRowStillLogsIn() throws Exception {
         String legacy = "Legacy.Mixed-" + UUID.randomUUID() + "@Doro.Local";
         String seed = "seed-" + UUID.randomUUID() + "@doro.local";
