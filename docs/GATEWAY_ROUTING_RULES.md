@@ -76,7 +76,7 @@ nginx 의 평가 순서(이 순서를 모르고 location 을 추가하면 반드
 | `= /` | `portal_upstream` | **메인 주소: Doro 허브**(서비스 카드 + 계정) |
 | `= /robots.txt` | `portal_upstream` | 크롤러 규칙(루트에서만 읽힘). `/blog/` 의 비공개 영역 Disallow 포함 |
 | `~ ^/(doro-logo\.png\|favicon\.png)$` | `blog_web_upstream` | 이미 공유된 글의 `og:image` 가 가리키는 루트 파일 |
-| `~ ^/(sw\.js\|registerSW\.js\|workbox-….js\|manifest\.webmanifest\|icon-192.png\|icon-512.png\|apple-touch-icon.png\|favicon.svg\|index.html)$` | `portal_upstream` | **허브 PWA 파일.** 서비스 워커 범위가 `/` 라서 루트에 둔다. `/index.html` 은 서비스 워커가 앱 셸로 미리 캐시하는 주소라 반드시 포함해야 한다(빠지면 `/blog` 이동에 걸려 블로그 화면이 허브 셸로 저장된다). 새 PWA 파일 이름이 생기면 이 정규식에 추가한다 |
+| `~ ^/(sw\.js\|registerSW\.js\|workbox-….js\|manifest\.webmanifest\|icon-192.png\|icon-512.png\|apple-touch-icon.png\|favicon.svg\|index.html)$` | `portal_upstream` | **허브 PWA 파일.** 서비스 워커 범위가 `/` 라서 루트에 둔다. `/index.html` 은 서비스 워커가 앱 셸로 미리 캐시하는 주소라 반드시 포함해야 한다(빠지면 `/blog` 이동에 걸려 블로그 화면이 허브 셸로 저장된다). 새 PWA 파일 이름이 생기면 이 정규식에 추가한다. 배포 전·후에 `scripts/check-sw-precache.sh` 가 `sw.js` 의 미리 캐시 목록 전체가 게이트웨이에서 이동 없이 나가는지 자동 점검한다(허브 `deploy.yml`, 블로그·메뉴 `deploy-on-server.sh`) |
 | `/` | 301 → `/blog$request_uri` | **옛 블로그 주소**(`/@사용자/글`, `/tags` …)를 `/blog/` 아래로 영구 이동한다(쿼리 유지). 301 은 브라우저가 기억하므로 되돌리기 어렵다 |
 
 ### 2.3 정규식 (프리픽스보다 우선)

@@ -44,6 +44,9 @@ jobs:
       - name: 🧪 Web tests and type check
         run: scripts/ci-test.sh web
 
+      - name: 🧪 Service worker precache check tests
+        run: scripts/test-check-sw-precache.sh
+
   deploy:
     name: Build & Deploy on Mini Server
     needs: test
@@ -86,6 +89,13 @@ jobs:
           docker compose exec -T postgres psql -U "${POSTGRES_USER:-doro_admin}" -d postgres -c "CREATE DATABASE ${AUTH_DB:-doro_auth};" 2>/dev/null || true
           docker compose exec -T postgres psql -U "${POSTGRES_USER:-doro_admin}" -d postgres -c "CREATE DATABASE ${GUARD_DB:-doro_guard};" 2>/dev/null || true
 
+      # 서비스 워커는 설치할 때 미리 캐시 목록(sw.js)의 주소를 모두 받아 저장한다. 게이트웨이가 그중 하나라도 다른 곳으로 이동시키면
+      # 엉뚱한 화면이 저장돼 설치된 기기에서 되돌리기 어렵다(허브 빈 화면 사고). 컨테이너를 바꾸기 전에 새 이미지의 목록으로 점검한다.
+      - name: 🔎 Service worker precache routing check (before deploy)
+        run: |
+          WEB_IMAGE="$(docker compose config --images | grep -E 'web$' | head -1)"
+          scripts/check-sw-precache.sh "image:$WEB_IMAGE" / pre
+
       - name: 🐳 Deploy with Docker Compose
         run: |
           docker compose up -d --build --remove-orphans
@@ -111,6 +121,11 @@ jobs:
           done
           echo "::error::reload 후 게이트웨이 경유 /login 이 200 이 아니다(마지막 응답: ${code:-없음})"
           exit 1
+
+      - name: 🔎 Service worker precache check (after deploy)
+        run: |
+          WEB_IMAGE="$(docker compose config --images | grep -E 'web$' | head -1)"
+          scripts/check-sw-precache.sh "image:$WEB_IMAGE" / post
 
       - name: 🔍 Verify Health Status
         run: |
