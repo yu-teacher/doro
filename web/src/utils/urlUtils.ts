@@ -11,10 +11,10 @@ export const getBlogUrl = (): string => {
     if (window.location.port === '3000') {
       return `${window.location.protocol}//${window.location.hostname}:3002/`;
     }
-    // 게이트웨이(포트 80): 루트 '/'가 DORO.log 블로그
-    return '/';
+    // 게이트웨이: DORO.log 블로그는 '/blog/' (루트 '/'는 허브)
+    return '/blog/';
   }
-  return '/';
+  return '/blog/';
 };
 
 export const getMenuUrl = (): string => {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getGuardDocsUrl, getIamDocsUrl, resolveOptionalHttpUrl } from './urlUtils';
+import { getBlogUrl, getGuardDocsUrl, getIamDocsUrl, resolveOptionalHttpUrl } from './urlUtils';
 
 describe('resolveOptionalHttpUrl', () => {
   it('비어 있거나 공백이면 null', () => {
@@ -37,5 +37,29 @@ describe('문서 URL 환경변수', () => {
     vi.stubEnv('VITE_IAM_DOCS_URL', 'https://iam.example.com/docs');
     expect(getGuardDocsUrl()).toBe('https://guard.example.com/docs');
     expect(getIamDocsUrl()).toBe('https://iam.example.com/docs');
+  });
+});
+
+describe('getBlogUrl', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it('게이트웨이 기준으로 블로그는 /blog/ 이다(루트는 허브)', () => {
+    vi.stubEnv('VITE_BLOG_URL', '');
+    vi.stubGlobal('window', { location: { port: '', protocol: 'https:', hostname: 'example.test' } });
+    expect(getBlogUrl()).toBe('/blog/');
+  });
+
+  it('3000 포트 직접 접속이면 블로그 개발 서버(3002)로 간다', () => {
+    vi.stubEnv('VITE_BLOG_URL', '');
+    vi.stubGlobal('window', { location: { port: '3000', protocol: 'http:', hostname: 'localhost' } });
+    expect(getBlogUrl()).toBe('http://localhost:3002/');
+  });
+
+  it('VITE_BLOG_URL 이 있으면 그 값을 쓴다', () => {
+    vi.stubEnv('VITE_BLOG_URL', 'https://blog.example.test/');
+    expect(getBlogUrl()).toBe('https://blog.example.test/');
   });
 });
