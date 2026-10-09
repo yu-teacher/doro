@@ -33,6 +33,28 @@ export const getMenuUrl = (): string => {
 };
 
 
+/** 도로 파티 URL(VITE_PARTY_URL 로 덮어쓴다). 게이트웨이 기준 '/party/', 3000 포트 직접 접속이면 3005 포트 */
+export const getPartyUrl = (): string => {
+  if (import.meta.env.VITE_PARTY_URL) {
+    return import.meta.env.VITE_PARTY_URL;
+  }
+  if (typeof window !== 'undefined' && window.location.port === '3000') {
+    return `${window.location.protocol}//${window.location.hostname}:3005/party/`;
+  }
+  return '/party/';
+};
+
+/** 도로 게임 천국 URL(VITE_GAMES_URL 로 덮어쓴다). 게이트웨이 기준 '/games/', 3000 포트 직접 접속이면 3006 포트 */
+export const getGamesUrl = (): string => {
+  if (import.meta.env.VITE_GAMES_URL) {
+    return import.meta.env.VITE_GAMES_URL;
+  }
+  if (typeof window !== 'undefined' && window.location.port === '3000') {
+    return `${window.location.protocol}//${window.location.hostname}:3006/games/`;
+  }
+  return '/games/';
+};
+
 const ALLOWED_DOCS_PROTOCOLS = new Set(['http:', 'https:']);
 
 /**

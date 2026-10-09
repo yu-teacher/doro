@@ -6,6 +6,7 @@ import { SignUpPage } from './pages/SignUpPage';
 import { MyAccountPage } from './pages/MyAccountPage';
 import { OAuthConsentPage } from './pages/OAuthConsentPage';
 import { LogViewerPage } from './pages/LogViewerPage';
+import { HubPage } from './pages/HubPage';
 import { useAuthStore } from './store/authStore';
 
 const RootRedirect: React.FC = () => {
@@ -35,7 +36,9 @@ export const App: React.FC = () => {
         <Header />
         <main className="flex-1">
           <Routes>
-            <Route path="/" element={<RootRedirect />} />
+            {/* 허브: 게이트웨이가 / 를 포털로 보내면 메인 주소, 그 전에는 /portal 로 미리 확인한다 */}
+            <Route path="/" element={<HubPage />} />
+            <Route path="/portal" element={<HubPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/signup" element={<SignUpPage />} />
             <Route path="/account" element={<MyAccountPage />} />
