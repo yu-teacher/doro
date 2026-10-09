@@ -5,6 +5,7 @@
 
 stage 1 (추가만): /blog, /blog/api/ 경로를 새로 만든다. 기존 경로(/ 가 블로그, /api/v1/ 가 블로그 API)는 그대로 둔다. 사용자에게 보이는 변화가 없다.
 stage 2 (전환):  / 를 허브(포털)로, 나머지 알 수 없는 경로를 /blog 로 보내고(임시 이동 302), Referer 추측 두 곳의 기본값을 포털/IAM 으로 바꾼다.
+stage 3 (허브 PWA): 허브의 서비스 워커·매니페스트·아이콘 같은 루트 파일(/sw.js, /manifest.webmanifest ...)을 포털로 보낸다(안 그러면 stage 2 의 /blog 이동에 걸린다).
 
 멱등이다: 이미 적용된 stage 는 SAME 을 출력하고 그대로 둔다. 앵커(바꿀 자리)는 정확히 1개여야 하며 아니면 실패한다(서버 설정이 예상과 다르면 건드리지 않는다).
 성공하면 표준 출력에 CHANGE <stage> 또는 SAME <stage> 를 한 줄 출력한다.
@@ -62,6 +63,16 @@ FINAL_LOCATIONS = """        # 9. 메인 주소: Doro 허브(포털 SPA). 블로
             return 302 /blog$request_uri;
         }
 """
+
+# ---- stage 3: 허브 PWA 루트 파일. 서비스 워커 범위가 / 라서 루트에 있어야 한다. 포털 nginx 가 no-cache 로 내보낸다.
+HUB_PWA_LOCATION = """        # 9-1b. 허브 PWA 파일(서비스 워커·매니페스트·아이콘): 서비스 워커 범위가 / 여야 해서 루트에 둔다. 블로그 PWA 파일은 /blog/ 아래에 있다.
+        location ~ ^/(sw\\.js|registerSW\\.js|workbox-[A-Za-z0-9_-]+\\.js|manifest\\.webmanifest|icon-192\\.png|icon-512\\.png|apple-touch-icon\\.png|favicon\\.svg)$ {
+            proxy_pass http://portal_upstream;
+            proxy_set_header Host $host;
+        }
+
+"""
+STAGE3_ANCHOR = "        # 블로그 컨테이너에 있던 루트 파일(로고, 파비콘)"
 
 ASSETS_MAP_OLD = """    map $http_referer $assets_upstream {
         default http://blog_web_upstream;
@@ -121,12 +132,22 @@ def stage2(conf):
     return conf, "CHANGE"
 
 
+def stage3(conf):
+    if "# 9-1b. 허브 PWA 파일" in conf:
+        return conf, "SAME"
+    if "return 302 /blog$request_uri;" not in conf:
+        sys.exit("stage 3 는 stage 2(허브 전환)가 먼저 적용돼 있어야 한다")
+    if count(conf, STAGE3_ANCHOR) != 1:
+        sys.exit(f"stage 3 앵커('블로그 컨테이너에 있던 루트 파일')를 정확히 1개 찾지 못했다(찾은 수: {count(conf, STAGE3_ANCHOR)})")
+    return conf.replace(STAGE3_ANCHOR, HUB_PWA_LOCATION + STAGE3_ANCHOR, 1), "CHANGE"
+
+
 def main():
-    if len(sys.argv) != 4 or sys.argv[3] not in ("1", "2"):
-        sys.exit("사용법: gateway_blog_switch.py <입력> <출력> <1|2>")
+    if len(sys.argv) != 4 or sys.argv[3] not in ("1", "2", "3"):
+        sys.exit("사용법: gateway_blog_switch.py <입력> <출력> <1|2|3>")
     src, out, stage = sys.argv[1], sys.argv[2], sys.argv[3]
     conf = open(src, encoding="utf-8").read()
-    new, state = (stage1 if stage == "1" else stage2)(conf)
+    new, state = {"1": stage1, "2": stage2, "3": stage3}[stage](conf)
     open(out, "w", encoding="utf-8").write(new)
     print(f"{state} {stage}")
 

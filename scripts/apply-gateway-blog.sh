@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 서버(mini)에서 실행한다: 게이트웨이(nginx.conf)에서 블로그를 /blog/ 아래로 옮긴다. 변환은 gateway_blog_switch.py 가 한다(같은 코드를 로컬 시험에도 쓴다).
 #   단계 1: /blog, /blog/api/ 경로를 "추가"한다. 기존 경로는 그대로라 사용자에게 보이는 변화가 없다.
+#   단계 3: 허브 PWA 파일(/sw.js, /manifest.webmanifest, 아이콘)을 포털로 보내는 규칙을 추가한다(단계 2 이후, 허브를 PWA 로 배포하기 전에).
 #   단계 2: / 를 허브(포털)로, 나머지 알 수 없는 경로를 /blog 로 임시 이동(302)시키고, Referer 추측 두 곳의 기본값을 포털/IAM 으로 바꾼다.
 # 단계 2 는 블로그가 VITE_BASE_PATH=/blog 로 다시 배포된 뒤에만 적용한다(안 그러면 /blog/ 화면의 에셋이 깨진다).
 #
@@ -11,6 +12,7 @@
 #   ssh mini 'bash -s -- --stage 1 --dry-run' < scripts/apply-gateway-blog.sh   # 바뀔 내용과 검증만
 #   ssh mini 'bash -s -- --stage 1 --apply'   < scripts/apply-gateway-blog.sh   # 반영
 #   ssh mini 'bash -s -- --stage 2 --apply'   < scripts/apply-gateway-blog.sh
+#   ssh mini 'bash -s -- --stage 3 --apply'   < scripts/apply-gateway-blog.sh
 set -Eeuo pipefail
 
 CONF="${GATEWAY_CONF:-$HOME/doro/gateway/nginx.conf}"
@@ -25,7 +27,7 @@ while [ $# -gt 0 ]; do
     *) echo "알 수 없는 옵션: $1" >&2; exit 2 ;;
   esac
 done
-[ "$STAGE" = 1 ] || [ "$STAGE" = 2 ] || { echo "--stage 1 또는 --stage 2 가 필요하다" >&2; exit 2; }
+[ "$STAGE" = 1 ] || [ "$STAGE" = 2 ] || [ "$STAGE" = 3 ] || { echo "--stage 1, 2 또는 3 이 필요하다" >&2; exit 2; }
 log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 die() { log "ERROR: $*"; exit 1; }
 [ -f "$CONF" ] || die "$CONF 가 없다"
@@ -71,6 +73,8 @@ check() { # <설명> <기대 상태> <경로> [기대 Location(경로만)]
     log "  FAIL $label: $path -> $code${loc:+ $loc} (기대 $want${want_loc:+ $want_loc})"; FAILED+=("$label")
   fi
 }
+# 단계 3 의 /sw.js: 허브 PWA 가 배포된 뒤면 200, 아직이면 포털 nginx 의 SPA 폴백(index.html)이라 200 이다. 어느 쪽이든 /blog 이동(302)이 아니어야 한다.
+HUB_SW_WANT=200
 log "확인(단계 $STAGE):"
 # 공통: 다른 서비스와 인증 보호는 어느 단계에서도 그대로여야 한다.
 check "포털 로그인 화면" 200 /login
@@ -86,6 +90,12 @@ if [ "$STAGE" = 1 ]; then
   check "새 경로 /blog/ 가 열린다" 200 /blog/
   check "/blog 는 /blog/ 로" 302 /blog /blog/
   check "블로그 API(새 주소)" 200 "/blog/api/v1/posts?page=0&size=1"
+elif [ "$STAGE" = 3 ]; then
+  check "메인은 허브" 200 /
+  check "옛 블로그 주소는 /blog 로" 302 /@doro /blog/@doro
+  check "블로그(새 주소)" 200 /blog/
+  check "허브 서비스 워커 파일은 포털이 준다" "$HUB_SW_WANT" /sw.js
+  check "허브 매니페스트" "$HUB_SW_WANT" /manifest.webmanifest
 else
   check "메인은 허브" 200 /
   check "옛 블로그 주소는 /blog 로" 302 /@doro /blog/@doro
