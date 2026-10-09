@@ -11,7 +11,7 @@ export const getBlogUrl = (): string => {
     if (window.location.port === '3000') {
       return `${window.location.protocol}//${window.location.hostname}:3002/`;
     }
-    // 게이트웨이(포트 80, e.g. http://112.156.246.132/): 루트 '/'가 DORO.log 블로그
+    // 게이트웨이(포트 80): 루트 '/'가 DORO.log 블로그
     return '/';
   }
   return '/';

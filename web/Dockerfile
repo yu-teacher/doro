@@ -2,7 +2,7 @@
 FROM node:24-alpine AS build
 WORKDIR /app
 COPY package*.json ./
-RUN npm install
+RUN npm ci
 COPY . .
 # 선택: 관리자 앱 런처의 OpenAPI 문서 링크 (비어 있으면 항목 숨김)
 ARG VITE_GUARD_DOCS_URL=

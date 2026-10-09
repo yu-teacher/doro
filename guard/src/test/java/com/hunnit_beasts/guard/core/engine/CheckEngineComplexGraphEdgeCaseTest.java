@@ -40,7 +40,7 @@ class CheckEngineComplexGraphEdgeCaseTest {
     }
 
     @Test
-    @DisplayName("엣지케이스: 3자간 순환 참조 (A -> B -> C -> A) 시 무한루프 없이 0.05초 내 안전 탈출")
+    @DisplayName("엣지케이스: 3자간 순환 참조 (A -> B -> C -> A) 시 무한루프 없이 0.5초 내 안전 탈출")
     void testThreeWayCircularReferenceCycleBreak() {
         // teamA -> teamB -> teamC -> teamA 순환
         tupleService.writeTuples(List.of(

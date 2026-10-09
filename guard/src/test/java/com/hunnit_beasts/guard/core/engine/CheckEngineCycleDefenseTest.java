@@ -23,7 +23,7 @@ class CheckEngineCycleDefenseTest {
     private TupleService tupleService;
 
     @Test
-    @DisplayName("순환 참조 방어: Group A와 Group B가 상호 참조할 때 무한루프 없이 0.01초 내 안전 탈출(Cycle Break)")
+    @DisplayName("순환 참조 방어: Group A와 Group B가 상호 참조할 때 무한루프 없이 0.5초 내 안전 탈출(Cycle Break)")
     void testCircularGroupReferenceDoesNotLoopInfinitely() {
         // Group A -> Group B -> Group A 상호 순환 참조 구성
         tupleService.writeTuples(List.of(

@@ -10,6 +10,10 @@ on:
         type: boolean
         default: false
 
+# 워크플로 토큰은 저장소 읽기만 허용한다 (배포는 러너 위에서 로컬로 실행하므로 쓰기 권한이 필요 없다).
+permissions:
+  contents: read
+
 # 배포가 겹치면 같은 컨테이너/이미지를 동시에 건드리므로 순서대로 하나씩 실행한다.
 # 그룹 이름을 바꾼 이유: 이전 그룹(doro-deploy)의 실행 #45 가 취소도 완료도 되지 않은 채 대기 상태로 남아 뒤의 모든 실행을 막았다(2026-10-08).
 concurrency:
@@ -29,7 +33,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: 🧪 Backend tests (auth, guard, sdk)
         run: scripts/ci-test.sh backend
@@ -51,7 +55,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: 🛡️ Verify CSP inline-script hash
         run: scripts/check-csp-hash.sh web/index.html

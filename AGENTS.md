@@ -1,7 +1,7 @@
 # 🛡️ DORO Platform 엔지니어링 룰 (DORO: Distributed Orchestration for ReBAC & OAuth)
 
 > [!IMPORTANT]
-> Doro 프로젝트를 작업하는 모든 AI 어시스턴트 및 개발자는 워크스페이스 루트의 공통 룰([`../AGENTS.md`](file:///Users/yusm/Documents/workspace/AGENTS.md))을 기본 준수하며, Doro 플랫폼의 특화 아키텍처 및 보안 요구사항에 따라 본 룰을 엄격히 적용해야 합니다.
+> Doro 프로젝트를 작업하는 모든 AI 어시스턴트 및 개발자는 워크스페이스 루트의 공통 룰([`../AGENTS.md`](../AGENTS.md))을 기본 준수하며, Doro 플랫폼의 특화 아키텍처 및 보안 요구사항에 따라 본 룰을 엄격히 적용해야 합니다.
 
 ---
 

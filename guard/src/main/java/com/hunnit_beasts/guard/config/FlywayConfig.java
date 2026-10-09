@@ -78,7 +78,8 @@ public class FlywayConfig {
                 .baselineVersion("0")
                 .load();
 
-        flyway.repair();
+        // repair() 는 호출하지 않는다: 체크섬 불일치·실패한 마이그레이션을 조용히 덮지 않고 기동 실패로 드러낸다.
+        // 필요하면 운영자가 Flyway CLI 로 직접 repair 한다.
         flyway.migrate();
         return flyway;
     }
