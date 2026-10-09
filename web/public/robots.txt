@@ -1,0 +1,10 @@
+# Doro 허브(루트). 크롤러는 robots.txt 를 루트에서만 읽으므로 블로그의 비공개 영역(/blog/ 아래)도 여기에 적는다.
+User-agent: *
+Allow: /
+Disallow: /blog/write
+Disallow: /blog/edit/
+Disallow: /blog/me/
+Disallow: /account
+Disallow: /logs
+Disallow: /oauth2/
+Disallow: /api/
