@@ -275,6 +275,8 @@ curl -s -X POST $IAM/api/v1/auth/2fa/disable -H "Authorization: Bearer $TOKEN" \
 
 #### 갱신 `POST /api/v1/auth/token/refresh` (인증 헤더 불필요)
 
+> 브라우저(포털)는 리프레시 토큰을 본문 대신 HttpOnly 쿠키로 주고받습니다: 요청에 `X-Doro-Cookie-Session: 1`, `X-Doro-Account-Slot: <0~4>` 헤더를 붙이면 로그인·2FA 로그인 응답이 `Set-Cookie: doro_rt_<슬롯>=…; HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth` 를 주고 본문에서 `refreshToken` 이 빠지며, 갱신은 그 쿠키로 합니다(쿠키로 온 토큰은 이 헤더가 없으면 `400`). 헤더를 보내지 않으면 아래처럼 본문 방식 그대로입니다. 로컬 개발을 http 로 열면 `DORO_IAM_REFRESH_COOKIE_SECURE=false` 가 필요합니다(Safari).
+
 ```bash
 curl -s -X POST $IAM/api/v1/auth/token/refresh -H 'Content-Type: application/json' \
   -d '{"refreshToken":"q3xJ..."}'
@@ -497,7 +499,7 @@ docker compose restart auth-api
 
 **서버에는 "여러 계정" API가 없습니다.** (`/auth/accounts/add`, `/accounts/switch/{uidx}` 같은 엔드포인트는 존재하지 않습니다.) 다중 계정은 **포털(`web/`)의 클라이언트 기능**입니다.
 
-- 계정마다 따로 로그인해 얻은 토큰을 브라우저 `localStorage`(`doro_auth_accounts`, `doro_active_account_index`)에 모아 두고, 어느 것을 쓸지만 바꿉니다.
+- 계정마다 따로 로그인하고, 계정 목록(이메일·이름·역할·쿠키 슬롯 등 비밀이 아닌 정보)을 브라우저 `localStorage`(`doro_auth_accounts`, `doro_active_account_index`)에 모아 두고 어느 것을 쓸지만 바꿉니다. **토큰은 저장하지 않습니다**: 리프레시 토큰은 JavaScript 가 읽을 수 없는 HttpOnly 쿠키(`doro_rt_<슬롯>`, 최대 5계정)에, 액세스 토큰은 열린 탭의 메모리에만 있습니다.
 - 서버 입장에서는 계정마다 독립된 일반 세션입니다. 토큰의 `uidx`는 "그 사용자의 활성 세션 순번"일 뿐 계정 전환 번호가 아닙니다.
 - 포털의 "모든 계정에서 로그아웃"은 저장된 **각 계정의 토큰으로** 서버 세션을 하나씩 종료합니다.
 

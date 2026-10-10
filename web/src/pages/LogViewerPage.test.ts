@@ -35,7 +35,7 @@ beforeEach(() => {
   vi.restoreAllMocks();
   vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
   useAuthStore.setState({
-    accounts: [{ userId: 'u1', email: 'admin@example.com', fullName: '관리자', role: 'ADMIN', accessToken: 'a', refreshToken: 'r', userIndex: 0 }],
+    accounts: [{ userId: 'u1', email: 'admin@example.com', fullName: '관리자', role: 'ADMIN', accessToken: 'a', slot: 0, userIndex: 0 }],
     activeAccountIndex: 0,
   });
 });
@@ -51,7 +51,7 @@ describe('LogViewerPage', () => {
   it('관리자가 아니면 로그를 조회하지 않고 안내만 보인다', async () => {
     const getLogs = vi.spyOn(logApi, 'getLogs').mockResolvedValue([]);
     useAuthStore.setState({
-      accounts: [{ userId: 'u2', email: 'user@example.com', fullName: '일반', role: 'USER', accessToken: 'a', refreshToken: 'r', userIndex: 0 }],
+      accounts: [{ userId: 'u2', email: 'user@example.com', fullName: '일반', role: 'USER', accessToken: 'a', slot: 0, userIndex: 0 }],
     });
     await render();
 

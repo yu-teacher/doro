@@ -1,4 +1,5 @@
 import { apiClient } from './client';
+import { cookieSessionHeaders } from './cookieSession';
 import { AccountDeletionResult, LoginData, TokenResponse, TotpSetupData, SessionResponseDto, UserProfileData } from '../types/auth';
 
 export const authApi = {
@@ -22,14 +23,15 @@ export const authApi = {
   },
 
   // 2. 로그인 (1차 또는 일반 로그인)
-  login: async (data: { email: string; password: string }) => {
-    const response = await apiClient.post<{ success: boolean; data: LoginData }>('/api/v1/auth/login', data);
+  // slot: 이 계정의 리프레시 토큰 쿠키 슬롯(store.slotFor). 리프레시 토큰은 응답 본문 대신 HttpOnly 쿠키로 온다.
+  login: async (data: { email: string; password: string }, slot: number) => {
+    const response = await apiClient.post<{ success: boolean; data: LoginData }>('/api/v1/auth/login', data, { headers: cookieSessionHeaders(slot) });
     return response.data.data;
   },
 
   // 3. 2FA 로그인 완료 (2차 OTP 입력)
-  loginWith2fa: async (data: { tempTicket: string; code: string }) => {
-    const response = await apiClient.post<{ success: boolean; data: TokenResponse }>('/api/v1/auth/2fa/login', data);
+  loginWith2fa: async (data: { tempTicket: string; code: string }, slot: number) => {
+    const response = await apiClient.post<{ success: boolean; data: TokenResponse }>('/api/v1/auth/2fa/login', data, { headers: cookieSessionHeaders(slot) });
     return response.data.data;
   },
 
@@ -103,8 +105,8 @@ export const authApi = {
   },
 
   // 12. 로그아웃
-  logout: async (sessionId: string) => {
-    const response = await apiClient.post<{ success: boolean }>(`/api/v1/auth/logout?sessionId=${sessionId}`);
+  logout: async (sessionId: string, slot: number) => {
+    const response = await apiClient.post<{ success: boolean }>(`/api/v1/auth/logout?sessionId=${sessionId}`, null, { headers: cookieSessionHeaders(slot) });
     return response.data;
   },
 

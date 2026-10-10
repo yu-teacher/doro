@@ -1,10 +1,9 @@
 import axios, { AxiosError } from 'axios';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useAuthStore } from '../store/authStore';
+import { clearAccounts, seedAccounts } from '../test-support/seedAccounts';
 import { AuthAccount } from '../types/auth';
 import { describeLogoutFailures, revokeAllServerSessions } from './logoutAll';
 
-const STORAGE_KEY = 'doro_auth_accounts';
 const HOUR_SECONDS = 3600;
 
 function b64url(value: object): string {
@@ -23,19 +22,15 @@ function expiredToken(): string {
   return jwt({ exp: Math.floor(Date.now() / 1000) - HOUR_SECONDS });
 }
 
-function account(email: string, accessToken: string, sessionId?: string): AuthAccount {
-  return { userId: `id-${email}`, email, fullName: email, accessToken, refreshToken: `refresh-${email}`, sessionId, userIndex: 0 };
+function account(email: string, accessToken: string, sessionId?: string, slot = 0): AuthAccount {
+  return { userId: `id-${email}`, email, fullName: email, accessToken, slot, sessionId, userIndex: 0 };
 }
 
-function seed(accounts: AuthAccount[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(accounts));
-  localStorage.setItem('doro_active_account_index', '0');
-  useAuthStore.getState().syncFromStorage();
-}
+const seed = seedAccounts;
 
 describe('revokeAllServerSessions', () => {
   beforeEach(() => {
-    localStorage.clear();
+    clearAccounts();
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
   });
 
@@ -44,8 +39,8 @@ describe('revokeAllServerSessions', () => {
   });
 
   it('모든 계정에 대해 각자의 토큰과 sessionId 로 로그아웃을 호출한다', async () => {
-    const a = account('a@doro.test', validToken(), 'sess-a');
-    const b = account('b@doro.test', validToken('sid-from-claim'));
+    const a = account('a@doro.test', validToken(), 'sess-a', 0);
+    const b = account('b@doro.test', validToken('sid-from-claim'), undefined, 1);
     seed([a, b]);
     const post = vi.spyOn(axios, 'post').mockResolvedValue({ data: { success: true } });
 
@@ -60,6 +55,25 @@ describe('revokeAllServerSessions', () => {
     }));
     expect(calls).toContainEqual({ url: '/api/v1/auth/logout', sessionId: 'sess-a', auth: `Bearer ${a.accessToken}` });
     expect(calls).toContainEqual({ url: '/api/v1/auth/logout', sessionId: 'sid-from-claim', auth: `Bearer ${b.accessToken}` });
+    // 서버가 각 계정의 리프레시 토큰 쿠키(슬롯별)를 지우도록 쿠키 방식 헤더와 슬롯을 함께 보낸다
+    const slots = post.mock.calls.map(([, , config]) => (config?.headers as Record<string, string>)['X-Doro-Account-Slot']).sort();
+    expect(slots).toEqual(['0', '1']);
+    expect(post.mock.calls.every(([, , config]) => (config?.headers as Record<string, string>)['X-Doro-Cookie-Session'] === '1')).toBe(true);
+  });
+
+  it('새로고침 뒤라 액세스 토큰이 메모리에 없는 계정은 쿠키로 토큰을 받은 뒤 로그아웃한다', async () => {
+    const a = account('a@doro.test', '', 'sess-a');
+    seed([a]);
+    const fresh = validToken();
+    const post = vi.spyOn(axios, 'post').mockImplementation(async (url: string) => {
+      if (url === '/api/v1/auth/token/refresh') return { data: { data: { accessToken: fresh } } };
+      return { data: { success: true } };
+    });
+
+    expect(await revokeAllServerSessions([a])).toEqual([]);
+
+    const logoutCall = post.mock.calls.find(([url]) => url === '/api/v1/auth/logout');
+    expect((logoutCall?.[2]?.headers as { Authorization: string }).Authorization).toBe(`Bearer ${fresh}`);
   });
 
   it('액세스 토큰이 만료된 계정은 한 번 갱신한 새 토큰으로 호출한다', async () => {
@@ -68,7 +82,7 @@ describe('revokeAllServerSessions', () => {
     const fresh = validToken();
     const post = vi.spyOn(axios, 'post').mockImplementation(async (url: string) => {
       if (url === '/api/v1/auth/token/refresh') {
-        return { data: { data: { accessToken: fresh, refreshToken: 'r2' } } };
+        return { data: { data: { accessToken: fresh } } };
       }
       return { data: { success: true } };
     });
@@ -82,7 +96,7 @@ describe('revokeAllServerSessions', () => {
 
   it('갱신이 거부되면 해당 계정만 실패로 보고하고 다른 계정은 계속 처리한다', async () => {
     const a = account('a@doro.test', expiredToken(), 'sess-a');
-    const b = account('b@doro.test', validToken(), 'sess-b');
+    const b = account('b@doro.test', validToken(), 'sess-b', 1);
     seed([a, b]);
     const rejected = new AxiosError('x', 'ERR_BAD_REQUEST', undefined, undefined, {
       status: 401, statusText: '', data: {}, headers: {}, config: { headers: {} } as never,
@@ -101,7 +115,7 @@ describe('revokeAllServerSessions', () => {
 
   it('요청 실패는 예외 없이 실패 목록으로 반환되고 console.error 로 기록된다(토큰은 로그에 없음)', async () => {
     const a = account('a@doro.test', validToken(), 'sess-a');
-    const b = account('b@doro.test', validToken(), 'sess-b');
+    const b = account('b@doro.test', validToken(), 'sess-b', 1);
     seed([a, b]);
     vi.spyOn(axios, 'post').mockImplementation(async (_url: string, _data, config) => {
       if ((config?.params as { sessionId: string }).sessionId === 'sess-a') throw new Error('Network Error');

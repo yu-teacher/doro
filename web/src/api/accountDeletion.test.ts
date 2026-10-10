@@ -2,19 +2,14 @@ import { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { useAuthStore } from '../store/authStore';
 import { authApi } from './authApi';
+import { clearAccounts, seedAccounts } from '../test-support/seedAccounts';
 import { apiClient } from './client';
 
-const STORAGE_KEY = 'doro_auth_accounts';
 const DELETION_PATH = '/api/v1/users/me/deletion';
 const PROFILE_PATH = '/api/v1/users/me';
 
 function seedOneAccount(): void {
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify([{ userId: 'u1', email: 'a@doro.test', fullName: 'A', accessToken: 'valid', refreshToken: 'r1', userIndex: 0 }]),
-  );
-  localStorage.setItem('doro_active_account_index', '0');
-  useAuthStore.getState().syncFromStorage();
+  seedAccounts([{ userId: 'u1', email: 'a@doro.test', fullName: 'A', accessToken: 'valid', slot: 0, userIndex: 0 }]);
 }
 
 function rejection(config: InternalAxiosRequestConfig, status: number, code: string): AxiosError {
@@ -27,13 +22,11 @@ describe('회원탈퇴 요청 API', () => {
   const calls: string[] = [];
 
   afterEach(() => {
-    localStorage.clear();
-    useAuthStore.getState().syncFromStorage();
+    clearAccounts();
   });
 
   beforeEach(() => {
     calls.length = 0;
-    localStorage.clear();
     seedOneAccount();
   });
 

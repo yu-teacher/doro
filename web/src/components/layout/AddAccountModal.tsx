@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { authApi } from '../../api/authApi';
+import { MAX_ACCOUNTS } from '../../api/cookieSession';
 import { useAuthStore } from '../../store/authStore';
 import {
   Shield,
@@ -86,7 +87,12 @@ export const AddAccountModal: React.FC<AddAccountModalProps> = ({ isOpen, onClos
     setError(null);
 
     try {
-      const res = await authApi.login({ email: email.trim(), password });
+      const slot = useAuthStore.getState().slotFor(email.trim());
+      if (slot === null) {
+        setError('이 브라우저에 로그인할 수 있는 계정은 최대 ' + MAX_ACCOUNTS + '개입니다. 다른 계정을 로그아웃한 뒤 다시 시도해 주세요.');
+        return;
+      }
+      const res = await authApi.login({ email: email.trim(), password }, slot);
 
       if (res.tokens && res.tokens.accessToken) {
         const decoded = parseJwtPayload(res.tokens.accessToken);
@@ -97,7 +103,7 @@ export const AddAccountModal: React.FC<AddAccountModalProps> = ({ isOpen, onClos
           profileImageUrl: accountInfo?.profileImageUrl || null,
           role: decoded?.role || 'USER',
           accessToken: res.tokens.accessToken,
-          refreshToken: res.tokens.refreshToken,
+          slot,
           sessionId: res.tokens.sessionId,
           userIndex: res.tokens.userIndex ?? 1,
         });
@@ -122,7 +128,12 @@ export const AddAccountModal: React.FC<AddAccountModalProps> = ({ isOpen, onClos
     setError(null);
 
     try {
-      const res = await authApi.loginWith2fa({ tempTicket, code: totpCode });
+      const slot = useAuthStore.getState().slotFor(email.trim());
+      if (slot === null) {
+        setError('이 브라우저에 로그인할 수 있는 계정은 최대 ' + MAX_ACCOUNTS + '개입니다. 다른 계정을 로그아웃한 뒤 다시 시도해 주세요.');
+        return;
+      }
+      const res = await authApi.loginWith2fa({ tempTicket, code: totpCode }, slot);
 
       if (res && res.accessToken) {
         const decoded = parseJwtPayload(res.accessToken);
@@ -133,7 +144,7 @@ export const AddAccountModal: React.FC<AddAccountModalProps> = ({ isOpen, onClos
           profileImageUrl: accountInfo?.profileImageUrl || null,
           role: decoded?.role || 'USER',
           accessToken: res.accessToken,
-          refreshToken: res.refreshToken,
+          slot,
           sessionId: res.sessionId,
           userIndex: res.userIndex ?? 1,
         });

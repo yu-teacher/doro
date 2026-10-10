@@ -43,7 +43,7 @@ IAM ──(REST, 관리자 판정·역할 튜플 동기화)──▶ Guard
 
 ### 1.1 "통합 로그인"은 두 가지 방식이 공존한다
 
-1. **인앱 로그인 (기본, 현재 포털·블로그가 사용)**: 프론트엔드가 같은 origin(게이트웨이)의 IAM API 를 직접 호출해 로그인하고 액세스/리프레시 토큰을 **브라우저 localStorage** 에 저장한다(포털은 `doro_auth_accounts` 키로 여러 계정). 서브서비스 백엔드는 `Authorization: Bearer <JWT>` 를 받아 JWKS 로 검증한다. [코드: `web/src/store/authStore.ts`, `web/src/api/*`]
+1. **인앱 로그인 (기본, 현재 포털·블로그가 사용)**: 프론트엔드가 같은 origin(게이트웨이)의 IAM API 를 직접 호출해 로그인한다. **포털은 리프레시 토큰을 HttpOnly 쿠키(`doro_rt_<슬롯>`)로만 받고 액세스 토큰은 탭 메모리에만 둔다**(localStorage 에는 토큰이 없고 `doro_auth_accounts` 에는 계정 목록·슬롯만 남는다). 다른 프론트엔드가 헤더 없이 호출하면 이전처럼 토큰이 응답 본문에 온다. 서브서비스 백엔드는 `Authorization: Bearer <JWT>` 를 받아 JWKS 로 검증한다. [코드: `web/src/store/authStore.ts`, `web/src/api/*`]
 2. **OAuth 2.1 인가 코드 + PKCE / OIDC (외부·별도 origin 앱용)**: 리다이렉트 방식 SSO. 클라이언트 등록(`oauth_clients`), 포털 동의 화면, 토큰/리프레시/`id_token`/`userinfo` 가 구현돼 있다(§5). **공개 클라이언트(PKCE)만** 지원한다.
 
 ---
@@ -81,7 +81,7 @@ IAM ──(REST, 관리자 판정·역할 튜플 동기화)──▶ Guard
 | `POST /api/v1/auth/2fa/setup` | (Bearer) `{currentPassword}` | `{secret, qrUri}` | 현재 비밀번호로 재확인(틀리면 401, 로그인과 같은 잠금 횟수에 합산). 시크릿을 **대기(pending)** 로만 저장. 이미 활성이면 400 |
 | `POST /api/v1/auth/2fa/verify` | (Bearer) `{code}` | 없음 | 대기 중이면 **코드 확인 후 활성화**, 이미 활성이면 코드 검증만. 실패는 잠금 카운트에 합산 |
 | `POST /api/v1/auth/2fa/disable` | (Bearer) `{code}` | 없음 | **현재 OTP 코드로 재인증**해야 해제. 실패는 잠금 카운트에 합산 |
-| `POST /api/v1/auth/token/refresh` | `{refreshToken}` | `TokenResponse` | RTR. 이전 토큰 즉시 폐기 |
+| `POST /api/v1/auth/token/refresh` | `{refreshToken}` 또는 쿠키 | `TokenResponse` | RTR. 이전 토큰 즉시 폐기. 쿠키 방식(아래): 헤더 `X-Doro-Cookie-Session: 1` + `X-Doro-Account-Slot: 0~4` 를 보내면 쿠키 `doro_rt_<슬롯>`(HttpOnly·Secure·SameSite=Strict·Path=/api/v1/auth)의 토큰으로 갱신하고 새 쿠키를 내려주며 본문에는 리프레시 토큰이 없다. **쿠키로 온 토큰은 이 헤더가 없으면 400**(CSRF 방어). 본문 토큰이 있으면 그것을 우선해 한 번에 쿠키로 옮길 수 있다. 서버가 4xx 로 거부하면 그 슬롯의 쿠키를 지운다. 로그인·2FA 로그인·로그아웃도 같은 헤더로 쿠키를 설정·삭제 |
 | `POST /api/v1/auth/logout[?sessionId=<uuid>]` | (Bearer) | 없음 | **Bearer 필수**. `sessionId` 생략 시 토큰의 `sid`(현재 세션). **본인 세션만** 종료(남의 세션/없는 세션은 404 `SESSION_NOT_FOUND`) |
 | `POST /api/v1/auth/lookup` | `{email}` | `{email,name,profileImageUrl}` | 없으면 404 `USER_NOT_FOUND` → 계정 존재 여부 노출(요청 제한으로만 완화). 정지·탈퇴 유예 여부는 드러내지 않는다 |
 | `GET /api/v1/users/me` | (Bearer) | `{id,email,name,profileImageUrl,status,role,hasTotp,createdAt}` | |
@@ -415,7 +415,7 @@ type blog_post {
 - 튜플 키는 **문자열 ID** (UUID `.toString()`). 사용자 subject 는 `subjectNamespace="user"`, `subjectId=<UUID>`.
 
 ### D. 포털과 서브서비스의 토큰 공유 주의
-서브서비스가 포털의 저장된 계정 토큰(`doro_auth_accounts`)으로 로그인하면 같은 리프레시 토큰 계열을 쓴다. 한쪽이 회전하면 다른 쪽 토큰은 폐기되어 **재사용 공격으로 판정**되므로, 갱신 전에 공유 저장소의 더 최근 토큰을 쓰고 갱신 후 되돌려 써야 한다. 프런트 갱신 규칙: 리프레시 실패를 `refreshed / rejected / unavailable` 로 구분해 **서버가 거부(400/401/403/404)한 경우에만 로그아웃**하고, 네트워크 오류·5xx 는 로그인 상태를 유지한다. 여러 탭은 Web Locks 로 직렬화한다. 참고: `Doro/web/src/api/tokenRefresh.ts`, `doro-blog/web/src/api/tokenRefresh.ts`. 포털 "모든 계정 로그아웃"(`web/src/api/logoutAll.ts`)은 계정별로 **자신의 액세스 토큰(필요하면 갱신 후)으로** `POST /api/v1/auth/logout?sessionId=` 를 호출하고, 실패한 계정은 목록으로 사용자에게 알린다(로컬 정리는 계속).
+포털은 계정마다 리프레시 토큰을 슬롯별 HttpOnly 쿠키(`doro_rt_0`~`doro_rt_4`, 최대 5계정)에 두고 액세스 토큰은 탭 메모리에만 둔다. 새로고침하면 메모리 토큰이 비므로 첫 요청이 쿠키로 갱신(`refreshAccessToken`)한 뒤 보낸다. 이전 방식(localStorage 에 저장된 리프레시 토큰)으로 로그인돼 있던 계정은 첫 갱신 때 그 토큰을 한 번 본문으로 보내 쿠키로 옮기고 저장소에서 지운다. 같은 쿠키를 여러 탭이 동시에 회전시키지 않도록 갱신은 Web Locks 로 직렬화하고, 실패는 `refreshed / rejected / unavailable` 로 구분해 **서버가 거부(400/401/403/404)한 경우에만 로그아웃**하며 네트워크 오류·5xx 는 로그인 상태를 유지한다. 참고: `Doro/web/src/api/tokenRefresh.ts`, 서버 `RefreshTokenCookies`. 같은 도메인의 다른 서비스에서 XSS 가 나도 리프레시 토큰은 읽을 수 없지만, 같은 origin 의 스크립트가 쿠키가 실린 갱신 요청을 보내 액세스 토큰을 새로 받는 것까지는 막지 못한다(브라우저 모델의 한계). 포털 "모든 계정 로그아웃"(`web/src/api/logoutAll.ts`)은 계정별로 **자신의 액세스 토큰(필요하면 쿠키로 갱신 후)으로** `POST /api/v1/auth/logout?sessionId=` 를 쿠키 방식 헤더와 함께 호출해 서버가 쿠키도 지우게 하고, 실패한 계정은 목록으로 사용자에게 알린다(로컬 정리는 계속).
 
 ---
 

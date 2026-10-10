@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { AuthAccount } from '../types/auth';
 import { parseJwtPayload } from '../utils/jwtUtils';
+import { cookieSessionHeaders } from './cookieSession';
 import { refreshAccessToken } from './tokenRefresh';
 
 const LOGOUT_URL = '/api/v1/auth/logout';
@@ -20,15 +21,15 @@ function isExpired(accessToken: string): boolean {
 }
 
 async function revokeOne(account: AuthAccount): Promise<LogoutFailure | null> {
-  const sessionId = account.sessionId || parseJwtPayload(account.accessToken)?.sid;
+  const sessionId = account.sessionId || (account.accessToken ? parseJwtPayload(account.accessToken)?.sid : undefined);
   if (!sessionId) {
     return { email: account.email, reason: 'no-session' };
   }
 
   let accessToken = account.accessToken;
-  if (isExpired(accessToken)) {
-    // 만료된 토큰이면 해당 계정의 리프레시 토큰으로 한 번만 갱신을 시도한다.
-    const refreshed = await refreshAccessToken(account.email, accessToken);
+  if (!accessToken || isExpired(accessToken)) {
+    // 새로고침 뒤라 토큰이 없거나 만료됐으면 해당 계정의 쿠키로 한 번만 갱신을 시도한다.
+    const refreshed = await refreshAccessToken(account.email, accessToken || null);
     if (refreshed.kind !== 'refreshed') {
       return { email: account.email, reason: 'token-expired' };
     }
@@ -39,7 +40,8 @@ async function revokeOne(account: AuthAccount): Promise<LogoutFailure | null> {
     // apiClient 는 활성 계정 토큰을 덮어쓰므로, 계정별 토큰을 쓰기 위해 axios 를 직접 사용한다.
     await axios.post(LOGOUT_URL, null, {
       params: { sessionId },
-      headers: { Authorization: `Bearer ${accessToken}` },
+      // 쿠키 방식 헤더를 보내면 서버가 이 계정의 리프레시 토큰 쿠키도 지운다.
+      headers: { Authorization: `Bearer ${accessToken}`, ...cookieSessionHeaders(account.slot) },
       timeout: LOGOUT_TIMEOUT_MS,
     });
     return null;

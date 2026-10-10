@@ -8,6 +8,8 @@ import { HUB_NAVIGATE_ALLOWLIST } from './src/pwa/navigateAllowlist';
 /** 허브는 게이트웨이의 루트(/)에 마운트된다. */
 const BASE = '/';
 const THEME_COLOR = '#4f46e5';
+/** 개발 서버가 /api·/oauth2 를 넘겨 줄 IAM 주소. 로컬에 다른 포트로 띄운 IAM 을 쓸 때 VITE_DEV_API_TARGET 으로 바꾼다. */
+const IAM_DEV_TARGET = process.env.VITE_DEV_API_TARGET ?? 'http://localhost:8080';
 
 export default defineConfig({
   plugins: [
@@ -53,15 +55,15 @@ export default defineConfig({
     port: 3000,
     proxy: {
       '/api': {
-        target: 'http://localhost:8080',
+        target: IAM_DEV_TARGET,
         changeOrigin: true,
       },
       '/oauth2': {
-        target: 'http://localhost:8080',
+        target: IAM_DEV_TARGET,
         changeOrigin: true,
       },
       '/.well-known': {
-        target: 'http://localhost:8080',
+        target: IAM_DEV_TARGET,
         changeOrigin: true,
       },
     },

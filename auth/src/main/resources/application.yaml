@@ -66,6 +66,9 @@ doro:
     internal-auth:
       mode: ${DORO_IAM_INTERNAL_AUTH_MODE:ENFORCE}
       tokens: ${DORO_IAM_INTERNAL_TOKENS:}
+    refresh-cookie:
+      # 포털이 쓰는 HttpOnly 리프레시 토큰 쿠키의 Secure 속성. 운영은 HTTPS 라 true. 로컬 개발을 http 로 열 때만 false(Safari 는 localhost 의 Secure 쿠키를 받지 않는다).
+      secure: ${DORO_IAM_REFRESH_COOKIE_SECURE:true}
     account-deletion:
       grace-days: ${DORO_IAM_ACCOUNT_DELETION_GRACE_DAYS:30} # 탈퇴 요청 후 이 기간 안에 로그인하면 복구, 지나면 개인정보 익명화
       purge-interval-ms: ${DORO_IAM_ACCOUNT_DELETION_PURGE_INTERVAL_MS:3600000}

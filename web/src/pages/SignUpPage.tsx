@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { authApi } from '../api/authApi';
+import { MAX_ACCOUNTS } from '../api/cookieSession';
 import { useAuthStore } from '../store/authStore';
 import { Shield, Lock, Mail, User, AlertCircle, Loader2 } from 'lucide-react';
 import { getErrorMessage } from '../utils/errorUtils';
@@ -42,14 +43,19 @@ export const SignUpPage: React.FC = () => {
       await authApi.signUp({ email, password, fullName });
 
       // 2. 가입 즉시 자동 로그인
-      const loginRes = await authApi.login({ email, password });
+      const slot = useAuthStore.getState().slotFor(email);
+      if (slot === null) {
+        setError('이 브라우저에 로그인할 수 있는 계정은 최대 ' + MAX_ACCOUNTS + '개입니다. 다른 계정을 로그아웃한 뒤 다시 시도해 주세요.');
+        return;
+      }
+      const loginRes = await authApi.login({ email, password }, slot);
       if (loginRes.tokens && loginRes.tokens.accessToken) {
         addAccount({
           userId: '',
           email: email,
           fullName: fullName,
           accessToken: loginRes.tokens.accessToken,
-          refreshToken: loginRes.tokens.refreshToken,
+          slot,
           sessionId: loginRes.tokens.sessionId,
           userIndex: loginRes.tokens.userIndex ?? 0,
         });

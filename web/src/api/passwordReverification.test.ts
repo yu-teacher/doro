@@ -2,20 +2,15 @@ import { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { useAuthStore } from '../store/authStore';
 import { authApi } from './authApi';
+import { clearAccounts, seedAccounts } from '../test-support/seedAccounts';
 import { apiClient } from './client';
 
-const STORAGE_KEY = 'doro_auth_accounts';
 const PROFILE_PATH = '/api/v1/users/me';
 const PASSWORD_PATH = '/api/v1/users/me/password';
 const SETUP_2FA_PATH = '/api/v1/auth/2fa/setup';
 
 function seedOneAccount(): void {
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify([{ userId: 'u1', email: 'a@doro.test', fullName: 'A', accessToken: 'valid', refreshToken: 'r1', userIndex: 0 }]),
-  );
-  localStorage.setItem('doro_active_account_index', '0');
-  useAuthStore.getState().syncFromStorage();
+  seedAccounts([{ userId: 'u1', email: 'a@doro.test', fullName: 'A', accessToken: 'valid', slot: 0, userIndex: 0 }]);
 }
 
 function rejection(config: InternalAxiosRequestConfig, status: number, code: string): AxiosError {
@@ -33,13 +28,11 @@ describe.each([
 
   beforeEach(() => {
     calls.length = 0;
-    localStorage.clear();
     seedOneAccount();
   });
 
   afterEach(() => {
-    localStorage.clear();
-    useAuthStore.getState().syncFromStorage();
+    clearAccounts();
   });
 
   it('먼저 토큰을 최신으로 만든 뒤 요청을 한 번만 보낸다', async () => {

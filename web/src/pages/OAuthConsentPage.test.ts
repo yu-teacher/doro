@@ -46,7 +46,7 @@ beforeEach(() => {
   // 자사 앱이 아니라서(client-info 가 빈 응답) 동의 화면이 그려진다
   vi.spyOn(apiClient, 'get').mockResolvedValue({ data: {} } as never);
   useAuthStore.setState({
-    accounts: [{ userId: 'u1', email: LONG_EMAIL, fullName: '이름이아주긴사용자의이름입니다홍길동김철수', role: 'USER', accessToken: 'a', refreshToken: 'r', userIndex: 0 }],
+    accounts: [{ userId: 'u1', email: LONG_EMAIL, fullName: '이름이아주긴사용자의이름입니다홍길동김철수', role: 'USER', accessToken: 'a', slot: 0, userIndex: 0 }],
     activeAccountIndex: 0,
   });
 });
