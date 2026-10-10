@@ -285,7 +285,7 @@ curl -s -X POST $IAM/api/v1/auth/token/refresh -H 'Content-Type: application/jso
 
 - **회전(RTR)**: 사용한 토큰은 즉시 폐기됩니다. 동시에 두 요청이 같은 토큰을 내면 하나만 성공하고 나머지는 `400 INVALID_TOKEN`.
 - **재사용 감지**: 이미 폐기된 토큰이 다시 오면 탈취로 보고 그 토큰 계열(family)의 모든 토큰을 폐기하고 **세션을 종료**한 뒤 `400 TOKEN_REUSE_DETECTED`를 돌려줍니다. 이후 그 계열의 어떤 토큰도 거부됩니다. (다중 탭 경합을 봐줄 유예 `doro.iam.jwt.refresh-reuse-grace-seconds`는 기본 0=끔.)
-- 세션 만료는 **슬라이딩**입니다. 갱신할 때마다 만료가 "지금 + 30일"로 늘어납니다(무활동 30일 후 만료).
+- 세션 만료는 **슬라이딩**입니다. 갱신할 때마다 만료가 "지금 + 30일"로 늘어납니다(무활동 30일 후 만료). 단 **로그인한 때부터 최대 90일**(`DORO_IAM_SESSION_ABSOLUTE_LIFETIME_SECONDS`, 0 이하면 끔)이 지나면 계속 써도 갱신이 `401 SESSION_EXPIRED` 로 거부되고 다시 로그인해야 합니다.
 - 그 밖의 오류: 모르는 토큰 `400 INVALID_TOKEN`, 토큰 수명 만료 `401 TOKEN_EXPIRED`, 세션이 이미 종료됨 `401 SESSION_EXPIRED`, 계정이 정지됨 `403 ACCOUNT_SUSPENDED`.
 - 새 액세스 토큰의 `role`은 갱신 시점의 DB 값입니다.
 
@@ -491,6 +491,7 @@ docker compose restart auth-api
 | 액세스 토큰 | 기본 15분. `DORO_IAM_ACCESS_TOKEN_TTL_SECONDS` (기본 900) |
 | 리프레시 토큰 | 30일 (`doro.iam.jwt.refresh-token-validity-seconds`) |
 | 세션 무활동 만료 | 30일, 갱신 때마다 연장 (`doro.iam.session.inactivity-timeout-seconds`) |
+| 세션 절대 수명 | 로그인 후 90일(`doro.iam.session.absolute-lifetime-seconds`), 활동이 있어도 연장되지 않음 |
 | 2FA 임시 티켓 | 5분 |
 
 ---
@@ -1632,6 +1633,7 @@ public class GuardTuples {
 | `DORO_IAM_ISSUER` | `https://auth.doro.local` | IAM | JWT `iss`, discovery URL의 기준 |
 | `DORO_IAM_ACCESS_TOKEN_TTL_SECONDS` | `900` | IAM | 액세스 토큰 수명 |
 | `DORO_IAM_SESSION_MAX_ACTIVE_PER_USER` | `10` | IAM | 사용자당 활성 세션 상한(0 이하 무제한) |
+| `DORO_IAM_SESSION_ABSOLUTE_LIFETIME_SECONDS` | `7776000`(90일) | IAM | 세션 절대 수명(초). 로그인 후 이 시간이 지나면 갱신 거부, 0 이하 끔 |
 | `DORO_IAM_RATE_LIMIT_ENABLED` / `_LOGIN_MAX` / `_TOKEN_MAX` | `true` / `20` / `60` | IAM | 요청 제한 |
 | `DORO_IAM_TRUSTED_PROXIES` | `127.0.0.0/8,::1/128,172.16.0.0/12` | IAM | `X-Real-IP`를 믿을 프록시 |
 | `DORO_IAM_TWO_FACTOR_MAX_PENDING_TICKETS` | `10000` | IAM | 2FA 임시 티켓 상한 |

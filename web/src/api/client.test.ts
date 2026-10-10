@@ -32,6 +32,7 @@ describe('apiClient 401 처리', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    sessionStorage.clear();
     clearAccounts();
   });
 
@@ -86,6 +87,8 @@ describe('apiClient 401 처리', () => {
 
     expect(seenTokens).toEqual([]);
     expect(useAuthStore.getState().accounts).toHaveLength(0);
+    // 로그인 화면에서 이유를 알려 줄 수 있게 안내를 남긴다
+    expect(sessionStorage.getItem('doro_login_notice')).toContain('세션이 끝났습니다');
     location.mockRestore();
   });
 

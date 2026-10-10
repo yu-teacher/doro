@@ -135,6 +135,15 @@ describe('로그인 뒤 이동: 어디서 로그인하러 왔는지에 따라 �
     expect(where).toBe('/');
   });
 
+  it('세션이 끝나 로그인으로 보내진 경우(저장된 안내) 로그인 화면이 이유를 한 번만 보여 준다', async () => {
+    sessionStorage.setItem('doro_login_notice', '로그인 유지 기간이 지나 세션이 끝났습니다. 다시 로그인해 주세요.');
+
+    await open('/login');
+
+    expect(host!.textContent).toContain('세션이 끝났습니다');
+    expect(sessionStorage.getItem('doro_login_notice')).toBeNull();
+  });
+
   it('이미 로그인한 상태로 /login 을 열면 보던 곳(없으면 내 계정)으로 바로 보낸다', async () => {
     await act(async () => { useAuthStore.getState().addAccount(account()); });
     await open('/login');

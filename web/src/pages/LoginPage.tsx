@@ -20,6 +20,7 @@ import { getErrorMessage } from '../utils/errorUtils';
 import { parseJwtPayload } from '../utils/jwtUtils';
 import { clearConsentReturn } from '../utils/consentReturn';
 import { resolveAfterLoginPath } from '../utils/afterLogin';
+import { consumeLoginNotice } from '../utils/loginNotice';
 
 /** 다른 화면(예: 전체 로그아웃)이 로그인 화면에 넘기는 안내 문구 */
 function readNotice(state: unknown): string | null {
@@ -35,7 +36,8 @@ export const LoginPage: React.FC = () => {
   const { accounts, activeAccountIndex, addAccount } = useAuthStore();
   const activeAccount = accounts[activeAccountIndex] || accounts[0];
   const location = useLocation();
-  const notice = readNotice(location.state);
+  // 안내는 한 번만 보여 준다: 라우터 상태(전체 로그아웃·탈퇴 예약) 또는 세션이 끝나 다시 불러온 경우(sessionStorage)
+  const [notice] = useState<string | null>(() => readNotice(location.state) ?? consumeLoginNotice());
   // 로그인 뒤 갈 곳: 동의 요청(서비스 로그인) > 로그인 전에 보던 화면 > 내 계정 (앱 내부 경로만, 마운트 시점 1회 확정)
   const [afterLoginPath] = useState<string>(() => resolveAfterLoginPath(location.state));
 
@@ -195,22 +197,22 @@ export const LoginPage: React.FC = () => {
                   {accountInfo?.name ? `${accountInfo.name}님, 환영합니다` : '환영합니다'}
                 </h1>
                 {/* Google Style Account Chip */}
-                <div className="mt-3 inline-flex items-center">
+                <div className="mt-3 inline-flex max-w-full items-center">
                   <button
                     type="button"
                     onClick={handleBackToEmail}
-                    className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-slate-200 bg-slate-50/80 hover:bg-slate-100/80 text-xs font-semibold text-slate-700 transition-colors group cursor-pointer shadow-2xs"
+                    className="inline-flex max-w-full items-center gap-2 px-3.5 py-1.5 rounded-full border border-slate-200 bg-slate-50/80 hover:bg-slate-100/80 text-xs font-semibold text-slate-700 transition-colors group cursor-pointer shadow-2xs"
                     title="다른 계정으로 로그인"
                   >
                     {accountInfo?.profileImageUrl ? (
-                      <img src={accountInfo.profileImageUrl} alt="Profile" className="w-5 h-5 rounded-full object-cover" />
+                      <img src={accountInfo.profileImageUrl} alt="Profile" className="w-5 h-5 shrink-0 rounded-full object-cover" />
                     ) : (
-                      <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-indigo-600 to-violet-500 text-white flex items-center justify-center text-[10px] font-bold">
+                      <div className="w-5 h-5 shrink-0 rounded-full bg-gradient-to-tr from-indigo-600 to-violet-500 text-white flex items-center justify-center text-[10px] font-bold">
                         {accountInfo?.name ? accountInfo.name.charAt(0).toUpperCase() : 'U'}
                       </div>
                     )}
-                    <span>{email}</span>
-                    <ChevronDown className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600 transition-transform" />
+                    <span className="min-w-0 break-all text-left">{email}</span>
+                    <ChevronDown className="w-3.5 h-3.5 shrink-0 text-slate-400 group-hover:text-slate-600 transition-transform" />
                   </button>
                 </div>
               </>
@@ -220,16 +222,16 @@ export const LoginPage: React.FC = () => {
               <>
                 <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">2단계 인증</h1>
                 {/* Account Chip */}
-                <div className="mt-3 inline-flex items-center">
-                  <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-indigo-100 bg-indigo-50/50 text-xs font-semibold text-indigo-900">
+                <div className="mt-3 inline-flex max-w-full items-center">
+                  <div className="inline-flex max-w-full items-center gap-2 px-3.5 py-1.5 rounded-full border border-indigo-100 bg-indigo-50/50 text-xs font-semibold text-indigo-900">
                     {accountInfo?.profileImageUrl ? (
-                      <img src={accountInfo.profileImageUrl} alt="Profile" className="w-5 h-5 rounded-full object-cover" />
+                      <img src={accountInfo.profileImageUrl} alt="Profile" className="w-5 h-5 shrink-0 rounded-full object-cover" />
                     ) : (
-                      <div className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[10px] font-bold">
+                      <div className="w-5 h-5 shrink-0 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[10px] font-bold">
                         {accountInfo?.name ? accountInfo.name.charAt(0).toUpperCase() : 'U'}
                       </div>
                     )}
-                    <span>{email}</span>
+                    <span className="min-w-0 break-all text-left">{email}</span>
                   </div>
                 </div>
               </>

@@ -120,6 +120,8 @@ doro:
       max-active-sessions-per-user: ${DORO_IAM_SESSION_MAX_ACTIVE_PER_USER:10}
       # 무활동 만료. 리프레시(활동)마다 세션 만료 시각이 now + 이 값으로 연장된다(슬라이딩).
       inactivity-timeout-seconds: 2592000 # 30일 (1달)
+      # 세션 절대 수명: 로그인한 때부터 이 시간이 지나면 계속 써도 갱신되지 않고 다시 로그인해야 한다(슬라이딩 갱신의 무한 연장을 막는다). 0 이하면 끈다. 기본 90일.
+      absolute-lifetime-seconds: ${DORO_IAM_SESSION_ABSOLUTE_LIFETIME_SECONDS:7776000}
     two-factor:
       # 메모리에 보관하는 2FA 임시 티켓 상한. 초과하면 신규 발급을 429 로 거부한다. 0 이하는 무제한.
       max-pending-tickets: ${DORO_IAM_TWO_FACTOR_MAX_PENDING_TICKETS:10000}

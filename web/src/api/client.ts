@@ -1,6 +1,7 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { useAuthStore } from '../store/authStore';
 import { refreshAccessToken } from './tokenRefresh';
+import { rememberLoginNotice, SESSION_ENDED_NOTICE } from '../utils/loginNotice';
 
 export const apiClient = axios.create({
   baseURL: '',
@@ -56,6 +57,7 @@ function isPublicAuthPath(url: string | undefined): boolean {
 
 function endSession(email: string): void {
   useAuthStore.getState().removeAccountByEmail(email);
+  rememberLoginNotice(SESSION_ENDED_NOTICE);
   window.location.href = LOGIN_PATH;
 }
 

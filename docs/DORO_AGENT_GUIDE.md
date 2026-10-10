@@ -114,7 +114,7 @@ IAM ──(REST, 관리자 판정·역할 튜플 동기화)──▶ Guard
 - OTP: 시간 오차 ±1 스텝 허용, **같은 스텝 재사용 방지**(인메모리 맵).
 - 비밀번호는 Argon2id (`CustomArgon2PasswordEncoder`).
 - **세션**: 사용자당 동시 활성 세션 **상한(기본 10, `DORO_IAM_SESSION_MAX_ACTIVE_PER_USER`)** — 초과하면 가장 오래된 세션부터 종료. **같은 IP+User-Agent** 의 이전 활성 세션은 새 로그인 시 자동 종료(OAuth 세션은 클라이언트별 마커로 구분). 종료는 모두 `SessionRevocationService` 를 거쳐 **세션 비활성화 + 리프레시 토큰 폐기 + 킬스위치 발행**이 한 흐름에서 일어난다. 동시 로그인에서는 상한을 잠깐 넘을 수 있다(직렬화 안 함).
-- 세션 만료는 **슬라이딩**: 리프레시가 성공할 때마다 `expiresAt = now + 30일`. 만료 세션은 주기적으로 정리된다.
+- 세션 만료는 **슬라이딩**: 리프레시가 성공할 때마다 `expiresAt = now + 30일`. 만료 세션은 주기적으로 정리된다. 여기에 **절대 수명**(`doro.iam.session.absolute-lifetime-seconds`, `DORO_IAM_SESSION_ABSOLUTE_LIFETIME_SECONDS`, 기본 **90일**, 0 이하면 끔)이 더해진다: 세션을 만든 시각(로그인)부터 이 시간이 지나면 활동이 있어도 리프레시가 `401 SESSION_EXPIRED` 로 거부되고, 세션 종료·리프레시 토큰 폐기·킬스위치 발행이 일어나 다시 로그인해야 한다. 새 리프레시 토큰의 만료도 절대 수명 끝을 넘지 않는다. 일반 로그인과 OAuth 클라이언트 세션 모두 `RefreshTokenService.rotateRefreshToken` 을 거치므로 똑같이 적용된다.
 - 리프레시 토큰 재사용(이미 회전된 토큰 재제시)은 공격으로 판정해 해당 패밀리와 세션을 종료하고 400 `TOKEN_REUSE_DETECTED`. 회전은 조건부 UPDATE 로 원자적이라 동시 요청 중 하나만 성공한다. 다중 탭 경합을 허용하는 유예(`doro.iam.jwt.refresh-reuse-grace-seconds`)는 **기본 0(꺼짐)**.
 - 비밀번호 변경·역할 변경·관리자 2FA 초기화 시 관련 세션이 종료된다(위 표).
 
@@ -136,7 +136,7 @@ IAM ──(REST, 관리자 판정·역할 튜플 동기화)──▶ Guard
 | 알고리즘 | RS256, 헤더 `kid`(기본 `doro-iam-key-2026-v1`) | `JwtTokenProvider` |
 | **액세스 토큰 TTL** | **900초(15분)** 기본. `DORO_IAM_ACCESS_TOKEN_TTL_SECONDS` 로 조정 | `application.yaml`, compose |
 | 리프레시 토큰 TTL | 2592000초(30일), 불투명 랜덤값(SHA-256 해시로 DB 저장). 회전 때마다 30일 연장 | `RefreshTokenService` |
-| 세션 무활동 만료 | 30일 슬라이딩. 사용자당 최대 활성 세션 10 | `application.yaml` |
+| 세션 무활동 만료 / 절대 수명 | 무활동 30일 슬라이딩, 로그인 후 최대 90일. 사용자당 최대 활성 세션 10 | `application.yaml` |
 | 일반 로그인 토큰 클레임 | `sub`(userId UUID), `email`, `sid`(세션 UUID), `uidx`(int), `role`(`USER`/`ADMIN`/`SUPER_ADMIN`), `iss`, `iat`, `exp` | `JwtTokenProvider` |
 | OAuth 액세스 토큰 | 위와 같되 **`role` 은 항상 `USER`** + **`cid`(client_id)** 클레임 | `createOAuthAccessToken` |
 | OIDC `id_token` | `aud=client_id`, `sid`, `auth_time`, (`nonce`), 스코프별 `email`/`name`/`picture`. **액세스 토큰이 아니다** | `createIdToken` |
@@ -434,7 +434,7 @@ Doro 의 보안 기능은 **단계적으로 켤 수 있게** 설계돼 있다. �
 | **OAuth 클라이언트 등록 강제** | `DORO_OAUTH_CLIENT_REGISTRY_MODE=ENFORCE` | 등록된 `client_id` 와 `redirect_uri` 정확 일치만 허용 |
 | **audience / issuer 검증** | SDK `doro.iam.audience`, `doro.iam.issuer-validation: ENFORCE` | 토큰 대상·발급자 확인 |
 | **OIDC 공개 URL** | `DORO_IAM_ISSUER` 를 공개 URL 로 | 외부 OIDC 클라이언트의 discovery 가 올바른 주소를 가리킴 |
-| **세션/요청 제한** | `DORO_IAM_SESSION_MAX_ACTIVE_PER_USER`, `DORO_IAM_RATE_LIMIT_*` | 사용자당 활성 세션 상한, IP 단위 요청 제한 |
+| **세션/요청 제한** | `DORO_IAM_SESSION_MAX_ACTIVE_PER_USER`, `DORO_IAM_SESSION_ABSOLUTE_LIFETIME_SECONDS`, `DORO_IAM_RATE_LIMIT_*` | 사용자당 활성 세션 상한, IP 단위 요청 제한 |
 
 연동 코드를 쓸 때의 동작 방식(필터는 요청을 막지 않는다, `@CurrentDoroUser UUID` 는 비로그인 시 `null`, `writeTuple` 은 실패 시 `0`, `@DoroGuard` 의 Guard 장애는 거부로 처리 등)은 §4·§6·§10 에 있다. 이 가이드와 코드가 다르면 **코드가 맞다.**
 
