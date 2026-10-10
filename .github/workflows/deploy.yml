@@ -44,6 +44,11 @@ jobs:
       - name: 🧪 Web tests and type check
         run: scripts/ci-test.sh web
 
+      # 실제 Chromium 으로 폰 4가지 크기(320·375·414 세로, 812x375 가로)에서 포털 화면을 열어 가로 넘침·글자 잘림·터치 영역·입력 글꼴(iOS 확대)을 측정한다.
+      # Playwright 공식 이미지를 쓰며 첫 실행은 이미지를 받느라 오래 걸린다.
+      - name: 📱 Mobile layout regression tests (portal)
+        run: scripts/ci-test.sh mobile
+
       - name: 🧪 Service worker precache check tests
         run: scripts/test-check-sw-precache.sh
 

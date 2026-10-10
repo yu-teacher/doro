@@ -1110,7 +1110,7 @@ export const MyAccountPage: React.FC = () => {
                         key={sess.sessionId}
                         className="p-4 bg-slate-50/70 border border-slate-200/80 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
                       >
-                        <div className="flex items-start gap-3.5">
+                        <div className="flex min-w-0 items-start gap-3.5">
                           <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-slate-700 shrink-0">
                             {sess.deviceInfo?.includes('Phone') || sess.deviceInfo?.includes('Mobile') ? (
                               <Smartphone className="w-5 h-5" />
@@ -1118,9 +1118,9 @@ export const MyAccountPage: React.FC = () => {
                               <Laptop className="w-5 h-5" />
                             )}
                           </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-bold text-slate-800">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-xs font-bold text-slate-800 break-words min-w-0">
                                 {sess.deviceInfo || 'Web Browser'}
                               </span>
                               {isCurrent && (
@@ -1129,7 +1129,7 @@ export const MyAccountPage: React.FC = () => {
                                 </span>
                               )}
                             </div>
-                            <div className="text-[11px] text-slate-500 mt-0.5">
+                            <div className="text-[11px] text-slate-500 mt-0.5 break-all">
                               IP: {sess.ipAddress} • 세션ID: <span className="font-mono">{sess.sessionId.substring(0, 12)}...</span>
                             </div>
                           </div>
@@ -1385,7 +1385,7 @@ export const MyAccountPage: React.FC = () => {
                         key={u.id}
                         className="p-4 bg-slate-50/70 border border-slate-200/80 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
                       >
-                        <div className="flex items-center gap-3.5">
+                        <div className="flex min-w-0 items-center gap-3.5">
                           <div className="w-11 h-11 rounded-2xl overflow-hidden bg-gradient-to-tr from-indigo-600 to-violet-500 text-white flex items-center justify-center font-bold text-base shadow-xs shrink-0">
                             {u.profileImageUrl ? (
                               <img src={u.profileImageUrl} alt={u.name} className="w-full h-full object-cover" />
@@ -1393,9 +1393,9 @@ export const MyAccountPage: React.FC = () => {
                               u.name ? u.name.charAt(0).toUpperCase() : 'U'
                             )}
                           </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-bold text-slate-800">{u.name || '이름 없음'}</span>
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-xs font-bold text-slate-800 break-words min-w-0">{u.name || '이름 없음'}</span>
                               {isCurrent && (
                                 <span className="px-2 py-0.2 bg-slate-200 text-slate-700 text-[10px] font-bold rounded-full">
                                   본인
@@ -1440,7 +1440,7 @@ export const MyAccountPage: React.FC = () => {
                                 </span>
                               )}
                             </div>
-                            <div className="text-[11px] text-slate-500 mt-0.5">
+                            <div className="text-[11px] text-slate-500 mt-0.5 break-all">
                               {u.email} • 가입: {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '-'}
                             </div>
                             {u.status === 'SUSPENDED' && u.suspensionReason && (

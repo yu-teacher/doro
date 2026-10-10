@@ -18,3 +18,23 @@
 .google-card-shadow {
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05), 0 0 0 1px rgba(0, 0, 0, 0.04);
 }
+
+/*
+ * 터치 화면(폰)에서의 최소한의 사용성 규칙. 모바일 회귀 테스트(e2e/*.e2e.ts)가 실제 브라우저에서 측정해 이 규칙이 유지되는지 확인한다.
+ *  - 입력창 글꼴이 16px 미만이면 iOS Safari 가 포커스할 때 화면을 확대하고 되돌리지 않아 레이아웃이 어긋난다. 터치 화면에서만 16px 로 올린다.
+ *  - 버튼의 눌리는 영역을 36px 이상으로(애플 권장 44px 의 하한). 글자 크기(text-xs 등)는 그대로 두고 영역만 키운다.
+ * 위 유틸리티 클래스보다 우선하도록 레이어 밖(unlayered)에 둔다. 모양이 크기 자체인 요소(스위치)는 제외한다.
+ */
+@media (pointer: coarse) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  button:not([role='switch']),
+  select {
+    min-height: 36px;
+    min-width: 36px;
+  }
+}

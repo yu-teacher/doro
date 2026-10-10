@@ -5,6 +5,7 @@
 #   scripts/ci-test.sh backend   # auth, guard, sdk 전체 테스트 (./gradlew test, H2)
 #   scripts/ci-test.sh pg        # guard, auth 전체 테스트를 실제 PostgreSQL 위에서 (Flyway + ddl-auto=validate)
 #   scripts/ci-test.sh web       # 웹 의존성 설치 + vitest + 타입 검사 (npm ci / npm test / tsc -b)
+#   scripts/ci-test.sh mobile    # 포털 모바일 레이아웃 회귀 테스트(실제 Chromium, Playwright 공식 이미지). 폰 4가지 크기에서 가로 넘침·터치 영역·입력 글꼴 측정
 #
 # - 저장소는 읽기 전용으로 마운트하고 컨테이너 안의 임시 디렉터리로 복사해서 빌드한다. 호스트 작업 디렉터리에
 #   build/, node_modules 가 남지 않는다(배포 단계의 docker 빌드 컨텍스트와 actions/checkout 청소를 방해하지 않음).
@@ -18,6 +19,8 @@ CACHE="${CI_CACHE_DIR:-$HOME/.cache/doro-ci}"
 # amazoncorretto 이미지에는 gradlew 가 쓰는 xargs/tar 가 없어서 Gradle 공식 이미지(Java 25)를 쓴다. Gradle 버전은 gradle-wrapper 와 맞춘다.
 JAVA_IMAGE="${CI_JAVA_IMAGE:-gradle:9.5.1-jdk25}"
 NODE_IMAGE="${CI_NODE_IMAGE:-node:24-alpine}"
+# 버전은 web/package.json 의 @playwright/test 와 같아야 한다(이미지에 들어 있는 브라우저와 맞아야 한다).
+PLAYWRIGHT_IMAGE="${CI_PLAYWRIGHT_IMAGE:-mcr.microsoft.com/playwright:v1.64.0-noble}"
 
 mkdir -p "$CACHE/gradle" "$CACHE/npm"
 LIMITS=(--cpus "${CI_CPUS:-2}" --memory "${CI_MEMORY:-4g}")
@@ -67,8 +70,18 @@ case "$TARGET" in
       npx tsc -b
     '
     ;;
+  mobile)
+    docker run "${COMMON[@]}" -e CI=1 -e npm_config_cache=/cache/npm --ipc=host -v "$ROOT/web:/src:ro" "$PLAYWRIGHT_IMAGE" sh -ec '
+      mkdir -p /tmp/web
+      cd /src
+      tar --exclude=./node_modules --exclude=./dist --exclude=./test-results -cf - . | tar -C /tmp/web -xf -
+      cd /tmp/web
+      npm ci --no-audit --no-fund
+      npx playwright test
+    '
+    ;;
   *)
-    echo "사용법: scripts/ci-test.sh backend|pg|web" >&2
+    echo "사용법: scripts/ci-test.sh backend|pg|web|mobile" >&2
     exit 2
     ;;
 esac
