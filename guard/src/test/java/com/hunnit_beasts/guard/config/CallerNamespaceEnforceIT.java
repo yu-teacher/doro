@@ -76,17 +76,17 @@ class CallerNamespaceEnforceIT {
     }
 
     @Test
-    @DisplayName("REST: 스키마 등록은 소유하지 않은 타입이 바뀌면 403, IAM 은 제한이 없다")
+    @DisplayName("REST: 소유하지 않은 타입을 만드는 스키마 등록은 403")
     void restSchema() throws Exception {
         String active = new com.fasterxml.jackson.databind.ObjectMapper()
                 .readTree(send("GET", "/api/v1/guard/schema", SVC, "").body()).get("data").asText();
-        String hijack = active.replace("relation super_admin: user", "relation super_admin: user | document#owner");
-        assertThat(hijack).isNotEqualTo(active);
+        // 활성 스키마의 내용은 다른 테스트가 바꿔 둘 수 있으므로(PostgreSQL 은 한 스키마를 공유한다) 내용과 무관하게 성립하는 변경을 쓴다:
+        // 소유하지 않은 타입을 새로 만드는 것.
+        String hijack = active + "\ntype other_service_probe {\n  relation admin: user\n}\n";
         String body = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode().put("dsl", hijack).toString();
         assertThat(send("POST", "/api/v1/guard/schema", SVC, body).statusCode()).isEqualTo(403);
-
-        String same = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode().put("dsl", active).toString();
-        assertThat(send("POST", "/api/v1/guard/schema", SVC, same).statusCode()).as("그대로 다시 등록").isEqualTo(200);
+        // 통과하는 등록은 일부러 하지 않는다: PostgreSQL 모드에서는 모든 테스트가 DB 를 공유하므로 새 활성 스키마 버전이 다른 테스트의 스키마를 바꾼다.
+        // 병합 등록이 통과하는 경우는 CallerNamespaceTest 가 확인한다.
     }
 
     private StatusRuntimeException grpcWrite(String caller, String namespace) {
@@ -105,11 +105,16 @@ class CallerNamespaceEnforceIT {
 
     @Test
     @DisplayName("gRPC: 남의 네임스페이스는 PERMISSION_DENIED, 자기 네임스페이스와 IAM 은 통과")
-    void grpcTuples() {
+    void grpcTuples() throws Exception {
         StatusRuntimeException denied = grpcWrite("svc", "system");
         assertThat(denied).isNotNull();
         assertThat(denied.getStatus().getCode()).isEqualTo(Status.Code.PERMISSION_DENIED);
         assertThat(grpcWrite("svc", "document")).isNull();
         assertThat(grpcWrite("iam", "system")).isNull();
+        // 공유 DB 에 튜플을 남기지 않는다
+        for (String namespace : new String[]{"document", "system"}) {
+            send("DELETE", "/api/v1/guard/tuples", IAM, "[{\"namespace\":\"" + namespace + "\",\"objectId\":\"d2\",\"relation\":\"owner\","
+                    + "\"subjectNamespace\":\"user\",\"subjectId\":\"u-ns-grpc\"}]");
+        }
     }
 }
