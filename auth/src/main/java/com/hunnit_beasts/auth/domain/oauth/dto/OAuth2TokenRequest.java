@@ -14,11 +14,22 @@ public record OAuth2TokenRequest(
         String clientId,
         String codeVerifier,
         String refreshToken,
-        String scope
+        String scope,
+        /** 기밀 클라이언트의 시크릿(폼 client_secret, JSON clientSecret 또는 HTTP Basic 에서 채워진다). */
+        String clientSecret
 ) {
+    public OAuth2TokenRequest(String grantType, String code, String redirectUri, String clientId, String codeVerifier,
+                              String refreshToken, String scope) {
+        this(grantType, code, redirectUri, clientId, codeVerifier, refreshToken, scope, null);
+    }
+
+    public OAuth2TokenRequest withClientAuth(String clientId, String clientSecret) {
+        return new OAuth2TokenRequest(grantType, code, redirectUri, clientId, codeVerifier, refreshToken, scope, clientSecret);
+    }
+
     /** authorization_code 교환용(기존 호출부 호환) */
     public OAuth2TokenRequest(String grantType, String code, String redirectUri, String clientId, String codeVerifier) {
-        this(grantType, code, redirectUri, clientId, codeVerifier, null, null);
+        this(grantType, code, redirectUri, clientId, codeVerifier, null, null, null);
     }
 
     @Override

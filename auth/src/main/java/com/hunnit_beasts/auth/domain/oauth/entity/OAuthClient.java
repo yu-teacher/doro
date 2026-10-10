@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
-/** 등록된 OAuth 클라이언트(공개 클라이언트, PKCE 전용). */
+/** 등록된 OAuth 클라이언트. 시크릿이 없으면 공개 클라이언트(PKCE 만), 있으면 기밀 클라이언트(PKCE + client_secret). */
 @Entity
 @Table(name = "oauth_clients")
 @Getter
@@ -51,17 +51,22 @@ public class OAuthClient {
     @Column(name = "first_party", nullable = false)
     private boolean firstParty;
 
+    /** client_secret 의 SHA-256 해시(hex). null 이면 공개 클라이언트. 평문은 저장하지 않는다. */
+    @Column(name = "client_secret_hash", length = 64)
+    private String clientSecretHash;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
     @Builder
-    public OAuthClient(UUID id, String clientId, String name, List<String> redirectUris, Set<String> allowedScopes, boolean firstParty) {
+    public OAuthClient(UUID id, String clientId, String name, List<String> redirectUris, Set<String> allowedScopes, boolean firstParty, String clientSecretHash) {
         this.id = id != null ? id : UUID.randomUUID();
         this.clientId = clientId;
         this.name = name;
         this.redirectUris = String.join(URI_SEPARATOR, redirectUris);
         this.allowedScopes = String.join(SCOPE_SEPARATOR, allowedScopes);
         this.firstParty = firstParty;
+        this.clientSecretHash = clientSecretHash;
         this.isActive = true;
         this.createdAt = Instant.now();
     }
@@ -72,6 +77,15 @@ public class OAuthClient {
 
     public Set<String> allowedScopeSet() {
         return new LinkedHashSet<>(Arrays.stream(allowedScopes.split(SCOPE_SEPARATOR)).filter(s -> !s.isEmpty()).toList());
+    }
+
+    public boolean isConfidential() {
+        return clientSecretHash != null;
+    }
+
+    /** 시크릿을 새로 지정(회전 포함). 이전 시크릿은 즉시 무효가 된다. */
+    public void replaceSecretHash(String hash) {
+        this.clientSecretHash = hash;
     }
 
     public void deactivate() {

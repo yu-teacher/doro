@@ -145,7 +145,7 @@ class OidcEndpointsTest extends OAuthTestSupport {
                 .andExpect(jsonPath("$.id_token_signing_alg_values_supported").value(org.hamcrest.Matchers.contains("RS256")))
                 .andExpect(jsonPath("$.scopes_supported").value(org.hamcrest.Matchers.contains("openid", "profile", "email")))
                 .andExpect(jsonPath("$.code_challenge_methods_supported").value(org.hamcrest.Matchers.contains("S256")))
-                .andExpect(jsonPath("$.token_endpoint_auth_methods_supported").value(org.hamcrest.Matchers.contains("none")))
+                .andExpect(jsonPath("$.token_endpoint_auth_methods_supported").value(org.hamcrest.Matchers.contains("none", "client_secret_basic", "client_secret_post")))
                 .andExpect(jsonPath("$.claims_supported").isArray());
     }
 }

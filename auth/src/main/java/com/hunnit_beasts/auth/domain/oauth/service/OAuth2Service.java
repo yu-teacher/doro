@@ -173,6 +173,8 @@ public class OAuth2Service {
         requireText(request.clientId(), "client_id");
         requireText(request.codeVerifier(), "code_verifier");
         ResolvedClient client = clientRegistry.resolveForToken(request.clientId());
+        // 클라이언트 인증이 먼저다. 시크릿 없이 코드만 훔친 쪽이 코드를 소비해 버리지 못하게 한다.
+        clientRegistry.authenticate(client, request.clientSecret());
 
         // 어떤 검증 실패든 코드는 이미 소비된 상태여야 한다(1회용). 소비가 먼저다.
         Optional<AuthorizationCodeData> consumed = codeStore.consume(request.code());
@@ -238,6 +240,7 @@ public class OAuth2Service {
         requireText(request.refreshToken(), "refresh_token");
         requireText(request.clientId(), "client_id");
         ResolvedClient client = clientRegistry.resolveForToken(request.clientId());
+        clientRegistry.authenticate(client, request.clientSecret());
         if (request.scope() != null && !request.scope().isBlank()) {
             clientRegistry.resolveScopes(client, request.scope());
         }
@@ -282,10 +285,11 @@ public class OAuth2Service {
      * 알 수 없는 토큰, 다른 클라이언트의 토큰, 일반 로그인 세션의 토큰은 아무것도 하지 않고 조용히 지나간다
      * (호출자에게 토큰의 존재 여부를 알리지 않기 위한 RFC 7009 §2.2 의 동작).
      */
-    public void revoke(String token, String clientId) {
+    public void revoke(String token, String clientId, String clientSecret) {
         requireText(token, "token");
         requireText(clientId, "client_id");
         ResolvedClient client = clientRegistry.resolveForToken(clientId);
+        clientRegistry.authenticate(client, clientSecret);
         UserSession owner = refreshTokenService.findSessionByRawToken(token).orElse(null);
         if (owner == null || !isOAuthSessionOf(owner, client.clientId())) {
             return;
@@ -369,7 +373,7 @@ public class OAuth2Service {
         config.put("claims_supported", List.of("sub", "iss", "aud", "exp", "iat", "auth_time", "nonce", "sid",
                 "email", "email_verified", "name", "picture"));
         config.put("code_challenge_methods_supported", List.of(OAuth2Constants.PKCE_METHOD_S256));
-        config.put("token_endpoint_auth_methods_supported", List.of("none")); // Public client PKCE
+        config.put("token_endpoint_auth_methods_supported", List.of("none", "client_secret_basic", "client_secret_post")); // 공개 클라이언트는 PKCE 만, 기밀 클라이언트는 시크릿 추가
         return config;
     }
 

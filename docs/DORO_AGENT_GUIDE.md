@@ -44,7 +44,7 @@ IAM ──(REST, 관리자 판정·역할 튜플 동기화)──▶ Guard
 ### 1.1 "통합 로그인"은 두 가지 방식이 공존한다
 
 1. **인앱 로그인 (기본, 현재 포털·블로그가 사용)**: 프론트엔드가 같은 origin(게이트웨이)의 IAM API 를 직접 호출해 로그인한다. **포털은 리프레시 토큰을 HttpOnly 쿠키(`doro_rt_<슬롯>`)로만 받고 액세스 토큰은 탭 메모리에만 둔다**(localStorage 에는 토큰이 없고 `doro_auth_accounts` 에는 계정 목록·슬롯만 남는다). 다른 프론트엔드가 헤더 없이 호출하면 이전처럼 토큰이 응답 본문에 온다. 서브서비스 백엔드는 `Authorization: Bearer <JWT>` 를 받아 JWKS 로 검증한다. [코드: `web/src/store/authStore.ts`, `web/src/api/*`]
-2. **OAuth 2.1 인가 코드 + PKCE / OIDC (외부·별도 origin 앱용)**: 리다이렉트 방식 SSO. 클라이언트 등록(`oauth_clients`), 포털 동의 화면, 토큰/리프레시/`id_token`/`userinfo` 가 구현돼 있다(§5). **공개 클라이언트(PKCE)만** 지원한다.
+2. **OAuth 2.1 인가 코드 + PKCE / OIDC (외부·별도 origin 앱용)**: 리다이렉트 방식 SSO. 클라이언트 등록(`oauth_clients`), 포털 동의 화면, 토큰/리프레시/`id_token`/`userinfo` 가 구현돼 있다(§5). 공개 클라이언트(PKCE)와 **기밀 클라이언트(PKCE + client_secret)** 를 지원한다.
 
 ---
 
@@ -251,7 +251,7 @@ doro:
 
 ## 5. OAuth 2.1 / OIDC — 실제 동작
 
-**인가 코드 + PKCE(S256) 플로우가 구현되어 있다.** 공개 클라이언트(`token_endpoint_auth_methods_supported: none`)만 지원한다. [코드: `OAuth2Controller`, `OAuth2Service`, `OAuthClientRegistry`]
+**인가 코드 + PKCE(S256) 플로우가 구현되어 있다.** 공개 클라이언트(`none`)와 기밀 클라이언트(`client_secret_basic`, `client_secret_post`)를 지원한다. 기밀 클라이언트는 PKCE 에 더해 토큰·폐기 요청에서 시크릿을 내야 한다. [코드: `OAuth2Controller`, `OAuth2Service`, `OAuthClientRegistry`]
 
 ### 5.1 플로우
 1. 클라이언트 앱이 사용자를 `GET {origin}/oauth2/authorize?response_type=code&client_id=&redirect_uri=&code_challenge=&code_challenge_method=S256&scope=&state=&nonce=` 로 보낸다.
@@ -273,7 +273,7 @@ doro:
 - **인가 코드 저장소**: `doro.oauth.code-store` = `auto`(기본: 기동 시 Redis 에 닿으면 Redis, 아니면 WARN 후 메모리) | `redis` | `memory`. 메모리 모드는 재시작/다중 인스턴스에서 코드가 유실되고 `max-pending-authorization-codes`(10000) 초과 시 429. `auto` 가 기동 시 Redis 에 닿지 못하면 **재시작 전까지 메모리**를 쓴다.
 
 ### 5.3 클라이언트 등록과 모드
-- 테이블 `oauth_clients`(Flyway **V6**, V7). 등록: `POST /api/v1/admin/oauth/clients` `{name, redirectUris[1~10], scopes?, clientId?, firstParty?}`(ADMIN + Guard `system:doro#admin`). `redirect_uri` 는 **https 만**(loopback 호스트는 http 허용), 와일드카드/fragment/userinfo/`..` 세그먼트 불가, ≤500자. `clientId` 생략 시 서버가 생성(`[A-Za-z0-9._~-]{1,100}`). `DELETE .../{clientId}` 는 **소프트 삭제**(`is_active=false`). 이후 요청은 `WARN`/`ENFORCE` 에서 거부되고, `OFF` 모드는 레지스트리를 조회하지 않아 영향이 없다 [코드: `OAuthClientRegistry.lookup`].
+- 테이블 `oauth_clients`(Flyway **V6**, V7). 등록: `POST /api/v1/admin/oauth/clients` `{name, redirectUris[1~10], scopes?, clientId?, firstParty?, confidential?}`(ADMIN + Guard `system:doro#admin`). `redirect_uri` 는 **https 만**(loopback 호스트는 http 허용), 와일드카드/fragment/userinfo/`..` 세그먼트 불가, ≤500자. `clientId` 생략 시 서버가 생성(`[A-Za-z0-9._~-]{1,100}`). `confidential: true` 이면 `client_secret`(`dcs_…`)을 만들어 **응답에 한 번만** 돌려준다(DB 는 SHA-256 해시만 보관, Flyway V12, 목록 조회에는 없음). `POST .../{clientId}/secret` 은 시크릿 발급·회전(이전 시크릿 즉시 무효, 공개 클라이언트가 기밀로 바뀜). 토큰(code/refresh)·폐기 요청은 Basic 헤더 또는 본문 `client_secret`(JSON `clientSecret`)으로 인증하며 둘을 섞으면 400, 틀리거나 없으면 401 `invalid_client` 이고 인가 코드는 소비되지 않는다. `DELETE .../{clientId}` 는 **소프트 삭제**(`is_active=false`). 이후 요청은 `WARN`/`ENFORCE` 에서 거부되고, `OFF` 모드는 레지스트리를 조회하지 않아 영향이 없다 [코드: `OAuthClientRegistry.lookup`].
 - `redirect_uri` 는 **문자열 정확 일치**만 인정한다(정규화·부분 일치 없음).
 - 클라이언트에 `firstParty: true` 를 주면(관리자 등록 시, 테이블 컬럼 `first_party`, Flyway **V7**) **자사 서비스**로 표시된다. 포털 동의 화면은 이 표시가 있는 클라이언트에는 동의를 묻지 않고 로그인 직후 바로 인가 코드를 요청한다(`GET /oauth2/client-info?client_id=` 로 확인, 로그인 필요, 등록·활성 클라이언트만 응답). 제3자 앱은 기본값(`false`)이라 기존처럼 동의 화면을 거친다. `redirect_uri` 의 정확 일치 검증은 자사 앱에도 똑같이 적용된다.
 - `doro.oauth.client-registry-mode`(`DORO_OAUTH_CLIENT_REGISTRY_MODE`, 기본 **`ENFORCE`**):
@@ -284,7 +284,7 @@ doro:
 - 서비스가 OAuth 로 붙는 설계가 필요하면: ① 관리자가 클라이언트 등록 ② `ENFORCE` 로 올릴지 운영자와 협의 ③ PKCE(S256) 구현 ④ 받은 액세스 토큰을 서브서비스 API 에 쓰되 권한은 Guard 로 판정.
 
 ### 5.4 한계 [코드]
-공개 클라이언트·고정 스코프만(클라이언트 시크릿 인증, 스코프별 `userinfo` 응답, 동의 이력 저장 없음), `email_verified` 는 항상 `false`, 인가 코드 재사용 시 토큰 폐기 미구현.
+고정 스코프만(스코프별 `userinfo` 응답, 동의 이력 저장 없음. 클라이언트 시크릿 인증은 구현됨), `email_verified` 는 항상 `false`, 인가 코드 재사용 시 토큰 폐기 미구현.
 
 ---
 

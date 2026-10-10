@@ -21,7 +21,17 @@ import java.util.Set;
 public class OAuthClientRegistry {
 
     /** 판정 결과. allowedScopes 는 해당 클라이언트가 요청할 수 있는 스코프 상한. */
-    public record ResolvedClient(String clientId, Set<String> allowedScopes, boolean registered, List<String> redirectUris) {}
+    public record ResolvedClient(String clientId, Set<String> allowedScopes, boolean registered, List<String> redirectUris,
+                                 String secretHash) {
+        public ResolvedClient(String clientId, Set<String> allowedScopes, boolean registered, List<String> redirectUris) {
+            this(clientId, allowedScopes, registered, redirectUris, null);
+        }
+
+        /** 시크릿이 등록된 기밀 클라이언트인가. */
+        public boolean confidential() {
+            return secretHash != null;
+        }
+    }
 
     private final OAuthClientRepository clientRepository;
     private final RateLimitedLogGate logGate;
@@ -85,6 +95,21 @@ public class OAuthClientRegistry {
     }
 
     /**
+     * 토큰·폐기 요청의 클라이언트 인증. 기밀 클라이언트는 올바른 client_secret 을 내야 하고, 공개 클라이언트는 검사하지 않는다
+     * (PKCE 가 보호). 실패 사유(없음/틀림)는 구분해 알리지 않는다.
+     */
+    public void authenticate(ResolvedClient client, String presentedSecret) {
+        if (!client.confidential()) {
+            return;
+        }
+        if (!ClientSecrets.matches(presentedSecret, client.secretHash())) {
+            log.warn("OAuth client authentication failed: clientId={}, secretPresented={}",
+                    client.clientId(), presentedSecret != null && !presentedSecret.isEmpty());
+            throw new OAuth2Exception(OAuth2ErrorType.INVALID_CLIENT, "클라이언트 인증에 실패했습니다.");
+        }
+    }
+
+    /**
      * 요청 스코프 문자열을 파싱·검증한다. 지원하는 스코프의 부분집합이어야 하고, 등록 클라이언트라면 그 클라이언트의 allowed_scopes 의
      * 부분집합이어야 한다.
      */
@@ -129,7 +154,7 @@ public class OAuthClientRegistry {
                 log.warn("Rejected request from a deactivated OAuth client");
                 throw new OAuth2Exception(OAuth2ErrorType.INVALID_CLIENT, "유효하지 않은 클라이언트입니다.");
             }
-            return new ResolvedClient(clientId, client.allowedScopeSet(), true, client.redirectUriList());
+            return new ResolvedClient(clientId, client.allowedScopeSet(), true, client.redirectUriList(), client.getClientSecretHash());
         }
         if (mode == ClientRegistryMode.ENFORCE) {
             log.warn("Rejected request from an unregistered OAuth client (registry mode ENFORCE)");

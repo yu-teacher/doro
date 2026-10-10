@@ -24,10 +24,10 @@ class MigrationSchemaValidationTest {
     private JdbcTemplate jdbcTemplate;
 
     @Test
-    @DisplayName("V6, V7 마이그레이션으로 oauth_clients 테이블(first_party 포함)이 만들어지고 엔티티 매핑과 일치한다")
+    @DisplayName("V6, V7, V12 마이그레이션으로 oauth_clients 테이블(first_party, client_secret_hash 포함)이 만들어지고 엔티티 매핑과 일치한다")
     void oauthClientsTableMatchesEntity() {
         Integer columns = jdbcTemplate.queryForObject(
                 "select count(*) from information_schema.columns where table_name = 'oauth_clients'", Integer.class);
-        assertThat(columns).isEqualTo(8);
+        assertThat(columns).isEqualTo(9);
     }
 }

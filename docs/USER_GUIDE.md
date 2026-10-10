@@ -523,7 +523,7 @@ Doro IAM은 **인가 코드 + PKCE(S256)** 방식의 OAuth 2.1 / OpenID Connect 
 5. 포털이 브라우저를 `redirect_uri?code=...&state=...` 로 보낸다.
 6. 클라이언트 앱이 `POST /oauth2/token`으로 코드를 `code_verifier`와 함께 보내 `access_token`, `refresh_token`, `id_token`을 받는다.
 
-**지원 범위**: `response_type=code` 하나, grant는 `authorization_code`와 `refresh_token`, PKCE는 `S256`만, **공개 클라이언트만**(클라이언트 시크릿 없음, `token_endpoint_auth_methods_supported: ["none"]`), 스코프는 `openid` `profile` `email` 세 개.
+**지원 범위**: `response_type=code` 하나, grant는 `authorization_code`와 `refresh_token`, PKCE는 `S256`만, 공개 클라이언트(PKCE 만)와 **기밀 클라이언트**(PKCE + 클라이언트 시크릿, `token_endpoint_auth_methods_supported: ["none","client_secret_basic","client_secret_post"]`). 서버 렌더링 앱처럼 시크릿을 안전하게 보관할 수 있는 클라이언트는 등록할 때 `"confidential": true` 를 주세요. 응답의 `clientSecret` 은 **그때 한 번만** 보이니 바로 저장하고, 잃어버리면 `POST /api/v1/admin/oauth/clients/{clientId}/secret` 으로 새로 발급합니다(이전 시크릿은 즉시 무효). 토큰·폐기 요청에는 `Authorization: Basic base64(client_id:client_secret)` 또는 본문 `client_secret` 을 함께 보냅니다, 스코프는 `openid` `profile` `email` 세 개.
 
 ---
 

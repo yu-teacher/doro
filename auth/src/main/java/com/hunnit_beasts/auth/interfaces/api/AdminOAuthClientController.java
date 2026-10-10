@@ -31,6 +31,7 @@ public class AdminOAuthClientController {
             @RequestBody(required = false) OAuthClientCreateRequest request,
             @AuthenticationPrincipal UUID adminId) {
         return ResponseEntity.status(HttpStatus.CREATED)
+                .header("Cache-Control", "no-store")
                 .body(ApiResponse.success(clientAdminService.create(adminId, request)));
     }
 
@@ -38,6 +39,17 @@ public class AdminOAuthClientController {
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
     public ResponseEntity<ApiResponse<List<OAuthClientResponse>>> list(@AuthenticationPrincipal UUID adminId) {
         return ResponseEntity.ok(ApiResponse.success(clientAdminService.list(adminId)));
+    }
+
+    /** 시크릿 발급·회전. 응답의 clientSecret 은 이때만 볼 수 있다. */
+    @PostMapping("/{clientId}/secret")
+    @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+    public ResponseEntity<ApiResponse<OAuthClientResponse>> rotateSecret(
+            @PathVariable String clientId,
+            @AuthenticationPrincipal UUID adminId) {
+        return ResponseEntity.ok()
+                .header("Cache-Control", "no-store")
+                .body(ApiResponse.success(clientAdminService.rotateSecret(adminId, clientId)));
     }
 
     @DeleteMapping("/{clientId}")

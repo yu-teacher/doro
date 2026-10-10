@@ -61,16 +61,38 @@ public class OAuthClientAdminService {
             throw new AuthException(ErrorCode.OAUTH_CLIENT_ALREADY_EXISTS);
         }
 
+        boolean confidential = Boolean.TRUE.equals(request.confidential());
+        String secret = confidential ? ClientSecrets.generate() : null;
+
         OAuthClient saved = clientRepository.save(OAuthClient.builder()
                 .clientId(clientId)
                 .name(name)
                 .redirectUris(redirectUris)
                 .allowedScopes(scopes)
                 .firstParty(Boolean.TRUE.equals(request.firstParty()))
+                .clientSecretHash(secret == null ? null : ClientSecrets.hash(secret))
                 .build());
-        log.info("OAuth client registered: clientId={}, firstParty={}, redirectUriCount={}, adminId={}",
-                saved.getClientId(), saved.isFirstParty(), redirectUris.size(), adminId);
-        return OAuthClientResponse.from(saved);
+        log.info("OAuth client registered: clientId={}, firstParty={}, confidential={}, redirectUriCount={}, adminId={}",
+                saved.getClientId(), saved.isFirstParty(), confidential, redirectUris.size(), adminId);
+        return OAuthClientResponse.from(saved, secret);
+    }
+
+    /**
+     * 시크릿 발급·회전. 이전 시크릿은 즉시 무효가 되고, 공개 클라이언트였다면 기밀 클라이언트로 바뀐다.
+     * 새 시크릿은 이 응답에서만 볼 수 있다.
+     */
+    @Transactional
+    public OAuthClientResponse rotateSecret(UUID adminId, String clientId) {
+        requireAdmin(adminId);
+        OAuthClient client = clientRepository.findByClientId(clientId)
+                .orElseThrow(() -> new AuthException(ErrorCode.OAUTH_CLIENT_NOT_FOUND));
+        if (!client.isActive()) {
+            throw new AuthException(ErrorCode.OAUTH_CLIENT_NOT_FOUND);
+        }
+        String secret = ClientSecrets.generate();
+        client.replaceSecretHash(ClientSecrets.hash(secret));
+        log.info("OAuth client secret rotated: clientId={}, adminId={}", client.getClientId(), adminId);
+        return OAuthClientResponse.from(client, secret);
     }
 
     @Transactional(readOnly = true)

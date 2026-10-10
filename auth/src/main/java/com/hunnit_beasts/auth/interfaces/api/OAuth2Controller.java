@@ -104,7 +104,8 @@ public class OAuth2Controller {
     public ResponseEntity<?> revoke(HttpServletRequest request) {
         try {
             requireBodyParametersOnly(request);
-            oAuth2Service.revoke(param(request, "token"), param(request, "client_id"));
+            String[] auth = clientAuth(request, param(request, "client_id"), param(request, "client_secret"));
+            oAuth2Service.revoke(param(request, "token"), auth[0], auth[1]);
             return noStore(ResponseEntity.ok()).build();
         } catch (OAuth2Exception e) {
             return oauthError(e.getType(), e.getMessage());
@@ -114,8 +115,9 @@ public class OAuth2Controller {
     /** JSON(camelCase) 토큰 요청 — 기존 ApiResponse 계약 유지. */
     @PostMapping(value = "/oauth2/token", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<ApiResponse<TokenResponse>> exchangeTokenJson(
-            @Valid @RequestBody OAuth2TokenRequest request) {
-        TokenResponse tokenResponse = oAuth2Service.token(request);
+            @Valid @RequestBody OAuth2TokenRequest body, HttpServletRequest http) {
+        String[] auth = clientAuth(http, body.clientId(), body.clientSecret());
+        TokenResponse tokenResponse = oAuth2Service.token(body.withClientAuth(auth[0], auth[1]));
         return noStore(ResponseEntity.ok()).body(ApiResponse.success(tokenResponse));
     }
 
@@ -135,6 +137,8 @@ public class OAuth2Controller {
             if (tokenRequest.grantType() == null || tokenRequest.grantType().isBlank()) {
                 throw new OAuth2Exception(OAuth2ErrorType.INVALID_REQUEST, "grant_type 은 필수입니다.");
             }
+            String[] auth = clientAuth(request, tokenRequest.clientId(), param(request, "client_secret"));
+            tokenRequest = tokenRequest.withClientAuth(auth[0], auth[1]);
             TokenResponse response = oAuth2Service.token(tokenRequest);
 
             Map<String, Object> body = new LinkedHashMap<>();
@@ -252,7 +256,41 @@ public class OAuth2Controller {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("error", type.getCode());
         body.put("error_description", description);
-        return noStore(ResponseEntity.status(type.getHttpStatus())).body(body);
+        ResponseEntity.BodyBuilder builder = noStore(ResponseEntity.status(type.getHttpStatus()));
+        if (type == OAuth2ErrorType.INVALID_CLIENT) {
+            // RFC 6749 §5.2: 401 invalid_client 는 지원하는 인증 방식을 알린다.
+            builder.header(HttpHeaders.WWW_AUTHENTICATE, "Basic realm=\"oauth2\"");
+        }
+        return builder.body(body);
+    }
+
+    /**
+     * 클라이언트 인증 정보를 모은다(RFC 6749 §2.3). HTTP Basic(client_secret_basic) 또는 본문의 client_secret(client_secret_post)을
+     * 받으며 한 요청에 두 방식을 섞으면 거부한다. 반환값은 {client_id, client_secret}(secret 은 없으면 null).
+     */
+    private static String[] clientAuth(HttpServletRequest request, String bodyClientId, String bodySecret) {
+        String header = request.getHeader(HttpHeaders.AUTHORIZATION);
+        if (header == null || !header.regionMatches(true, 0, "Basic ", 0, 6)) {
+            return new String[]{bodyClientId, bodySecret == null || bodySecret.isEmpty() ? null : bodySecret};
+        }
+        if (bodySecret != null && !bodySecret.isEmpty()) {
+            throw new OAuth2Exception(OAuth2ErrorType.INVALID_REQUEST, "클라이언트 인증 방식은 한 가지만 사용할 수 있습니다.");
+        }
+        try {
+            String decoded = new String(java.util.Base64.getDecoder().decode(header.substring(6).trim()), StandardCharsets.UTF_8);
+            int colon = decoded.indexOf(':');
+            if (colon < 1) {
+                throw new IllegalArgumentException("malformed");
+            }
+            String id = java.net.URLDecoder.decode(decoded.substring(0, colon), StandardCharsets.UTF_8);
+            String secret = java.net.URLDecoder.decode(decoded.substring(colon + 1), StandardCharsets.UTF_8);
+            if (bodyClientId != null && !bodyClientId.isEmpty() && !bodyClientId.equals(id)) {
+                throw new OAuth2Exception(OAuth2ErrorType.INVALID_REQUEST, "client_id 가 인증 정보와 다릅니다.");
+            }
+            return new String[]{id, secret.isEmpty() ? null : secret};
+        } catch (IllegalArgumentException e) {
+            throw new OAuth2Exception(OAuth2ErrorType.INVALID_CLIENT, "클라이언트 인증 정보 형식이 올바르지 않습니다.");
+        }
     }
 
     private static ResponseEntity.BodyBuilder noStore(ResponseEntity.BodyBuilder builder) {
