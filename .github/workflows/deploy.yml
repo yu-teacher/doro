@@ -47,6 +47,11 @@ jobs:
       - name: 🧪 Service worker precache check tests
         run: scripts/test-check-sw-precache.sh
 
+      - name: 🧪 Auto reboot scripts tests
+        run: |
+          scripts/test-auto-reboot.sh
+          python3 -m unittest discover -s scripts/auto-reboot -p 'test_*.py'
+
   deploy:
     name: Build & Deploy on Mini Server
     needs: test
