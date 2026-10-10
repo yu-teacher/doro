@@ -39,6 +39,11 @@ public interface UserRepository extends JpaRepository<User, UUID> {
                 .or(() -> candidates.stream().findFirst());
     }
 
+    /** 영구 탈퇴(DELETED)하지 않은 해당 역할 계정 수. 첫 관리자 부트스트랩의 "관리자 없음" 판정에 쓴다. */
+    @Query("SELECT COUNT(u) FROM User u WHERE u.role = :role AND u.status <> :deleted")
+    long countByRoleExcludingStatus(@Param("role") com.hunnit_beasts.auth.domain.user.entity.UserRole role,
+                                    @Param("deleted") UserStatus deleted);
+
     /** 유예 기간이 지난 탈퇴 대기 계정의 ID(오래된 순). */
     @Query("SELECT u.id FROM User u WHERE u.status = :status AND u.deletionRequestedAt <= :cutoff "
             + "ORDER BY u.deletionRequestedAt ASC")

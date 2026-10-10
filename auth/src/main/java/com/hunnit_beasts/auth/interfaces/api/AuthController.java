@@ -1,6 +1,8 @@
 package com.hunnit_beasts.auth.interfaces.api;
 
 import com.hunnit_beasts.auth.common.exception.AuthException;
+import com.hunnit_beasts.auth.domain.user.dto.BootstrapRequest;
+import com.hunnit_beasts.auth.domain.user.service.BootstrapService;
 import com.hunnit_beasts.auth.common.web.ClientIpResolver;
 import com.hunnit_beasts.auth.common.web.RefreshTokenCookies;
 import com.hunnit_beasts.auth.common.exception.ErrorCode;
@@ -28,6 +30,7 @@ import java.util.UUID;
 public class AuthController {
 
     private final AuthService authService;
+    private final BootstrapService bootstrapService;
     private final ClientIpResolver clientIpResolver;
     private final RefreshTokenCookies refreshCookies;
 
@@ -65,6 +68,21 @@ public class AuthController {
             loginResponse = LoginResponse.directSuccess(refreshCookies.withoutRefreshToken(loginResponse.tokens()));
         }
         return ResponseEntity.ok(ApiResponse.success(loginResponse));
+    }
+
+    /**
+     * 첫 관리자 부트스트랩: 운영자가 환경변수에 둔 일회용 토큰을 아는 로그인 사용자가 본인을 최고 관리자로 승격한다.
+     * 최고 관리자가 이미 있으면 항상 거부한다. 성공하면 모든 세션이 끝나므로 다시 로그인해야 새 역할이 적용된다.
+     */
+    @PostMapping("/bootstrap")
+    public ResponseEntity<ApiResponse<Void>> bootstrapFirstAdmin(
+            @AuthenticationPrincipal UUID userId,
+            @RequestBody(required = false) BootstrapRequest request) {
+        if (userId == null) {
+            throw new AuthException(ErrorCode.UNAUTHORIZED, "로그인이 필요한 요청입니다.");
+        }
+        bootstrapService.claimSuperAdmin(userId, request == null ? null : request.token());
+        return ResponseEntity.ok().header("Cache-Control", "no-store").body(ApiResponse.success());
     }
 
     @PostMapping("/2fa/setup")

@@ -97,6 +97,7 @@ IAM ──(REST, 관리자 판정·역할 튜플 동기화)──▶ Guard
 | `PUT /api/v1/admin/users/{id}/suspension` | (Bearer, ADMIN+) `{reason}` | 프로필(`status:SUSPENDED`, `suspensionReason`, `suspendedAt`) | 사유 필수·200자. Guard `system:doro#admin`; 관리자(ADMIN) 대상은 `manage_roles`(최고 관리자)만, **본인·최고 관리자는 정지 불가**. 로그인·갱신·OAuth 발급 차단 + 대상의 **모든 세션 종료**(액세스 토큰도 즉시 무효). 이미 정지면 변화 없음, 탈퇴 유예·탈퇴 계정은 409 `AUTH_40903` |
 | `DELETE /api/v1/admin/users/{id}/suspension` | (Bearer, ADMIN+) | 프로필 | 정지 해제(같은 인가 규칙). 정지 중이 아닌 탈퇴 유예 계정은 409 |
 | `DELETE /api/v1/admin/users/{id}/lock` | (Bearer, ADMIN+) | 프로필(`locked:false`) | 비밀번호·OTP 연속 실패로 잠긴 계정의 잠금 해제(같은 인가 규칙). 세션은 건드리지 않음 |
+| `POST /api/v1/auth/bootstrap` | (Bearer) | 첫 관리자 부트스트랩 | `DORO_IAM_BOOTSTRAP_TOKEN`(32자↑, 기본 꺼짐)을 아는 로그인 사용자가 본인을 SUPER_ADMIN 으로 승격. 최고 관리자가 있으면 409, 토큰 미설정 404, 틀리면 403, 성공 시 모든 세션 종료. [코드: `BootstrapService`] |
 | `GET/POST/DELETE /api/v1/admin/oauth/clients` | (Bearer, ADMIN+) | OAuth 클라이언트 | 등록/목록/비활성화. §5.3 |
 | `GET /api/v1/admin/authz` | (Bearer, ADMIN+) | 204 | 게이트웨이 `auth_request` 전용(로그 뷰어 보호). Guard `system:doro#admin` 최종 판정 |
 | `GET /.well-known/jwks.json` | 없음 | JWKS(응답 봉투 없음) | 서브서비스가 사용 |

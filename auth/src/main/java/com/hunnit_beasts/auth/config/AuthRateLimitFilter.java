@@ -116,7 +116,7 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
         String uri = RequestPaths.canonical(request);
         if ("POST".equals(request.getMethod())) {
             return switch (uri) {
-                case "/api/v1/auth/login", "/api/v1/auth/2fa/login" -> Bucket.LOGIN;
+                case "/api/v1/auth/login", "/api/v1/auth/2fa/login", "/api/v1/auth/bootstrap" -> Bucket.LOGIN;
                 case "/api/v1/auth/lookup" -> Bucket.LOOKUP;
                 case "/api/v1/auth/signup" -> Bucket.SIGNUP;
                 case "/oauth2/token", "/oauth2/revoke" -> Bucket.TOKEN;

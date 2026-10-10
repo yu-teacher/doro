@@ -61,6 +61,11 @@ doro:
     allowed-origin-patterns: ${DORO_CORS_ALLOWED_ORIGIN_PATTERNS:https://varen05.asuscomm.com,http://192.168.0.101:*,http://localhost:*,http://127.0.0.1:*}
   iam:
     issuer: https://auth.doro.local
+    # 첫 관리자 부트스트랩: 비워 두면(기본) 기능이 꺼진다. 32자 이상 난수를 넣으면, 이 토큰을 아는 로그인 사용자가
+    # POST /api/v1/auth/bootstrap 으로 본인을 SUPER_ADMIN 으로 승격할 수 있다(최고 관리자가 없을 때 한 번만).
+    # 승격이 끝나면 반드시 지운다. scripts/bootstrap-first-admin.sh 가 켜고 끄는 일을 돕는다.
+    bootstrap:
+      token: ${DORO_IAM_BOOTSTRAP_TOKEN:}
     # 서브 서비스 전용 내부 API(/internal/**) 호출자 인증. 호출자마다 이름과 토큰(최소 32자)을 '이름:토큰,이름:토큰' 으로 준다.
     # mode: OFF(검사 안 함) | WARN(실패를 경고만 하고 통과: 호출자에 토큰을 배포하는 동안 확인용) | ENFORCE(기본, 실패는 401)
     internal-auth:

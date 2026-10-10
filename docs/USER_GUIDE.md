@@ -404,7 +404,9 @@ curl -s -X PATCH $IAM/api/v1/admin/users/$TARGET_ID/role -H "Authorization: Bear
 
 그래서 일반 ADMIN은 USER와 ADMIN의 2FA는 초기화할 수 있지만 SUPER_ADMIN의 것은 못 합니다.
 
-**첫 관리자 만들기**: 부트스트랩 API는 없습니다. 가입한 계정의 `users.role`을 DB에서 바꾼 뒤 **IAM을 재시작**해 기동 시 동기화가 Guard 튜플을 쓰게 하고, **다시 로그인**해서 `role` 클레임이 `ADMIN`인 토큰을 받으세요.
+**첫 관리자 만들기(권장: 부트스트랩 API)**: 최고 관리자가 한 명도 없을 때, 운영자가 서버에 일회용 토큰을 켜 두면 그 토큰을 아는 로그인 사용자가 본인을 `SUPER_ADMIN`으로 승격합니다. 서버(mini)에서 `scripts/bootstrap-first-admin.sh --enable`로 켜고, 가입·로그인한 계정의 액세스 토큰으로 `POST /api/v1/auth/bootstrap` 에 `{"token":"<.env 의 DORO_IAM_BOOTSTRAP_TOKEN>"}` 을 보냅니다. 성공하면 모든 세션이 끝나니 다시 로그인하고, 끝나면 `--disable`로 토큰을 지웁니다. 토큰이 없으면(기본) 404, 틀리면 403, 최고 관리자가 이미 있으면 409입니다(한 번 성공하면 다시 쓸 수 없습니다).
+
+**(대안) DB 직접 수정**: 가입한 계정의 `users.role`을 DB에서 바꾼 뒤 **IAM을 재시작**해 기동 시 동기화가 Guard 튜플을 쓰게 하고, **다시 로그인**해서 `role` 클레임이 `ADMIN`인 토큰을 받으세요.
 ```bash
 docker exec doro-postgres psql -U doro_admin -d doro_auth \
   -c "update users set role='SUPER_ADMIN' where email='admin@example.com';"
