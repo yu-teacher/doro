@@ -35,6 +35,9 @@ const PRESET_AVATARS = [
 ];
 
 const CROP_SIZE = 260; // 뷰포트 및 캔버스 지름 (원형 통일)
+/** 저장하는 아바타 이미지의 한 변(px)과 JPEG 품질. */
+const AVATAR_EXPORT_SIZE = 192;
+const AVATAR_EXPORT_QUALITY = 0.85;
 
 export const AvatarModal: React.FC<AvatarModalProps> = ({
   isOpen,
@@ -176,11 +179,12 @@ export const AvatarModal: React.FC<AvatarModalProps> = ({
     setZoom((prev) => Math.min(3.0, Math.max(1.0, parseFloat((prev + delta).toFixed(2)))));
   };
 
-  // 크롭 완료 및 256x256 원형 Data URL 추출
+  // 크롭 완료 및 정사각 Data URL 추출. 가장 큰 표시가 112px(레티나 224px)이라 192px 이면 충분하고,
+  // 이 값은 계정 목록과 함께 localStorage 에도 저장되므로 작을수록 좋다(256px/0.92 대비 약 60% 작다).
   const handleApplyCrop = () => {
     if (!imageEl) return;
     const exportCanvas = document.createElement('canvas');
-    const targetSize = 256;
+    const targetSize = AVATAR_EXPORT_SIZE;
     exportCanvas.width = targetSize;
     exportCanvas.height = targetSize;
     const ctx = exportCanvas.getContext('2d');
@@ -209,8 +213,8 @@ export const AvatarModal: React.FC<AvatarModalProps> = ({
       drawHeight * scale
     );
 
-    // 고화질 JPEG 추출 (빈 공간 없이 꽉 차 있으므로 검은 여백 절대 없음)
-    const croppedDataUrl = exportCanvas.toDataURL('image/jpeg', 0.92);
+    // JPEG 추출 (빈 공간 없이 꽉 차 있으므로 검은 여백 절대 없음)
+    const croppedDataUrl = exportCanvas.toDataURL('image/jpeg', AVATAR_EXPORT_QUALITY);
     setSelectedAvatar(croppedDataUrl);
     setIsCropping(false);
   };
