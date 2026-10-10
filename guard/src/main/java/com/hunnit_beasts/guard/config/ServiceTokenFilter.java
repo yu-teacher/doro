@@ -67,6 +67,7 @@ public class ServiceTokenFilter extends OncePerRequestFilter {
                                     FilterChain filterChain) throws ServletException, IOException {
         Optional<String> caller = properties.authenticate(request.getHeader(ServiceAuthProperties.HEADER_NAME));
         if (caller.isPresent()) {
+            request.setAttribute(ServiceAuthProperties.CALLER_ATTRIBUTE, caller.get());
             if (properties.isSharedTokenDeprecated(caller.get())) {
                 rateLimitedWarn.warn(log, "rest-shared:" + boundedPath(request.getRequestURI()),
                         ServiceAuthProperties.SHARED_TOKEN_WARNING + ": transport=rest, path={}", request.getRequestURI());

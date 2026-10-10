@@ -1,6 +1,8 @@
 package com.hunnit_beasts.guard.interfaces.api;
 
 import com.hunnit_beasts.guard.common.response.ApiResponse;
+import com.hunnit_beasts.guard.config.CallerNamespaceGuard;
+import com.hunnit_beasts.guard.config.ServiceAuthProperties;
 import com.hunnit_beasts.guard.core.dsl.service.SchemaService;
 import com.hunnit_beasts.guard.domain.schema.entity.SchemaDefinition;
 import com.hunnit_beasts.guard.interfaces.api.dto.GuardApiDtos.SchemaRegisterRequest;
@@ -15,6 +17,7 @@ import org.springframework.web.bind.annotation.*;
 public class SchemaController {
 
     private final SchemaService schemaService;
+    private final CallerNamespaceGuard namespaceGuard;
 
     @GetMapping
     public ApiResponse<String> getActiveSchema() {
@@ -22,7 +25,10 @@ public class SchemaController {
     }
 
     @PostMapping
-    public ApiResponse<SchemaResponse> registerSchema(@Valid @RequestBody SchemaRegisterRequest request) {
+    public ApiResponse<SchemaResponse> registerSchema(
+            @RequestAttribute(name = ServiceAuthProperties.CALLER_ATTRIBUTE, required = false) String caller,
+            @Valid @RequestBody SchemaRegisterRequest request) {
+        namespaceGuard.requireSchemaChange(caller, request.dsl());
         SchemaDefinition definition = schemaService.registerSchema(request.dsl());
         return ApiResponse.success(new SchemaResponse(
                 definition.getVersion(),

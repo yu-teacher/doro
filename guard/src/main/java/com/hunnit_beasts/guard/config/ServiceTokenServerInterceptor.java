@@ -1,5 +1,7 @@
 package com.hunnit_beasts.guard.config;
 
+import io.grpc.Context;
+import io.grpc.Contexts;
 import io.grpc.Metadata;
 import io.grpc.ServerCall;
 import io.grpc.ServerCallHandler;
@@ -18,6 +20,9 @@ public class ServiceTokenServerInterceptor implements ServerInterceptor {
     private static final Metadata.Key<String> TOKEN_KEY =
             Metadata.Key.of(ServiceAuthProperties.HEADER_NAME.toLowerCase(), Metadata.ASCII_STRING_MARSHALLER);
 
+    /** 인증된 호출자 이름. 인증이 꺼져 있거나 토큰이 없으면(WARN) 비어 있다. */
+    public static final Context.Key<String> CALLER = Context.key("doro-guard-caller");
+
     private final ServiceAuthProperties properties;
     private final RateLimitedWarn rateLimitedWarn = new RateLimitedWarn();
 
@@ -34,6 +39,7 @@ public class ServiceTokenServerInterceptor implements ServerInterceptor {
                 rateLimitedWarn.warn(log, "grpc-shared:" + method,
                         ServiceAuthProperties.SHARED_TOKEN_WARNING + ": transport=grpc, method={}", method);
             }
+            return Contexts.interceptCall(Context.current().withValue(CALLER, caller.get()), call, headers, next);
         } else {
             rateLimitedWarn.warn(log, "grpc:" + method,
                     "Guard gRPC call without a valid service token: method={}, mode={}", method, properties.getMode());

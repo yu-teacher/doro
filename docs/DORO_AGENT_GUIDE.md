@@ -292,6 +292,7 @@ doro:
 - 토큰은 REST 헤더 `X-Doro-Service-Token`, gRPC 메타데이터 `x-doro-service-token`. 모든 호출자가 토큰을 보내도록 배포한 뒤 `OFF → WARN → ENFORCE` 로 올린다. `WARN` 은 로그만, `ENFORCE` 는 REST 401(`UNAUTHORIZED`)/gRPC `UNAUTHENTICATED`.
 - **공유 토큰** `DORO_GUARD_SERVICE_TOKEN`(전환 기간용, 모든 권한 보유). **호출자별 토큰** `DORO_GUARD_SERVICE_TOKENS=auth:<토큰>,blog:<토큰>[:schema-write]`: 이름은 `[a-z][a-z0-9-]{0,31}`, 토큰 32자 이상, 이름/토큰 중복·`shared` 예약, 형식 오류면 **기동 실패**. 비교는 상수 시간.
 - **권한(scope)**: `POST /api/v1/guard/schema`(스키마 전체 교체)는 **`schema-write`** 가 있는 호출자(또는 공유 토큰)만 가능. 없으면 ENFORCE 에서 403 `FORBIDDEN`(WARN 에서는 경고만). 운영에서는 스키마를 등록하는 서비스만 갖는다. gRPC 에는 스키마 쓰기가 없다.
+- **네임스페이스 제한**: `DORO_GUARD_SERVICE_TOKENS=blog:<토큰>:schema-write:blog_*` 처럼 4번째 칸(`+` 로 여러 개, 정확한 이름 또는 `접두사*`, 권한 칸은 비우면 `::`)에 소유 네임스페이스를 주면 그 호출자는 객체 네임스페이스가 그 안인 튜플만 쓰기/삭제하고, 스키마는 소유하지 않은 타입이 활성 스키마와 같을 때만 등록할 수 있다. 위반은 ENFORCE 에서 REST 403 `NAMESPACE_FORBIDDEN` / gRPC `PERMISSION_DENIED`(배치 전체 거부), WARN 은 로그만. 네임스페이스 없는 호출자(IAM)·공유 토큰은 무제한, 호출자끼리 겹치면 기동 실패, 조회·체크는 제한 없음. [코드: `CallerNamespaceGuard`, `ServiceAuthProperties.ownsNamespace`, `ServiceTokenServerInterceptor.CALLER`]
 - 호출자별 토큰이 설정된 뒤에도 공유 토큰으로 들어오는 호출은 경고(`Guard call with the deprecated shared service token`)가 남는다(정리 대상).
 - REST 보호 범위는 `/api/v1/guard/**` 이다(health/actuator/swagger 는 대상 아님). **gRPC·REST 모두 TLS 가 없다** → 신뢰 네트워크 안에서만 쓰고 **절대 외부 노출 금지**. 게이트웨이 nginx 는 Guard 를 프록시하지 않는다(확인함). 호스트 포트 게시는 기본 `127.0.0.1` 이다(`GUARD_BIND`).
 

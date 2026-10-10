@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -25,9 +26,14 @@ import java.util.regex.Pattern;
  *       그 호출자의 토큰만 교체하면 되고, 어느 호출자의 요청인지 식별할 수 있다.</li>
  * </ul>
  *
- * <p>호출자별 토큰에는 선택적으로 권한(scope)을 붙인다({@code 이름:토큰:권한+권한}). 권한이 없으면 조회/체크/튜플 쓰기만 되고,
+ * <p>호출자별 토큰에는 선택적으로 권한(scope)과 네임스페이스를 붙인다({@code 이름:토큰:권한+권한:네임스페이스+네임스페이스}). 권한이 없으면 조회/체크/튜플 쓰기만 되고,
  * 활성 스키마 전체를 교체하는 {@code POST /api/v1/guard/schema} 는 {@code schema-write} 가 있는 호출자만 쓸 수 있다.
  * 공유 토큰은 이전 방식과의 호환을 위해 모든 권한을 갖는다.
+ *
+ * <p>네임스페이스를 지정한 호출자는 그 네임스페이스 객체의 튜플만 쓰고 지울 수 있고, 스키마도 그 네임스페이스의 타입만 바꿀 수 있다.
+ * 하나가 유출되거나 버그가 나도 다른 서비스와 IAM 의 권한 데이터({@code system}, {@code user} 등)를 건드리지 못한다.
+ * 네임스페이스는 정확한 이름({@code user}) 또는 접두사({@code blog_*})이고, 호출자끼리 겹칠 수 없다.
+ * 네임스페이스가 없는 호출자(IAM 등)는 제한이 없다. 조회·체크는 제한하지 않는다.
  */
 @Getter
 @Setter
@@ -38,6 +44,8 @@ public class ServiceAuthProperties {
     public enum Mode { OFF, WARN, ENFORCE }
 
     public static final String HEADER_NAME = "X-Doro-Service-Token";
+    /** 인증된 호출자 이름을 REST 요청에 실어 컨트롤러로 넘기는 속성 이름. */
+    public static final String CALLER_ATTRIBUTE = "doro.guard.caller";
     /** 공유 토큰으로 인증된 호출자에 붙이는 이름. */
     public static final String SHARED_CALLER = "shared";
 
@@ -50,6 +58,8 @@ public class ServiceAuthProperties {
 
     static final int MIN_CALLER_TOKEN_LENGTH = 32;
     private static final Pattern CALLER_NAME = Pattern.compile("[a-z][a-z0-9-]{0,31}");
+    /** 정확한 이름 또는 접두사(끝의 *). 맨 앞 글자가 필요해서 모든 네임스페이스를 뜻하는 단독 * 는 쓸 수 없다. */
+    private static final Pattern NAMESPACE_PATTERN = Pattern.compile("[a-z][a-z0-9_]{0,62}\\*?");
 
     private Mode mode = Mode.OFF;
     private String serviceToken = "";
@@ -57,6 +67,8 @@ public class ServiceAuthProperties {
     private Map<String, String> callerTokens = Map.of();
     @Setter(AccessLevel.NONE)
     private Map<String, Set<String>> callerScopes = Map.of();
+    @Setter(AccessLevel.NONE)
+    private Map<String, List<String>> callerNamespaces = Map.of();
 
     public boolean isActive() {
         return mode != Mode.OFF;
@@ -69,12 +81,14 @@ public class ServiceAuthProperties {
     public void setServiceTokens(String spec) {
         Map<String, String> parsed = new LinkedHashMap<>();
         Map<String, Set<String>> scopes = new LinkedHashMap<>();
+        Map<String, List<String>> namespaces = new LinkedHashMap<>();
         if (spec != null && !spec.isBlank()) {
             for (String entry : spec.split(",")) {
-                String[] parts = entry.split(":", 3);
+                String[] parts = entry.split(":", 4);
                 String name = parts[0].trim();
                 String token = parts.length > 1 ? parts[1].trim() : "";
-                Set<String> callerScope = parts.length > 2 ? parseScopes(name, parts[2]) : Set.of();
+                Set<String> callerScope = parts.length > 2 ? parseScopes(name, parts[2], parts.length > 3) : Set.of();
+                List<String> callerNamespace = parts.length > 3 ? parseNamespaces(name, parts[3]) : List.of();
                 if (!CALLER_NAME.matcher(name).matches()) {
                     throw new IllegalArgumentException("service-tokens: invalid caller name (expected name:token)");
                 }
@@ -86,17 +100,76 @@ public class ServiceAuthProperties {
                     throw new IllegalArgumentException("service-tokens: caller '" + name + "' is reserved or duplicated");
                 }
                 scopes.put(name, callerScope);
+                if (!callerNamespace.isEmpty()) {
+                    namespaces.put(name, callerNamespace);
+                }
             }
+            requireDisjointNamespaces(namespaces);
             if (parsed.values().stream().distinct().count() != parsed.size()) {
                 throw new IllegalArgumentException("service-tokens: callers must not share a token");
             }
         }
         this.callerTokens = Map.copyOf(parsed);
         this.callerScopes = Map.copyOf(scopes);
+        this.callerNamespaces = Map.copyOf(namespaces);
     }
 
-    private static Set<String> parseScopes(String caller, String spec) {
+    private static List<String> parseNamespaces(String caller, String spec) {
+        List<String> result = new java.util.ArrayList<>();
+        if (spec.isBlank()) {
+            return result;
+        }
+        for (String namespace : spec.split("\\+", -1)) {
+            String trimmed = namespace.trim();
+            if (!NAMESPACE_PATTERN.matcher(trimmed).matches() || result.contains(trimmed)) {
+                throw new IllegalArgumentException("service-tokens: invalid or duplicated namespace for '" + caller
+                        + "' (expected name or prefix*)");
+            }
+            result.add(trimmed);
+        }
+        return List.copyOf(result);
+    }
+
+    /** 두 호출자의 네임스페이스가 겹치면(같거나 한쪽이 다른 쪽의 접두사) 누가 소유자인지 모호해지므로 기동 시점에 거부한다. */
+    private static void requireDisjointNamespaces(Map<String, List<String>> namespaces) {
+        List<Map.Entry<String, String>> all = new java.util.ArrayList<>();
+        namespaces.forEach((caller, list) -> list.forEach(pattern -> all.add(Map.entry(caller, pattern))));
+        for (int i = 0; i < all.size(); i++) {
+            for (int j = i + 1; j < all.size(); j++) {
+                if (all.get(i).getKey().equals(all.get(j).getKey())) {
+                    continue;
+                }
+                if (patternsOverlap(all.get(i).getValue(), all.get(j).getValue())) {
+                    throw new IllegalArgumentException("service-tokens: namespaces of '" + all.get(i).getKey() + "' and '"
+                            + all.get(j).getKey() + "' overlap");
+                }
+            }
+        }
+    }
+
+    private static boolean patternsOverlap(String a, String b) {
+        boolean aPrefix = a.endsWith("*");
+        boolean bPrefix = b.endsWith("*");
+        String aBase = aPrefix ? a.substring(0, a.length() - 1) : a;
+        String bBase = bPrefix ? b.substring(0, b.length() - 1) : b;
+        if (aPrefix && bPrefix) {
+            return aBase.startsWith(bBase) || bBase.startsWith(aBase);
+        }
+        if (aPrefix) {
+            return bBase.startsWith(aBase);
+        }
+        if (bPrefix) {
+            return aBase.startsWith(bBase);
+        }
+        return aBase.equals(bBase);
+    }
+
+    /** 권한 칸을 비우는 것은 뒤에 네임스페이스가 올 때만 허용한다({@code 이름:토큰::네임스페이스}). 끝의 빈 칸은 오타일 가능성이 크다. */
+    private static Set<String> parseScopes(String caller, String spec, boolean namespaceFollows) {
         Set<String> result = new LinkedHashSet<>();
+        if (spec.isBlank() && namespaceFollows) {
+            return Set.of();
+        }
         for (String scope : spec.split("\\+")) {
             String trimmed = scope.trim();
             if (!KNOWN_SCOPES.contains(trimmed)) {
@@ -113,6 +186,25 @@ public class ServiceAuthProperties {
             return true;
         }
         return callerScopes.getOrDefault(caller, Set.of()).contains(scope);
+    }
+
+    /** 호출자의 네임스페이스가 제한돼 있는지. 공유 토큰과 네임스페이스를 지정하지 않은 호출자(IAM 등)는 제한이 없다. */
+    public boolean isNamespaceRestricted(String caller) {
+        return caller != null && callerNamespaces.containsKey(caller);
+    }
+
+    /** 호출자가 이 네임스페이스를 소유하는지. 제한이 없는 호출자는 모두 소유한다. */
+    public boolean ownsNamespace(String caller, String namespace) {
+        List<String> patterns = callerNamespaces.get(caller);
+        if (patterns == null) {
+            return true;
+        }
+        for (String pattern : patterns) {
+            if (pattern.endsWith("*") ? namespace.startsWith(pattern.substring(0, pattern.length() - 1)) : namespace.equals(pattern)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 제시된 토큰의 호출자 이름. 어떤 토큰과도 맞지 않으면 비어 있다. 모든 후보와 상수 시간으로 비교한다. */

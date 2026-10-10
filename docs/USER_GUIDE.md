@@ -1079,6 +1079,14 @@ Guard에는 사용자 로그인이 없습니다. 호출하는 **서비스**를 `
   ```
   이름은 `[a-z][a-z0-9-]{0,31}`(`shared`는 예약), 토큰은 **32자 이상**이고 서로 달라야 합니다(토큰에 `:` `,`를 쓰면 안 됩니다). 형식 오류/짧은 토큰/중복/알 수 없는 권한은 **Guard 기동 시점에 실패**합니다.
 - **권한(scope)**: 현재 `schema-write` 하나. 스키마를 바꾸는 요청(`GET`/`HEAD`/`OPTIONS`가 아닌 `/api/v1/guard/schema`)에만 필요하고, 조회/체크/튜플 쓰기에는 필요 없습니다. 보통 스키마를 등록하는 서비스(blog)만 갖고 IAM(auth)은 갖지 않습니다.
+- **네임스페이스 제한**: `이름:토큰:권한:네임스페이스+네임스페이스` 처럼 네 번째 칸에 호출자가 소유한 네임스페이스를 적으면, 그 호출자는 **그 네임스페이스 객체의 튜플만 쓰고 지울 수 있고**, 스키마는 **그 네임스페이스의 타입만** 바꿀 수 있습니다. 이름은 정확한 이름(`games_game`) 또는 접두사(`blog_*`)이며, 권한 칸을 비우려면 `blog:<토큰>::blog_*` 처럼 `::` 로 씁니다.
+  ```
+  DORO_GUARD_SERVICE_TOKENS=auth:<토큰>,blog:<토큰>:schema-write:blog_*,party:<토큰>:schema-write:party_*
+  ```
+  - 네임스페이스가 없는 호출자(IAM 등)와 공유 토큰은 제한이 없습니다. 서로 다른 호출자의 네임스페이스는 **겹칠 수 없고**(같은 이름·한쪽이 다른 쪽의 접두사), 형식 오류·단독 `*` 는 **기동 시점에 실패**합니다.
+  - 어긋나면 `ENFORCE` 에서 REST `403 NAMESPACE_FORBIDDEN`, gRPC `PERMISSION_DENIED`(배치는 전부 거부), `WARN` 에서는 경고 로그만 남기고 통과합니다. 응답에는 네임스페이스 이름을 싣지 않고 로그에만 남깁니다(`Guard … outside the caller's namespaces`).
+  - 스키마 검사는 "새 스키마에서 소유하지 않은 타입이 현재 활성 스키마와 똑같은가"입니다. 그래서 활성 스키마를 받아 자기 타입만 병합해 올리는 정상 절차는 통과하고, 다른 서비스·IAM 타입(`system` 등)을 고치거나 지우거나 새로 만드는 요청은 거부됩니다.
+  - 조회·체크(`check`/`expand`)는 제한하지 않습니다. 서비스가 `user`·`system` 같은 IAM 타입을 읽는 것은 정상 사용이기 때문입니다.
 - **공유 토큰** `DORO_GUARD_SERVICE_TOKEN`: 모든 호출자가 같이 쓰는 이전 방식이며 **모든 권한**을 가집니다. 호출자별 토큰이 설정된 뒤 공유 토큰으로 오는 호출은 경고 로그에 남습니다(정리 시점 판단용).
 - 토큰 비교는 상수 시간이고 토큰 값은 오류/로그에 남지 않습니다.
 - **호출자 쪽 설정**: SDK는 `doro.guard.service-token`, IAM은 `DORO_GUARD_SERVICE_TOKEN`(compose는 `DORO_GUARD_AUTH_TOKEN`이 있으면 그것) 값을 헤더로 보냅니다.
@@ -1401,7 +1409,7 @@ doro:
     http-url: http://${GUARD_HTTP_HOST:localhost}:${GUARD_HTTP_PORT:8081}
     http-timeout-ms: ${GUARD_HTTP_TIMEOUT_MS:5000}
 ```
-- Guard가 `ENFORCE`면 이 서비스용 호출자 토큰을 Guard의 `DORO_GUARD_SERVICE_TOKENS`에 등록하고(`blog:<토큰>:schema-write`), 서비스에는 같은 값을 `DORO_GUARD_SERVICE_TOKEN`으로 줍니다. **스키마를 등록하는 서비스에만 `schema-write`**를 주세요.
+- Guard가 `ENFORCE`면 이 서비스용 호출자 토큰을 Guard의 `DORO_GUARD_SERVICE_TOKENS`에 등록하고(`blog:<토큰>:schema-write`), 서비스에는 같은 값을 `DORO_GUARD_SERVICE_TOKEN`으로 줍니다. **스키마를 등록하는 서비스에만 `schema-write`**를 주세요. 서비스 접두사 네임스페이스도 함께 지정하세요(`blog:<토큰>:schema-write:blog_*`).
 
 ### 3단계. 권한 스키마 정의와 병합 등록
 
@@ -1629,7 +1637,7 @@ public class GuardTuples {
 | `DORO_IAM_JWT_KEY_ENCRYPTION_SECRET`, `DORO_IAM_JWT_PREVIOUS_KEY_ID`, `DORO_IAM_JWT_PREVIOUS_PUBLIC_KEY_PEM` | 비어 있음 | IAM | Redis의 JWT 개인키 암호화, 키 회전 |
 | `DORO_OAUTH_*` | [2.8](#28-설정과-운영) | IAM | OAuth/OIDC |
 | `DORO_GUARD_SECURITY_MODE` | `OFF` | Guard | 서비스 토큰 검사 `OFF`/`WARN`/`ENFORCE` |
-| `DORO_GUARD_SERVICE_TOKENS` | 비어 있음 | Guard | `이름:토큰[:권한]` 쉼표 목록 |
+| `DORO_GUARD_SERVICE_TOKENS` | 비어 있음 | Guard | `이름:토큰[:권한[:네임스페이스]]` 쉼표 목록 |
 | `DORO_GUARD_VALIDATION_MODE` | `WARN` | Guard | 튜플/스키마 검증 `OFF`/`WARN`/`ENFORCE` |
 | `DORO_GUARD_SCHEMA_REFRESH_SECONDS` | `30` | Guard | DB 활성 스키마 확인 주기(0이면 끔) |
 | `DORO_GUARD_CACHE_TTL_SECONDS` / `_CACHE_MAX_SIZE` | `60` / `50000` | Guard | 인가 캐시 |

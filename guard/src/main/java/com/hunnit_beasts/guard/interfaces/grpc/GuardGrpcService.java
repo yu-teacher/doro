@@ -1,6 +1,8 @@
 package com.hunnit_beasts.guard.interfaces.grpc;
 
 import com.hunnit_beasts.guard.common.validation.FieldLimits;
+import com.hunnit_beasts.guard.config.CallerNamespaceGuard;
+import com.hunnit_beasts.guard.config.ServiceTokenServerInterceptor;
 import com.hunnit_beasts.guard.core.engine.CheckEngine;
 import com.hunnit_beasts.guard.core.engine.ExpandEngine;
 import com.hunnit_beasts.guard.domain.tuple.dto.TupleDto;
@@ -23,6 +25,7 @@ public class GuardGrpcService extends GuardServiceGrpc.GuardServiceImplBase {
     private final CheckEngine checkEngine;
     private final ExpandEngine expandEngine;
     private final TupleService tupleService;
+    private final CallerNamespaceGuard namespaceGuard;
 
     @Override
     public void check(CheckRequest request, StreamObserver<CheckResponse> responseObserver) {
@@ -57,6 +60,7 @@ public class GuardGrpcService extends GuardServiceGrpc.GuardServiceImplBase {
         try {
             List<TupleDto> dtos = toValidatedDtos(request.getTuplesList());
 
+            namespaceGuard.requireTupleAccess(ServiceTokenServerInterceptor.CALLER.get(), "tuple write", dtos);
             int written = tupleService.writeTuples(dtos);
             WriteTuplesResponse response = WriteTuplesResponse.newBuilder()
                     .setWrittenCount(written)
@@ -75,6 +79,7 @@ public class GuardGrpcService extends GuardServiceGrpc.GuardServiceImplBase {
         try {
             List<TupleDto> dtos = toValidatedDtos(request.getTuplesList());
 
+            namespaceGuard.requireTupleAccess(ServiceTokenServerInterceptor.CALLER.get(), "tuple delete", dtos);
             int deleted = tupleService.deleteTuples(dtos);
             DeleteTuplesResponse response = DeleteTuplesResponse.newBuilder()
                     .setDeletedCount(deleted)
@@ -127,6 +132,9 @@ public class GuardGrpcService extends GuardServiceGrpc.GuardServiceImplBase {
     /** 내부 예외를 gRPC Status 로 변환한다. 원시 예외를 그대로 넘기면 클라이언트에는 UNKNOWN 으로만 보인다. */
     private static StatusRuntimeException toStatus(Exception e) {
         if (e instanceof GuardException guardException) {
+            if (guardException.getErrorCode() == com.hunnit_beasts.guard.common.exception.ErrorCode.NAMESPACE_FORBIDDEN) {
+                return Status.PERMISSION_DENIED.withDescription(guardException.getMessage()).asRuntimeException();
+            }
             Status status = guardException.getErrorCode().getHttpStatus().is4xxClientError()
                     ? Status.INVALID_ARGUMENT : Status.INTERNAL;
             return status.withDescription(guardException.getMessage()).asRuntimeException();
