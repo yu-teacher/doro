@@ -151,18 +151,19 @@ export const OAuthConsentPage: React.FC = () => {
 
           <h1 className="text-xl font-extrabold text-slate-900">Doro 계정으로 로그인</h1>
           <p className="text-xs text-slate-500 mt-1">
-            <strong className="text-indigo-600 font-bold">{clientId}</strong> 앱에서 다음 권한을 요청합니다.
+            <strong className="text-indigo-600 font-bold break-all">{clientId}</strong> 앱에서 다음 권한을 요청합니다.
           </p>
-          <p className="text-[11px] text-slate-400 mt-1">승인 후 <strong className="font-semibold text-slate-600">{redirectHost}</strong> 로 이동합니다.</p>
+          <p className="text-[11px] text-slate-400 mt-1">승인 후 <strong className="font-semibold text-slate-600 break-all">{redirectHost}</strong> 로 이동합니다.</p>
 
           {activeAccount && (
             <div className="mt-4 p-3 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center text-xs font-bold">
+              <div className="w-8 h-8 shrink-0 rounded-full bg-indigo-600 text-white flex items-center justify-center text-xs font-bold">
                 {activeAccount.fullName.charAt(0)}
               </div>
-              <div className="text-left">
-                <div className="text-xs font-bold text-slate-800">{activeAccount.fullName}</div>
-                <div className="text-[11px] text-slate-500">{activeAccount.email}</div>
+              {/* min-w-0: 긴 이름·이메일이 있어도 flex 안에서 줄어들어 카드 밖으로 넘치지 않는다 */}
+              <div className="text-left min-w-0">
+                <div className="text-xs font-bold text-slate-800 break-words">{activeAccount.fullName}</div>
+                <div className="text-[11px] text-slate-500 break-all">{activeAccount.email}</div>
               </div>
             </div>
           )}
