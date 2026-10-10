@@ -15,7 +15,8 @@ pass=0; fail=0
 ok() { pass=$((pass + 1)); printf '  통과  %s\n' "$1"; }
 bad() { fail=$((fail + 1)); printf '  실패  %s\n' "$1"; [ -f "$WORK/log" ] && sed 's/^/        log: /' "$WORK/log"; }
 reset() { rm -f "$WORK/log" "$WORK/rebooted" "$WORK/state/pending" "$WORK/reboot-required"; }
-run_pre() { env AUTO_REBOOT_CONF=/nonexistent AUTO_REBOOT_HOST=testhost LOGGER="$WORK/logger" REBOOT_CMD="$WORK/fake-reboot" REBOOT_REQUIRED_FILE="$WORK/reboot-required" STATE_DIR="$WORK/state" CHECK_DOCKER=no APT_LOCK_FILES="" "$@" bash "$PRE" >/dev/null 2>&1 || true; }
+# 실제 러너 작업(이 시험이 CI 안에서 돌 수도 있다)에 걸리지 않게 기본 패턴은 존재하지 않는 이름으로 둔다. 3번 시험만 가짜 러너 이름을 넘긴다.
+run_pre() { env AUTO_REBOOT_CONF=/nonexistent RUNNER_PROCESS_PATTERN="__no_such_runner_process__" AUTO_REBOOT_HOST=testhost LOGGER="$WORK/logger" REBOOT_CMD="$WORK/fake-reboot" REBOOT_REQUIRED_FILE="$WORK/reboot-required" STATE_DIR="$WORK/state" CHECK_DOCKER=no APT_LOCK_FILES="" "$@" bash "$PRE" >/dev/null 2>&1 || true; }
 
 # 1) 재부팅 대기가 없으면 아무것도 하지 않는다
 reset; run_pre
