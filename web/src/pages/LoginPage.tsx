@@ -18,9 +18,8 @@ import {
 } from 'lucide-react';
 import { getErrorMessage } from '../utils/errorUtils';
 import { parseJwtPayload } from '../utils/jwtUtils';
-import { clearConsentReturn, peekConsentReturnPath } from '../utils/consentReturn';
-
-const DEFAULT_AFTER_LOGIN_PATH = '/account';
+import { clearConsentReturn } from '../utils/consentReturn';
+import { resolveAfterLoginPath } from '../utils/afterLogin';
 
 /** 다른 화면(예: 전체 로그아웃)이 로그인 화면에 넘기는 안내 문구 */
 function readNotice(state: unknown): string | null {
@@ -37,8 +36,8 @@ export const LoginPage: React.FC = () => {
   const activeAccount = accounts[activeAccountIndex] || accounts[0];
   const location = useLocation();
   const notice = readNotice(location.state);
-  // 동의 화면에서 로그인으로 넘어온 경우 로그인 후 그 요청으로 복귀한다 (앱 내부 상대 경로만, 마운트 시점 1회 확정)
-  const [afterLoginPath] = useState<string>(() => peekConsentReturnPath() ?? DEFAULT_AFTER_LOGIN_PATH);
+  // 로그인 뒤 갈 곳: 동의 요청(서비스 로그인) > 로그인 전에 보던 화면 > 내 계정 (앱 내부 경로만, 마운트 시점 1회 확정)
+  const [afterLoginPath] = useState<string>(() => resolveAfterLoginPath(location.state));
 
   useEffect(() => {
     if (activeAccount) {
@@ -273,6 +272,7 @@ export const LoginPage: React.FC = () => {
               <div className="pt-2 flex items-center justify-between gap-4">
                 <Link
                   to="/signup"
+                  state={location.state}
                   className="text-xs font-bold text-indigo-600 hover:text-indigo-700 px-3 py-2 rounded-xl hover:bg-indigo-50 transition-colors"
                 >
                   계정 만들기

@@ -1,7 +1,8 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { BookOpen, Gamepad2, MapPin, Shield, Terminal, User, Utensils, ExternalLink, ArrowRight, FileText, LogIn } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
+import { loginStateFrom } from '../utils/afterLogin';
 import { buildServiceCards, type ServiceCard, type ServiceIcon } from '../utils/serviceCatalog';
 
 const ICONS: Record<ServiceIcon, { Icon: React.ComponentType<{ className?: string }>; color: string }> = {
@@ -51,6 +52,7 @@ const HubCard: React.FC<{ card: ServiceCard }> = ({ card }) =>
   );
 
 export const HubPage: React.FC = () => {
+  const location = useLocation();
   const { accounts, activeAccountIndex } = useAuthStore();
   const activeAccount = accounts[activeAccountIndex] || accounts[0];
   const isLoggedIn = Boolean(activeAccount);
@@ -70,11 +72,12 @@ export const HubPage: React.FC = () => {
           <div className="flex items-center justify-center gap-3 pt-2">
             <Link
               to="/login"
+              state={loginStateFrom(location)}
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 transition-colors"
             >
               <LogIn className="w-4 h-4" /> 로그인
             </Link>
-            <Link to="/signup" className="px-5 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors">
+            <Link to="/signup" state={loginStateFrom(location)} className="px-5 py-2.5 rounded-xl border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors">
               가입하기
             </Link>
           </div>

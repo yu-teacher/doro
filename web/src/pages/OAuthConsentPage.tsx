@@ -39,11 +39,13 @@ export const OAuthConsentPage: React.FC = () => {
 
   // 로그인 전이라면 검증된 동의 요청을 보관해 두었다가, 로그인 직후 이 화면으로 돌아오게 한다.
   const needsLogin = parsed.ok && !activeAccount;
+  // 저장한 뒤 바로 로그인 화면으로 보낸다(서비스에서 로그인하러 온 사람이 안내 화면에서 한 번 더 누르지 않게). 로그인하면 이 요청으로 돌아온다.
   useEffect(() => {
     if (needsLogin) {
       saveConsentReturn(searchParams);
+      navigate('/login', { replace: true });
     }
-  }, [needsLogin, searchParams]);
+  }, [needsLogin, searchParams, navigate]);
 
   const handleApprove = useCallback(async () => {
     if (!parsed.ok || inFlight.current) return;

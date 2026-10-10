@@ -1,21 +1,28 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { authApi } from '../api/authApi';
 import { MAX_ACCOUNTS } from '../api/cookieSession';
+import { clearConsentReturn } from '../utils/consentReturn';
+import { resolveAfterLoginPath } from '../utils/afterLogin';
 import { useAuthStore } from '../store/authStore';
 import { Shield, Lock, Mail, User, AlertCircle, Loader2 } from 'lucide-react';
 import { getErrorMessage } from '../utils/errorUtils';
 
 export const SignUpPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { accounts, activeAccountIndex, addAccount } = useAuthStore();
   const activeAccount = accounts[activeAccountIndex] || accounts[0];
 
+  const [afterLoginPath] = useState<string>(() => resolveAfterLoginPath(location.state));
+
+  // 가입 직후(자동 로그인)와 이미 로그인된 경우 모두 로그인과 같은 곳으로 간다: 서비스 로그인 요청 > 오기 전에 보던 화면 > 내 계정
   React.useEffect(() => {
     if (activeAccount) {
-      navigate('/account', { replace: true });
+      clearConsentReturn();
+      navigate(afterLoginPath, { replace: true });
     }
-  }, [activeAccount, navigate]);
+  }, [activeAccount, afterLoginPath, navigate]);
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -59,9 +66,9 @@ export const SignUpPage: React.FC = () => {
           sessionId: loginRes.tokens.sessionId,
           userIndex: loginRes.tokens.userIndex ?? 0,
         });
-        navigate('/account');
+        // 이동은 위의 activeAccount 효과가 맡는다(서비스 로그인 요청이나 보던 화면으로 이어진다)
       } else {
-        navigate('/login');
+        navigate('/login', { state: location.state });
       }
     } catch (err: unknown) {
       setError(getErrorMessage(err, '회원가입 중 오류가 발생했습니다.'));
@@ -167,7 +174,7 @@ export const SignUpPage: React.FC = () => {
           <div className="mt-8 pt-6 border-t border-slate-100 text-center">
             <p className="text-xs text-slate-500">
               이미 계정이 있으신가요?{' '}
-              <Link to="/login" className="text-indigo-600 hover:text-indigo-700 font-bold ml-1">
+              <Link to="/login" state={location.state} className="text-indigo-600 hover:text-indigo-700 font-bold ml-1">
                 로그인
               </Link>
             </p>

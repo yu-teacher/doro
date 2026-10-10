@@ -34,6 +34,7 @@ import {
   LockOpen,
 } from 'lucide-react';
 import { getErrorMessage } from '../utils/errorUtils';
+import { loginStateFrom } from '../utils/afterLogin';
 import { moderationFor, validateSuspensionReason } from '../utils/adminModeration';
 import { getBlogUrl, getMenuUrl } from '../utils/urlUtils';
 import { UserRole } from '../types/auth';
@@ -237,9 +238,9 @@ export const MyAccountPage: React.FC = () => {
 
   useEffect(() => {
     if (!activeAccount) {
-      navigate('/login');
+      navigate('/login', { state: loginStateFrom(location) });
     }
-  }, [activeAccount, navigate]);
+  }, [activeAccount, navigate, location]);
 
   useEffect(() => {
     if (activeAccount) {

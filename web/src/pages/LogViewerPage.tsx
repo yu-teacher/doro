@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { loginStateFrom } from '../utils/afterLogin';
 import { useAuthStore } from '../store/authStore';
 import { logApi, ParsedLogEntry } from '../api/logApi';
 import { getGrafanaUrl } from '../utils/urlUtils';
@@ -31,6 +32,7 @@ const SERVICE_LABELS: Record<string, { name: string; color: string }> = {
 
 export const LogViewerPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const grafanaUrl = getGrafanaUrl();
   const { getActiveAccount } = useAuthStore();
   const activeAccount = getActiveAccount();
@@ -104,7 +106,7 @@ export const LogViewerPage: React.FC = () => {
         <h2 className="text-lg font-bold text-slate-800">로그인이 필요합니다</h2>
         <p className="text-xs text-slate-500">시스템 로그 모니터링은 관리자 로그인 후 이용 가능합니다.</p>
         <button
-          onClick={() => navigate('/login')}
+          onClick={() => navigate('/login', { state: loginStateFrom(location) })}
           className="py-2.5 px-5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
         >
           로그인하러 가기

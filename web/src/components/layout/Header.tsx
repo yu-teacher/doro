@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { loginStateFrom } from '../../utils/afterLogin';
 import { useAuthStore } from '../../store/authStore';
 import { Shield, Grid, User, Terminal } from 'lucide-react';
 import { AppLauncherModal } from './AppLauncherModal';
@@ -25,7 +26,7 @@ export const Header: React.FC = () => {
       navigate('/account', { state: { tab: 'home', timestamp: Date.now() } });
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
-      navigate('/login');
+      navigate('/login', { state: loginStateFrom(location) });
     }
   };
 
@@ -97,7 +98,7 @@ export const Header: React.FC = () => {
             ) : (
               !isAuthPage && (
                 <button
-                  onClick={() => navigate('/login')}
+                  onClick={() => navigate('/login', { state: loginStateFrom(location) })}
                   className="py-2 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
                 >
                   <User className="w-3.5 h-3.5" /> 로그인
