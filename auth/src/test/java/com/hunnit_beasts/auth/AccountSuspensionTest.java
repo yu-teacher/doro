@@ -24,6 +24,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -122,7 +123,8 @@ class AccountSuspensionTest {
         UserProfileResponse second = suspension.suspend(target, "다른 사유", admin);
 
         assertThat(second.suspensionReason()).isEqualTo("처음 사유");
-        assertThat(second.suspendedAt()).isEqualTo(first.suspendedAt());
+        // DB 는 마이크로초까지만 저장한다(Linux 의 Instant.now() 는 나노초라 그대로 비교하면 환경에 따라 어긋난다)
+        assertThat(second.suspendedAt().truncatedTo(ChronoUnit.MILLIS)).isEqualTo(first.suspendedAt().truncatedTo(ChronoUnit.MILLIS));
     }
 
     @Test

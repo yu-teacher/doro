@@ -2,7 +2,9 @@ package com.hunnit_beasts.auth;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hunnit_beasts.auth.core.redis.KillSwitchPublisher;
 import com.hunnit_beasts.auth.infrastructure.guard.GuardClient;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,10 +16,14 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -37,6 +43,19 @@ class AccountSuspensionEndpointTest {
     @Autowired private MockMvc mockMvc;
     @Autowired private JdbcTemplate jdbc;
     @MockitoBean private GuardClient guardClient;
+    /**
+     * 즉시 무효화는 Redis 블랙리스트(KillSwitchPublisher)가 맡는데 테스트 환경에는 Redis 가 없을 수 있다(CI 컨테이너).
+     * 그래서 메모리 블랙리스트로 대체한다: 정지가 세션 종료를 요청하는지와, 요청이 블랙리스트된 세션을 거부하는지를 함께 확인한다.
+     */
+    @MockitoBean private KillSwitchPublisher killSwitch;
+    private final Set<UUID> blacklisted = ConcurrentHashMap.newKeySet();
+
+    @BeforeEach
+    void inMemoryBlacklist() {
+        blacklisted.clear();
+        doAnswer(inv -> blacklisted.add(inv.getArgument(1))).when(killSwitch).publishSessionRevoked(any(), any(), any());
+        when(killSwitch.isSessionBlacklisted(any())).thenAnswer(inv -> blacklisted.contains(inv.<UUID>getArgument(0)));
+    }
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
