@@ -47,6 +47,9 @@ jobs:
       - name: 🧪 Service worker precache check tests
         run: scripts/test-check-sw-precache.sh
 
+      - name: 🧪 Deploy notification and smoke test script tests
+        run: scripts/test-notify-and-smoke.sh
+
       - name: 🧪 Auto reboot scripts tests
         run: |
           scripts/test-auto-reboot.sh
@@ -60,6 +63,9 @@ jobs:
     if: ${{ !cancelled() && (needs.test.result == 'success' || needs.test.result == 'skipped') }}
     # 운영 서버(mini)에서만 배포한다. 다른 셀프호스티드 러너(노트북 등)가 이 작업을 가져가지 않도록 mini 라벨을 명시한다.
     runs-on: [self-hosted, mini]
+    # 배포 후 점검 결과(마지막 부분)를 notify 작업이 텔레그램 메시지에 쓴다.
+    outputs:
+      smoke: ${{ steps.smoke.outputs.summary }}
 
     steps:
       - name: 📥 Checkout repository
@@ -153,7 +159,40 @@ jobs:
           check "Auth API" "http://localhost:${AUTH_PORT:-8080}/actuator/health"
           check "Guard API" "http://localhost:${GUARD_PORT:-8081}/actuator/health"
 
+      # 컨테이너와 게이트웨이 경유 화면이 살아 있는지, 로그인이 필요한 API 가 비로그인 요청을 500 이 아니라 401/400 으로 거절하는지 확인한다.
+      - name: 🔬 Post-deploy smoke test
+        id: smoke
+        run: |
+          set +e
+          scripts/post-deploy-smoke.sh | tee smoke.txt
+          code="${PIPESTATUS[0]}"
+          { echo 'summary<<SMOKE_EOF'; tail -c 1500 smoke.txt; echo 'SMOKE_EOF'; } >> "$GITHUB_OUTPUT"
+          exit "$code"
+
       - name: 🧹 Clean unused images
         if: always()
         run: |
           docker image prune -f
+
+  # 결과를 텔레그램으로 알린다(성공·테스트 실패·배포 실패 모두). 설정(TELEGRAM_BOT_TOKEN/CHAT_ID)은 서버의 ~/doro/.env 에 있고,
+  # 없으면 알림만 건너뛴다. 알림 실패가 배포 결과를 바꾸지 않는다. 커밋 메시지는 env 로만 받아 셸에 끼워 넣지 않는다.
+  notify:
+    name: Telegram notification
+    needs: [test, deploy]
+    if: ${{ !cancelled() }}
+    runs-on: [self-hosted, mini]
+    timeout-minutes: 5
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: 📨 Send deploy result
+        env:
+          TEST_RESULT: ${{ needs.test.result }}
+          DEPLOY_RESULT: ${{ needs.deploy.result }}
+          SMOKE: ${{ needs.deploy.outputs.smoke }}
+          SHA: ${{ github.sha }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          ACTOR: ${{ github.actor }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: scripts/format-deploy-message.sh | scripts/notify-telegram.sh
