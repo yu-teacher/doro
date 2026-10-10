@@ -94,6 +94,9 @@ IAM ──(REST, 관리자 판정·역할 튜플 동기화)──▶ Guard
 | `GET /api/v1/admin/users` | (Bearer, ADMIN+) | 사용자 목록 | JWT 역할 + Guard `system:doro#admin` 으로 최종 판정 |
 | `PATCH /api/v1/admin/users/{id}/role` | (Bearer) `{role}` | 프로필 | Guard `system:doro#manage_roles`. 본인 역할 변경 불가. 변경 후 대상의 **모든 세션 종료** |
 | `DELETE /api/v1/admin/users/{id}/2fa` | (Bearer) | 없음 | Guard `user:{id}#can_reset_2fa`. 성공하면 대상의 모든 세션 종료 |
+| `PUT /api/v1/admin/users/{id}/suspension` | (Bearer, ADMIN+) `{reason}` | 프로필(`status:SUSPENDED`, `suspensionReason`, `suspendedAt`) | 사유 필수·200자. Guard `system:doro#admin`; 관리자(ADMIN) 대상은 `manage_roles`(최고 관리자)만, **본인·최고 관리자는 정지 불가**. 로그인·갱신·OAuth 발급 차단 + 대상의 **모든 세션 종료**(액세스 토큰도 즉시 무효). 이미 정지면 변화 없음, 탈퇴 유예·탈퇴 계정은 409 `AUTH_40903` |
+| `DELETE /api/v1/admin/users/{id}/suspension` | (Bearer, ADMIN+) | 프로필 | 정지 해제(같은 인가 규칙). 정지 중이 아닌 탈퇴 유예 계정은 409 |
+| `DELETE /api/v1/admin/users/{id}/lock` | (Bearer, ADMIN+) | 프로필(`locked:false`) | 비밀번호·OTP 연속 실패로 잠긴 계정의 잠금 해제(같은 인가 규칙). 세션은 건드리지 않음 |
 | `GET/POST/DELETE /api/v1/admin/oauth/clients` | (Bearer, ADMIN+) | OAuth 클라이언트 | 등록/목록/비활성화. §5.3 |
 | `GET /api/v1/admin/authz` | (Bearer, ADMIN+) | 204 | 게이트웨이 `auth_request` 전용(로그 뷰어 보호). Guard `system:doro#admin` 최종 판정 |
 | `GET /.well-known/jwks.json` | 없음 | JWKS(응답 봉투 없음) | 서브서비스가 사용 |

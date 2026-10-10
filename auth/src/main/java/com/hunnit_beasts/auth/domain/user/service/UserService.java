@@ -20,6 +20,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import com.hunnit_beasts.auth.domain.user.entity.UserRole;
@@ -107,19 +108,10 @@ public class UserService {
         }
         return userRepository.findAll().stream()
                 .map(user -> {
-                    boolean hasTotp = credentialRepository.findByUserId(user.getId())
-                            .map(c -> c.getTotpSecret() != null && !c.getTotpSecret().isBlank())
-                            .orElse(false);
-                    return new UserProfileResponse(
-                            user.getId(),
-                            user.getEmail(),
-                            user.getName(),
-                            user.getProfileImageUrl(),
-                            user.getStatus().name(),
-                            user.getRole() != null ? user.getRole().name() : "USER",
-                            hasTotp,
-                            user.getCreatedAt()
-                    );
+                    var credential = credentialRepository.findByUserId(user.getId());
+                    boolean hasTotp = credential.map(c -> c.getTotpSecret() != null && !c.getTotpSecret().isBlank()).orElse(false);
+                    boolean locked = credential.map(c -> c.getLockedUntil() != null && Instant.now().isBefore(c.getLockedUntil())).orElse(false);
+                    return UserProfileResponse.forAdmin(user, hasTotp, locked);
                 })
                 .toList();
     }
@@ -149,20 +141,10 @@ public class UserService {
         log.info("User role changed and Zanzibar ReBAC tuples synchronized: targetUserId={}, newRole={}, adminId={}",
                 targetUserId, newRole, adminId);
 
-        boolean hasTotp = credentialRepository.findByUserId(targetUserId)
-                .map(c -> c.getTotpSecret() != null && !c.getTotpSecret().isBlank())
-                .orElse(false);
-
-        return new UserProfileResponse(
-                user.getId(),
-                user.getEmail(),
-                user.getName(),
-                user.getProfileImageUrl(),
-                user.getStatus().name(),
-                user.getRole().name(),
-                hasTotp,
-                user.getCreatedAt()
-        );
+        var credential = credentialRepository.findByUserId(targetUserId);
+        boolean hasTotp = credential.map(c -> c.getTotpSecret() != null && !c.getTotpSecret().isBlank()).orElse(false);
+        boolean locked = credential.map(c -> c.getLockedUntil() != null && Instant.now().isBefore(c.getLockedUntil())).orElse(false);
+        return UserProfileResponse.forAdmin(user, hasTotp, locked);
     }
 
     /** 비밀번호 변경 후 현재 세션(keepSessionId)을 제외한 모든 세션을 종료한다. keepSessionId 가 null 이면 전부 종료. */

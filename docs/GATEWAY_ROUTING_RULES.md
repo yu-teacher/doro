@@ -63,7 +63,7 @@ nginx 의 평가 순서(이 순서를 모르고 location 을 추가하면 반드
 | `/loki/` | `loki_upstream/loki/` | **관리자 전용**: `auth_request /_auth_admin`, **GET/HEAD 만 허용**(`limit_except`, 나머지 메서드는 거부). 쓰기(push)는 서버별 수집기(Alloy)가 중앙 Loki(노트북)에 직접 수행(이 경로로는 쓰지 않는다). 이 location 이 없으면 중앙 관제 로그 화면이 비게 된다 |
 | `/api/v1/auth` | `iam_upstream` | 로그인/가입/2FA/로그아웃/토큰 갱신 등. **끝 슬래시 없는 프리픽스**라 `/api/v1/auth` 로 *시작하는* 모든 경로가 걸린다 |
 | `/api/v1/sessions` | `iam_upstream` | 세션 관리, `sessions/current`(SDK 폐기 확인). 끝 슬래시 없음 |
-| `/api/v1/admin/users` | `iam_upstream` | 사용자 관리(목록, 역할 변경, 2FA 초기화). 끝 슬래시 없음 |
+| `/api/v1/admin/users` | `iam_upstream` | 사용자 관리(목록, 역할 변경, 2FA 초기화, 정지·해제, 잠금 해제). 끝 슬래시 없음 |
 | `/api/v1/` | `blog_api_upstream/api/v1/` | **블로그 백엔드(나머지 전부)**. 위의 IAM 전용 경로보다 짧아서 IAM 쪽이 이기고, 그 외는 여기로 온다 |
 | `/iam/` | `iam_upstream/` | `/iam` 접두어를 떼고 IAM 으로 전달(IAM 직접 접근용) |
 | `/oauth2/` | `iam_upstream/oauth2/` | OAuth/OIDC(`authorize`, `token`, `userinfo`). `= /oauth2/consent` 만 예외(포털) |

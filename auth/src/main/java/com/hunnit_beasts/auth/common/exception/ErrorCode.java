@@ -35,6 +35,7 @@ public enum ErrorCode {
 
     // 409 Conflict
     EMAIL_ALREADY_EXISTS(HttpStatus.CONFLICT, "AUTH_40901", "이미 사용 중인 이메일입니다."),
+    ACCOUNT_STATE_CONFLICT(HttpStatus.CONFLICT, "AUTH_40903", "계정의 현재 상태에서는 처리할 수 없습니다."),
     OAUTH_CLIENT_ALREADY_EXISTS(HttpStatus.CONFLICT, "AUTH_40902", "이미 등록된 client_id 입니다."),
 
     // 503 Service Unavailable

@@ -45,6 +45,16 @@ public class User extends BaseTimeEntity {
     @Column(name = "deleted_at")
     private Instant deletedAt;
 
+    /** 관리자가 정지한 시각·정지한 관리자·사유. SUSPENDED 인 동안에만 값이 있다. */
+    @Column(name = "suspended_at")
+    private Instant suspendedAt;
+
+    @Column(name = "suspended_by")
+    private UUID suspendedBy;
+
+    @Column(name = "suspension_reason", length = 200)
+    private String suspensionReason;
+
     @Builder
     public User(UUID id, String email, String name, String profileImageUrl, UserStatus status, UserRole role) {
         this.id = id != null ? id : UUID.randomUUID();
@@ -75,6 +85,24 @@ public class User extends BaseTimeEntity {
         if (profileImageUrl != null) {
             this.profileImageUrl = profileImageUrl.isEmpty() ? null : profileImageUrl;
         }
+    }
+
+    public void suspend(Instant now, UUID adminId, String reason) {
+        this.status = UserStatus.SUSPENDED;
+        this.suspendedAt = now;
+        this.suspendedBy = adminId;
+        this.suspensionReason = reason;
+    }
+
+    public void reinstate() {
+        this.status = UserStatus.ACTIVE;
+        this.suspendedAt = null;
+        this.suspendedBy = null;
+        this.suspensionReason = null;
+    }
+
+    public boolean isSuspended() {
+        return this.status == UserStatus.SUSPENDED;
     }
 
     public boolean isActive() {

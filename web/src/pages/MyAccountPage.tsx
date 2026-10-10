@@ -30,8 +30,11 @@ import {
   Crown,
   Search,
   Utensils,
+  Ban,
+  LockOpen,
 } from 'lucide-react';
 import { getErrorMessage } from '../utils/errorUtils';
+import { moderationFor, validateSuspensionReason } from '../utils/adminModeration';
 import { getBlogUrl, getMenuUrl } from '../utils/urlUtils';
 import { UserRole } from '../types/auth';
 
@@ -119,9 +122,62 @@ export const MyAccountPage: React.FC = () => {
     }
   };
 
+  // 계정 정지·해제·잠금 해제. 서버가 돌려준 갱신된 사용자 정보로 목록의 해당 줄을 바꾼다.
+  const [moderatingUserId, setModeratingUserId] = useState<string | null>(null);
+
+  const runModeration = async (
+    targetUserId: string,
+    action: () => Promise<UserProfileData>,
+    successMessage: string,
+    failureMessage: string,
+  ) => {
+    setModeratingUserId(targetUserId);
+    setAdminSuccessMsg(null);
+    setAdminErrorMsg(null);
+    try {
+      const updated = await action();
+      setAdminUsers((prev) => prev.map((u) => (u.id === targetUserId ? updated : u)));
+      setAdminSuccessMsg(successMessage);
+    } catch (err: unknown) {
+      setAdminErrorMsg(getErrorMessage(err, failureMessage));
+    } finally {
+      setModeratingUserId(null);
+    }
+  };
+
+  const handleSuspendUser = async (targetUserId: string, targetName: string) => {
+    const name = targetName || '해당 사용자';
+    const input = validateSuspensionReason(
+      window.prompt(`${name}님의 계정을 정지합니다.\n로그인할 수 없게 되고 모든 기기에서 즉시 로그아웃됩니다.\n\n정지 사유를 입력해 주세요 (200자 이내, 관리자에게만 보입니다):`),
+    );
+    if (input === null) return;
+    if ('error' in input) {
+      setAdminSuccessMsg(null);
+      setAdminErrorMsg(input.error);
+      return;
+    }
+    await runModeration(
+      targetUserId,
+      () => authApi.suspendUser(targetUserId, input.reason),
+      `${name}님의 계정을 정지했습니다.`,
+      '계정 정지에 실패했습니다.',
+    );
+  };
+
+  const handleReinstateUser = async (targetUserId: string, targetName: string) => {
+    const name = targetName || '해당 사용자';
+    if (!window.confirm(`${name}님의 정지를 해제하시겠습니까?\n해제하면 다시 로그인할 수 있습니다.`)) return;
+    await runModeration(targetUserId, () => authApi.reinstateUser(targetUserId), `${name}님의 정지를 해제했습니다.`, '정지 해제에 실패했습니다.');
+  };
+
+  const handleUnlockUser = async (targetUserId: string, targetName: string) => {
+    const name = targetName || '해당 사용자';
+    await runModeration(targetUserId, () => authApi.unlockUser(targetUserId), `${name}님의 로그인 잠금을 해제했습니다.`, '잠금 해제에 실패했습니다.');
+  };
+
   // 관리자 사용자 검색 및 필터 상태
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedRoleFilter, setSelectedRoleFilter] = useState<'ALL' | 'SUPER_ADMIN' | 'ADMIN' | 'USER' | 'TOTP'>('ALL');
+  const [selectedRoleFilter, setSelectedRoleFilter] = useState<'ALL' | 'SUPER_ADMIN' | 'ADMIN' | 'USER' | 'TOTP' | 'SUSPENDED'>('ALL');
 
   // 프로필 사진 변경 모달 상태
   const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
@@ -1271,6 +1327,16 @@ export const MyAccountPage: React.FC = () => {
                   >
                     🔐 2FA ({adminUsers.filter((u) => u.hasTotp).length})
                   </button>
+                  <button
+                    onClick={() => setSelectedRoleFilter('SUSPENDED')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                      selectedRoleFilter === 'SUSPENDED'
+                        ? 'bg-rose-600 text-white shadow-xs'
+                        : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
+                    }`}
+                  >
+                    🚫 정지·잠김 ({adminUsers.filter((u) => u.status === 'SUSPENDED' || u.locked === true).length})
+                  </button>
                 </div>
               </div>
 
@@ -1294,6 +1360,7 @@ export const MyAccountPage: React.FC = () => {
                     if (selectedRoleFilter === 'ADMIN') return u.role === 'ADMIN';
                     if (selectedRoleFilter === 'USER') return u.role === 'USER';
                     if (selectedRoleFilter === 'TOTP') return u.hasTotp;
+                    if (selectedRoleFilter === 'SUSPENDED') return u.status === 'SUSPENDED' || u.locked === true;
                     return true;
                   });
 
@@ -1309,6 +1376,8 @@ export const MyAccountPage: React.FC = () => {
                     const isCurrent = u.id === activeAccount.userId;
                     const isTargetSuper = u.role === 'SUPER_ADMIN';
                     const isTargetAdmin = u.role === 'ADMIN';
+                    const moderation = moderationFor({ id: activeAccount.userId, isSuperAdmin }, u);
+                    const isModerating = moderatingUserId === u.id;
 
                     return (
                       <div
@@ -1357,15 +1426,67 @@ export const MyAccountPage: React.FC = () => {
                                   2FA 미사용
                                 </span>
                               )}
+
+                              {/* Suspension / Lock Badges */}
+                              {u.status === 'SUSPENDED' && (
+                                <span className="px-2 py-0.5 bg-rose-100 border border-rose-200 text-rose-700 text-[10px] font-bold rounded-full flex items-center gap-1">
+                                  <Ban className="w-2.5 h-2.5" /> 정지됨
+                                </span>
+                              )}
+                              {u.locked && (
+                                <span className="px-2 py-0.5 bg-amber-100 border border-amber-200 text-amber-800 text-[10px] font-bold rounded-full">
+                                  로그인 잠김
+                                </span>
+                              )}
                             </div>
                             <div className="text-[11px] text-slate-500 mt-0.5">
                               {u.email} • 가입: {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '-'}
                             </div>
+                            {u.status === 'SUSPENDED' && u.suspensionReason && (
+                              <div className="text-[11px] text-rose-700 mt-1 break-words">
+                                정지 사유: {u.suspensionReason}
+                                {u.suspendedAt ? ` (${new Date(u.suspendedAt).toLocaleDateString()})` : ''}
+                              </div>
+                            )}
                           </div>
                         </div>
 
                         {/* Action Buttons */}
                         <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
+                          {/* 정지 / 정지 해제 / 로그인 잠금 해제 */}
+                          {moderation.canSuspend && (
+                            <button
+                              onClick={() => handleSuspendUser(u.id, u.name)}
+                              disabled={isModerating}
+                              className="py-1.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 disabled:opacity-50 shadow-2xs"
+                              title="로그인을 막고 모든 기기에서 로그아웃시킵니다"
+                            >
+                              {isModerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Ban className="w-3.5 h-3.5" />}
+                              정지
+                            </button>
+                          )}
+                          {moderation.canReinstate && (
+                            <button
+                              onClick={() => handleReinstateUser(u.id, u.name)}
+                              disabled={isModerating}
+                              className="py-1.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 disabled:opacity-50 shadow-2xs"
+                            >
+                              {isModerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+                              정지 해제
+                            </button>
+                          )}
+                          {moderation.canUnlock && (
+                            <button
+                              onClick={() => handleUnlockUser(u.id, u.name)}
+                              disabled={isModerating}
+                              className="py-1.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 disabled:opacity-50 shadow-2xs"
+                              title="비밀번호를 여러 번 틀려 잠긴 계정을 바로 로그인할 수 있게 합니다"
+                            >
+                              {isModerating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LockOpen className="w-3.5 h-3.5" />}
+                              잠금 해제
+                            </button>
+                          )}
+
                           {/* 2FA Cancel / Disable Button */}
                           {u.hasTotp && (
                             <>

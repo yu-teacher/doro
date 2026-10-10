@@ -125,4 +125,22 @@ export const authApi = {
     const response = await apiClient.delete<{ success: boolean }>(`/api/v1/admin/users/${userId}/2fa`);
     return response.data;
   },
+
+  // 16. 계정 정지 (ADMIN, SUPER_ADMIN): 로그인을 막고 모든 세션을 끝낸다. 사유 필수.
+  suspendUser: async (userId: string, reason: string) => {
+    const response = await apiClient.put<{ success: boolean; data: UserProfileData }>(`/api/v1/admin/users/${userId}/suspension`, { reason });
+    return response.data.data;
+  },
+
+  // 17. 계정 정지 해제
+  reinstateUser: async (userId: string) => {
+    const response = await apiClient.delete<{ success: boolean; data: UserProfileData }>(`/api/v1/admin/users/${userId}/suspension`);
+    return response.data.data;
+  },
+
+  // 18. 비밀번호 연속 실패로 잠긴 계정의 잠금 해제
+  unlockUser: async (userId: string) => {
+    const response = await apiClient.delete<{ success: boolean; data: UserProfileData }>(`/api/v1/admin/users/${userId}/lock`);
+    return response.data.data;
+  },
 };

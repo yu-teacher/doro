@@ -377,6 +377,9 @@ curl -s -X PUT $IAM/api/v1/users/me/password -H "Authorization: Bearer $TOKEN" -
 | `GET /api/v1/admin/users` | `system:doro#admin` | 전체 사용자 목록(`UserProfileResponse[]`) |
 | `PATCH /api/v1/admin/users/{userId}/role` | `system:doro#manage_roles` | 본문 `{"role":"ADMIN"}` (`USER`/`ADMIN`/`SUPER_ADMIN`, 대소문자 무관). 자기 자신은 `400`. 성공하면 대상의 **모든 세션이 종료**되고 Guard 튜플이 갱신됩니다 |
 | `DELETE /api/v1/admin/users/{userId}/2fa` | `user:{대상}#can_reset_2fa` | 대상의 2FA(대기 시크릿 포함)와 실패 카운터를 지우고 대상의 모든 세션을 종료 |
+| `PUT /api/v1/admin/users/{userId}/suspension` | `system:doro#admin` (+ 관리자 대상은 `manage_roles`) | 본문 `{"reason":"..."}`(필수, 200자 이내). 계정을 정지(`SUSPENDED`)해 로그인·토큰 갱신·OAuth 발급을 막고 대상의 **모든 세션을 종료**합니다(이미 받은 액세스 토큰도 즉시 쓸 수 없음). 본인은 `400`, 최고 관리자는 `403`, 관리자(ADMIN) 계정은 최고 관리자만 가능, 탈퇴 유예 중·탈퇴 계정은 `409`. 이미 정지된 계정에 다시 보내도 처음 기록을 유지합니다. 사유·시각·정지한 관리자는 관리자 목록에만 보입니다(`suspensionReason`, `suspendedAt`) |
+| `DELETE /api/v1/admin/users/{userId}/suspension` | 같음 | 정지 해제. 다시 로그인할 수 있고 정지 기록과 실패 카운터가 지워집니다 |
+| `DELETE /api/v1/admin/users/{userId}/lock` | 같음 | 비밀번호·OTP 연속 실패로 잠긴 계정의 잠금(15분 자동 해제)을 바로 풉니다. 정지와는 별개이며 세션은 그대로 둡니다. 목록의 `locked` 로 잠금 여부를 볼 수 있습니다 |
 | `GET /api/v1/admin/authz` | `system:doro#admin` | 성공하면 `204`. 게이트웨이가 `/loki/`를 보호할 때 `auth_request`로 호출 |
 | `POST/GET/DELETE /api/v1/admin/oauth/clients` | `system:doro#admin` | OAuth 클라이언트 관리 ([2.2](#22-클라이언트-등록)) |
 
@@ -1603,7 +1606,7 @@ public class GuardTuples {
 | `POST /api/v1/auth/logout[?sessionId=]` | Bearer | 로그아웃 |
 | `GET /api/v1/users/me`, `PATCH /api/v1/users/me`, `PUT /api/v1/users/me/password` | Bearer | 내 정보 |
 | `GET /api/v1/sessions`, `GET /api/v1/sessions/current`, `DELETE /api/v1/sessions/{id}`, `POST /api/v1/sessions/revoke-others?currentSessionId=` | Bearer | 세션 |
-| `GET /api/v1/admin/users`, `PATCH /api/v1/admin/users/{id}/role`, `DELETE /api/v1/admin/users/{id}/2fa`, `GET /api/v1/admin/authz` | Bearer(ADMIN+) + Guard | 관리자 |
+| `GET /api/v1/admin/users`, `PATCH /api/v1/admin/users/{id}/role`, `DELETE /api/v1/admin/users/{id}/2fa`, `PUT`/`DELETE /api/v1/admin/users/{id}/suspension`, `DELETE /api/v1/admin/users/{id}/lock`, `GET /api/v1/admin/authz` | Bearer(ADMIN+) + Guard | 관리자 |
 | `POST/GET /api/v1/admin/oauth/clients`, `DELETE /api/v1/admin/oauth/clients/{clientId}` | Bearer(ADMIN+) + Guard | OAuth 클라이언트 |
 | `GET /oauth2/authorize`, `POST /oauth2/token`, `GET /oauth2/userinfo` | 본문 참조 | OAuth/OIDC |
 | `GET /.well-known/jwks.json`, `GET /.well-known/openid-configuration` | 공개 | 공개키, discovery |

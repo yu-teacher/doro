@@ -16,6 +16,10 @@ export interface UserProfileData {
   role: UserRole;
   hasTotp: boolean;
   createdAt: string;
+  /** 관리자 목록에서만 채워진다: 정지 시각·사유, 비밀번호 실패 잠금 여부. */
+  suspendedAt?: string | null;
+  suspensionReason?: string | null;
+  locked?: boolean;
 }
 
 export interface AuthAccount {
