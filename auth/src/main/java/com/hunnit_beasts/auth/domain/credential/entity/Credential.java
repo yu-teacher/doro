@@ -1,6 +1,7 @@
 package com.hunnit_beasts.auth.domain.credential.entity;
 
 import com.hunnit_beasts.auth.common.entity.BaseTimeEntity;
+import com.hunnit_beasts.auth.core.totp.TotpSecretConverters;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -30,11 +31,14 @@ public class Credential extends BaseTimeEntity {
     @Column(name = "password_hash", nullable = false, length = 255)
     private String passwordHash;
 
-    @Column(name = "totp_secret", length = 64)
+    /** 평문으로 보이지만 DB 에는 암호문으로 저장된다(TotpSecretConverters, 키가 설정된 경우). */
+    @Convert(converter = TotpSecretConverters.Active.class)
+    @Column(name = "totp_secret", length = 255)
     private String totpSecret;
 
     /** 2FA 등록 절차 중(코드 확인 전)인 시크릿. 확인이 끝나면 totpSecret 으로 승격된다. */
-    @Column(name = "pending_totp_secret", length = 64)
+    @Convert(converter = TotpSecretConverters.Pending.class)
+    @Column(name = "pending_totp_secret", length = 255)
     private String pendingTotpSecret;
 
     @Column(name = "failed_attempts", nullable = false)

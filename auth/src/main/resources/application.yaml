@@ -66,6 +66,11 @@ doro:
     internal-auth:
       mode: ${DORO_IAM_INTERNAL_AUTH_MODE:ENFORCE}
       tokens: ${DORO_IAM_INTERNAL_TOKENS:}
+    totp:
+      # 2FA(TOTP) 시크릿을 DB 에 AES-256-GCM 으로 암호화해 저장하는 키(32바이트의 base64: openssl rand -base64 32). 비우면 평문으로 저장하고 기동 때 경고한다.
+      # 키를 잃으면 암호화된 2FA 를 쓸 수 없으니 비밀번호 관리자에 따로 보관한다(복구: 관리자의 2FA 초기화). 키 교체: 새 키를 encryption-key 에, 이전 키를 previous-keys(쉼표 구분)에 넣는다.
+      encryption-key: ${DORO_IAM_TOTP_ENCRYPTION_KEY:}
+      previous-keys: ${DORO_IAM_TOTP_PREVIOUS_KEYS:}
     refresh-cookie:
       # 포털이 쓰는 HttpOnly 리프레시 토큰 쿠키의 Secure 속성. 운영은 HTTPS 라 true. 로컬 개발을 http 로 열 때만 false(Safari 는 localhost 의 Secure 쿠키를 받지 않는다).
       secure: ${DORO_IAM_REFRESH_COOKIE_SECURE:true}

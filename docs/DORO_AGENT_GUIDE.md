@@ -429,6 +429,7 @@ Doro 의 보안 기능은 **단계적으로 켤 수 있게** 설계돼 있다. �
 | **내부 API 호출자 인증**(`/internal/**`) | `DORO_IAM_INTERNAL_TOKENS=blog:<토큰>[,호출자:<토큰>…]`(토큰 32자 이상 무작위, 형식 오류·짧은 토큰·이름 중복이면 **기동 실패**), 호출자는 헤더 `X-Doro-Service-Token` 으로 보낸다. 모드 `DORO_IAM_INTERNAL_AUTH_MODE`: **ENFORCE(기본)**, 도입 중에는 `WARN`(실패를 경고만 하고 통과), `OFF`. 게이트웨이를 거친 요청(`X-Forwarded-For`/`X-Real-IP`)은 토큰이 맞아도 **404** | 네트워크 격리에만 기대지 않고 호출자를 확인, 토큰 없는 요청은 401(표준 오류 본문), 토큰 값은 로그에 남지 않음 |
 | **Guard 튜플/스키마 검증** | `DORO_GUARD_VALIDATION_MODE=WARN` → 로그 확인 → `ENFORCE` | 스키마에 없는 타입/릴레이션 튜플, 오타·미선언 타입 스키마 거부 |
 | **JWT 개인키 암호화** | `DORO_IAM_JWT_KEY_ENCRYPTION_SECRET` (AES-256-GCM, 기존 키 자동 이전). 키 회전은 `previous-key-id` + `previous-public-key-pem` | Redis 에 보관하는 서명 키를 저장 시 암호화, 무중단 키 교체 |
+| **2FA(TOTP) 시크릿 암호화** | `DORO_IAM_TOTP_ENCRYPTION_KEY`(32바이트 base64, `openssl rand -base64 32`). 비우면 평문 저장 + 기동 시 경고. 교체는 이전 키를 `DORO_IAM_TOTP_PREVIOUS_KEYS` 로. 운영 적용 `scripts/enable-totp-encryption.sh` | DB 덤프·백업이 새도 2FA 시크릿이 드러나지 않음. 저장 형식 `enc:v1:<base64(iv+암호문+태그)>`(AES-256-GCM, 컬럼 용도를 AAD 로 묶어 활성↔대기 컬럼 간 옮겨 붙이기 불가). 예전 평문 값도 읽고 키가 있으면 기동 시 암호문으로 이전한다. **키를 잃으면 암호화된 2FA 를 못 쓴다(복구: 관리자의 2FA 초기화)** |
 | **세션 폐기 즉시 반영** | SDK `doro.iam.revocation-check: WARN` → `ENFORCE` | 로그아웃/세션 종료가 서브 서비스에 즉시 반영 (캐시·백오프·fail-open 설정 제공) |
 | **OAuth 클라이언트 등록 강제** | `DORO_OAUTH_CLIENT_REGISTRY_MODE=ENFORCE` | 등록된 `client_id` 와 `redirect_uri` 정확 일치만 허용 |
 | **audience / issuer 검증** | SDK `doro.iam.audience`, `doro.iam.issuer-validation: ENFORCE` | 토큰 대상·발급자 확인 |

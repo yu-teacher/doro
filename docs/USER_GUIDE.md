@@ -1640,6 +1640,7 @@ public class GuardTuples {
 | `DORO_GUARD_URL` | `http://guard-api:8081`(compose) | IAM | IAM이 Guard REST를 부르는 주소 |
 | `DORO_GUARD_SERVICE_TOKEN` | 비어 있음 | IAM·서비스·Guard | IAM/서비스: 보내는 토큰, Guard: 공유 토큰 |
 | `DORO_IAM_JWT_KEY_ENCRYPTION_SECRET`, `DORO_IAM_JWT_PREVIOUS_KEY_ID`, `DORO_IAM_JWT_PREVIOUS_PUBLIC_KEY_PEM` | 비어 있음 | IAM | Redis의 JWT 개인키 암호화, 키 회전 |
+| `DORO_IAM_TOTP_ENCRYPTION_KEY`, `DORO_IAM_TOTP_PREVIOUS_KEYS` | 비어 있음 | IAM | 2FA(TOTP) 시크릿을 DB 에 AES-256-GCM 으로 암호화해 저장하는 키(`openssl rand -base64 32`, 32바이트). 비우면 평문 저장 + 기동 시 경고. 교체할 때 이전 키를 `PREVIOUS_KEYS`(쉼표)에 둔다. 키를 잃으면 암호화된 2FA 는 관리자의 2FA 초기화로만 복구된다 |
 | `DORO_OAUTH_*` | [2.8](#28-설정과-운영) | IAM | OAuth/OIDC |
 | `DORO_GUARD_SECURITY_MODE` | `OFF` | Guard | 서비스 토큰 검사 `OFF`/`WARN`/`ENFORCE` |
 | `DORO_GUARD_SERVICE_TOKENS` | 비어 있음 | Guard | `이름:토큰[:권한[:네임스페이스]]` 쉼표 목록 |
