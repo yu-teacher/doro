@@ -38,6 +38,12 @@ loki.source.journal "system" {
 loki.write "central" {
   endpoint {
     url = sys.env("LOKI_URL") + "/loki/api/v1/push"
+    // 게이트웨이가 push 에 Basic 인증을 요구할 때의 계정(.env 의 LOKI_PUSH_USER / LOKI_PUSH_PASSWORD).
+    // 인증이 꺼져 있는 동안에는 이 헤더를 무시하므로 먼저 배포해 둘 수 있다.
+    basic_auth {
+      username = sys.env("LOKI_PUSH_USER")
+      password = sys.env("LOKI_PUSH_PASSWORD")
+    }
   }
   external_labels = { "host" = sys.env("HOST_NAME") }
 }

@@ -21,6 +21,10 @@ services:
     environment:
       LOKI_URL: "${LOKI_URL:?.env 에 LOKI_URL 을 설정한다 (예 http://192.168.0.4:3100)}"
       HOST_NAME: "${HOST_NAME:?.env 에 HOST_NAME 을 설정한다 (예 mini)}"
+      # 중앙 Loki 게이트웨이의 push 계정. 게이트웨이 인증을 켜기 전에는 비어 있어도 된다(scripts/loki-push-auth.sh).
+      # 노트북의 수집기는 도커 네트워크로 직접 보내므로 필요 없다.
+      LOKI_PUSH_USER: "${LOKI_PUSH_USER:-doro-shipper}"
+      LOKI_PUSH_PASSWORD: "${LOKI_PUSH_PASSWORD:-unset}"
     volumes:
       - ./conf.d:/etc/alloy:ro
       - /var/log:/host/var/log:ro
