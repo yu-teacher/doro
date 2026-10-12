@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """월요일 자동 재부팅 결과를 모아 텔레그램으로 한 통 보낸다(파이에서 cron 으로 실행).
 
-각 서버의 doro-auto-reboot 가 남긴 로그(태그 doro-autoreboot)를 중앙 Loki 에서 읽어 서버별 한 줄로 요약한다.
+각 서버의 doro-auto-reboot 가 남긴 로그를 중앙 Loki 에서 읽어 서버별 한 줄로 요약한다. 로그는 줄 본문의 표지(`CHECK host=`, `BOOT-OK`, `BOOT-FAIL`)로 찾는다:
+journal 의 태그(doro-autoreboot)는 별도 필드라 Alloy 가 보내는 줄 본문에 들어가지 않는다(처음에 태그로 찾다가 전부 "점검 로그 없음"으로 나왔다).
 아무 서버도 재부팅하지 않았고(모두 not-needed) 이상도 없으면 아무것도 보내지 않는다. 점검 로그가 없는 서버가 있으면 그것도 알린다.
 
   reboot-report.py [--dry-run] [--hosts mini,notebook,pi] [--window-hours 3]
@@ -81,10 +82,17 @@ def load_env(path):
     return env
 
 
+def build_query(host):
+    """한 서버의 자동 재부팅 로그를 줄 본문의 표지로 찾는 LogQL. host 는 영문·숫자·-·_ 만 허용한다."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", host):
+        raise ValueError(f"서버 이름이 이상하다: {host}")
+    return '{host="%s", job="journal"} |~ "(CHECK host=|BOOT-OK|BOOT-FAIL)"' % host
+
+
 def query_host_lines(loki_url, host, window_hours):
     end = int(time.time() * 1e9)
     start = end - int(window_hours * 3600 * 1e9)
-    q = '{host="%s", job="journal"} |= "doro-autoreboot"' % host
+    q = build_query(host)
     params = urllib.parse.urlencode({"query": q, "start": start, "end": end, "limit": 100, "direction": "forward"})
     with urllib.request.urlopen(f"{loki_url}/loki/api/v1/query_range?{params}", timeout=20) as resp:
         data = json.load(resp)

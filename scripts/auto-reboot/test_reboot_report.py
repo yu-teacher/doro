@@ -6,7 +6,7 @@ import os
 _spec = importlib.util.spec_from_file_location("reboot_report", os.path.join(os.path.dirname(__file__), "reboot-report.py"))
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
-build_message, parse_events, summarize_host = _mod.build_message, _mod.parse_events, _mod.summarize_host
+build_message, parse_events, summarize_host, build_query = _mod.build_message, _mod.parse_events, _mod.summarize_host, _mod.build_query
 
 
 def ev(*lines):
@@ -56,6 +56,28 @@ class RebootReportTest(unittest.TestCase):
     def test_last_check_wins(self):
         sev, _ = summarize_host("mini", ev("CHECK host=mini result=skipped reason=x", "CHECK host=mini result=not-needed"))
         self.assertEqual(sev, "quiet")
+
+
+class QueryTest(unittest.TestCase):
+    def test_query_matches_line_body_markers_not_the_syslog_tag(self):
+        q = build_query("mini")
+        self.assertIn('host="mini"', q)
+        self.assertIn("CHECK host=", q)
+        self.assertIn("BOOT-OK", q)
+        self.assertIn("BOOT-FAIL", q)
+        # 태그(doro-autoreboot)는 줄 본문에 없어서 찾는 데 쓰면 안 된다(2026-10-12 오탐 사고)
+        self.assertNotIn("doro-autoreboot", q)
+
+    def test_query_rejects_unsafe_host_names(self):
+        for bad in ('mini"}', "a b", "x;y", ""):
+            with self.assertRaises(ValueError):
+                build_query(bad)
+
+    def test_logger_line_without_tag_is_parsed(self):
+        # Loki 에 실제로 들어 있던 두 가지 줄(태그 없는 본문, 스크립트 출력)을 모두 읽는다.
+        events = parse_events(["CHECK host=mini result=not-needed", "[05:10:01] CHECK host=mini result=not-needed"])
+        self.assertEqual([e["fields"]["result"] for e in events], ["not-needed", "not-needed"])
+        self.assertIsNone(build_message({"mini": events}))
 
 
 if __name__ == "__main__":
