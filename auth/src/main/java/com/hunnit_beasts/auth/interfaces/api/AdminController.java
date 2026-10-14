@@ -9,6 +9,8 @@ import com.hunnit_beasts.auth.domain.user.service.AccountSuspensionService;
 import com.hunnit_beasts.auth.domain.user.service.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -27,16 +29,35 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class AdminController {
 
+    private static final int DEFAULT_PAGE_SIZE = 50;
+    private static final int MAX_PAGE_SIZE = 500;
+
     private final UserService userService;
     private final AccountSuspensionService suspensionService;
 
     /**
-     * 관리자 전용 전체 사용자 목록 조회 (ADMIN, SUPER_ADMIN)
+     * 관리자 전용 사용자 목록 조회 (ADMIN, SUPER_ADMIN).
+     * <p> {@code size} 를 주면 {@code page}(0부터)에 해당하는 페이지만 돌려주고, 전체 수는 {@code X-Total-Count} 헤더에 담는다.
+     * 파라미터가 없으면 기존처럼 전체를 돌려준다(웹 관리자 화면 호환). 사용자가 많으면 페이지를 나눠 호출한다.
      */
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
-    public ResponseEntity<ApiResponse<List<UserProfileResponse>>> getAllUsers(@AuthenticationPrincipal UUID adminId) {
-        return ResponseEntity.ok(ApiResponse.success(userService.getAllUsers(adminId)));
+    public ResponseEntity<ApiResponse<List<UserProfileResponse>>> getAllUsers(
+            @AuthenticationPrincipal UUID adminId,
+            @RequestParam(value = "page", required = false) Integer page,
+            @RequestParam(value = "size", required = false) Integer size) {
+        if (size == null && page == null) {
+            return ResponseEntity.ok(ApiResponse.success(userService.getAllUsers(adminId)));
+        }
+        int p = page == null ? 0 : page;
+        int s = size == null ? DEFAULT_PAGE_SIZE : size;
+        if (p < 0 || s < 1 || s > MAX_PAGE_SIZE) {
+            throw new AuthException(ErrorCode.INVALID_INPUT, "page 는 0 이상, size 는 1~" + MAX_PAGE_SIZE + " 이어야 합니다.");
+        }
+        Page<UserProfileResponse> result = userService.getUsers(adminId, PageRequest.of(p, s));
+        return ResponseEntity.ok()
+                .header("X-Total-Count", String.valueOf(result.getTotalElements()))
+                .body(ApiResponse.success(result.getContent()));
     }
 
     /**

@@ -16,13 +16,21 @@ import com.hunnit_beasts.auth.domain.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import com.hunnit_beasts.auth.domain.user.entity.UserRole;
 import com.hunnit_beasts.auth.infrastructure.guard.GuardClient;
 
@@ -35,6 +43,7 @@ public class UserService {
     private final CredentialRepository credentialRepository;
     private final CredentialService credentialService;
     private final PasswordEncoder passwordEncoder;
+    private final TransactionTemplate transactionTemplate;
     private final GuardClient guardClient;
     private final UserRelationSyncService userRelationSyncService;
     private final SessionRevocationService sessionRevocationService;
@@ -100,20 +109,34 @@ public class UserService {
         );
     }
 
+    /** 전체 사용자 목록(페이지 없음). 기존 호출과 웹 관리자 화면 호환용이다. 큰 규모에서는 {@link #getUsers}로 페이지를 나눠 쓴다. */
     @Transactional(readOnly = true)
     public List<UserProfileResponse> getAllUsers(UUID adminId) {
+        return getUsers(adminId, Pageable.unpaged()).getContent();
+    }
+
+    /** 사용자 목록. pageable 이 unpaged 면 전체를 돌려준다. 페이지를 나눌 때는 createdAt, id 순으로 고정해 페이지 사이에 겹치거나 빠지지 않게 한다. */
+    @Transactional(readOnly = true)
+    public Page<UserProfileResponse> getUsers(UUID adminId, Pageable pageable) {
         // JWT 역할 클레임은 토큰 수명만큼 낡을 수 있으므로 최종 인가는 Guard 에 위임한다.
         if (adminId == null || !guardClient.check("system", "doro", "admin", adminId.toString())) {
             throw new AuthException(ErrorCode.ACCESS_DENIED);
         }
-        return userRepository.findAll().stream()
-                .map(user -> {
-                    var credential = credentialRepository.findByUserId(user.getId());
-                    boolean hasTotp = credential.map(c -> c.getTotpSecret() != null && !c.getTotpSecret().isBlank()).orElse(false);
-                    boolean locked = credential.map(c -> c.getLockedUntil() != null && Instant.now().isBefore(c.getLockedUntil())).orElse(false);
-                    return UserProfileResponse.forAdmin(user, hasTotp, locked);
-                })
-                .toList();
+        Pageable effective = pageable.isPaged()
+                ? PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.by("createdAt", "id"))
+                : pageable;
+        Page<User> users = userRepository.findAll(effective);
+        // 사용자마다 credential 을 따로 조회하면 N+1 이라 한 번에 가져온다.
+        Map<UUID, Credential> credentials = credentialRepository
+                .findAllByUserIdIn(users.getContent().stream().map(User::getId).toList()).stream()
+                .collect(Collectors.toMap(Credential::getUserId, Function.identity(), (x, y) -> x));
+        Instant now = Instant.now();
+        return users.map(user -> {
+            Credential credential = credentials.get(user.getId());
+            boolean hasTotp = credential != null && credential.getTotpSecret() != null && !credential.getTotpSecret().isBlank();
+            boolean locked = credential != null && credential.getLockedUntil() != null && now.isBefore(credential.getLockedUntil());
+            return UserProfileResponse.forAdmin(user, hasTotp, locked);
+        });
     }
 
     @Transactional
@@ -148,7 +171,6 @@ public class UserService {
     }
 
     /** 비밀번호 변경 후 현재 세션(keepSessionId)을 제외한 모든 세션을 종료한다. keepSessionId 가 null 이면 전부 종료. */
-    @Transactional
     public void changePassword(UUID userId, ChangePasswordRequest request, UUID keepSessionId) {
         Credential credential = credentialRepository.findByUserId(userId)
                 .orElseThrow(() -> new AuthException(ErrorCode.USER_NOT_FOUND));
@@ -161,12 +183,17 @@ public class UserService {
             credentialService.recordFailedAttempt(userId);
             throw new AuthException(ErrorCode.INVALID_CREDENTIALS, "현재 비밀번호가 일치하지 않습니다.");
         }
-        // 같은 트랜잭션에서 이 엔티티를 바로 수정하므로 별도 트랜잭션이 아니라 엔티티로 초기화한다(낡은 값 덮어쓰기 방지).
-        credential.resetFailedAttempts();
-
+        // 해싱(Argon2id, 느림)은 트랜잭션 밖에서 끝내고, DB 변경만 짧은 트랜잭션으로 묶는다.
+        // 트랜잭션 안에서 해싱하면 커넥션을 오래 쥐고, 실패 기록(REQUIRES_NEW)과 겹쳐 풀이 교착한다.
         String encodedNewPassword = passwordEncoder.encode(request.newPassword());
-        credential.updatePassword(encodedNewPassword);
-        sessionRevocationService.revokeOtherSessions(userId, keepSessionId, "PASSWORD_CHANGED");
+        transactionTemplate.executeWithoutResult(status -> {
+            Credential fresh = credentialRepository.findByUserId(userId)
+                    .orElseThrow(() -> new AuthException(ErrorCode.USER_NOT_FOUND));
+            // 같은 트랜잭션에서 이 엔티티를 바로 수정하므로 별도 트랜잭션이 아니라 엔티티로 초기화한다(낡은 값 덮어쓰기 방지).
+            fresh.resetFailedAttempts();
+            fresh.updatePassword(encodedNewPassword);
+            sessionRevocationService.revokeOtherSessions(userId, keepSessionId, "PASSWORD_CHANGED");
+        });
         log.info("User password changed successfully: userId={}", userId);
     }
 
