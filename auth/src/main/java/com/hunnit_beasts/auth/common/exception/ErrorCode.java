@@ -43,6 +43,8 @@ public enum ErrorCode {
 
     // 503 Service Unavailable
     GUARD_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "AUTH_50301", "권한 서버(Guard)에 연결할 수 없어 처리하지 못했습니다. 잠시 후 다시 시도해 주세요."),
+    /** 비밀번호 해싱(CPU·메모리를 많이 쓴다) 대기 줄이 가득 차 새 요청을 받지 못한다. 비밀번호가 틀린 것이 아니다. */
+    SERVER_BUSY(HttpStatus.SERVICE_UNAVAILABLE, "AUTH_50302", "요청이 많아 지금은 처리하지 못했습니다. 잠시 후 다시 시도해 주세요."),
 
     // 500 Internal Server Error
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "AUTH_50001", "서버 내부 오류가 발생했습니다.");

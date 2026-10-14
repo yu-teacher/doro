@@ -16,6 +16,7 @@ docker compose -f docker-compose.yml -f loadtest/compose.loadtest.yml up -d --bu
 |---|---|
 | `auth-suite.js` | `SCENARIO`: admin-list-paged(관리자 목록 페이지 방식), lookup, public, login-fail, userinfo, sessions, session-churn, revoke-others, 2fa-enroll, 2fa-login, admin-read, admin-write, oauth-flow, oauth-refresh |
 | `guard-suite.js` | `SCENARIO`: check-hit, check-miss, check-deep, check-cycle, write-race, write-check, schema, grpc-check, grpc-expand, mixed |
+| `hash-saturation.js` | 틀린 비밀번호 로그인 폭주 중 `/users/me`·정상 로그인이 받는 영향. `-e ATTACK_RATE=150`(초당 고정 속도) 권장 |
 | `lib.js` | 공용 도우미(사용자 준비, TOTP, PKCE) |
 | `run-auth-matrix.sh`, `run-guard-matrix.sh` | 전체 매트릭스를 돌려 `results/*.md` 로 정리 |
 

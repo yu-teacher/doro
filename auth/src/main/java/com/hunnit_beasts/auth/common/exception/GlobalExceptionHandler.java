@@ -34,7 +34,11 @@ public class GlobalExceptionHandler {
                 .path(request.getRequestURI())
                 .build();
 
-        return ResponseEntity.status(errorCode.getHttpStatus()).body(response);
+        ResponseEntity.BodyBuilder builder = ResponseEntity.status(errorCode.getHttpStatus());
+        if (errorCode == ErrorCode.SERVER_BUSY) {
+            builder.header("Retry-After", "2");
+        }
+        return builder.body(response);
     }
 
     @ExceptionHandler(FieldValidationException.class)
