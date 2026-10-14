@@ -117,15 +117,15 @@ class AdminHardeningTest {
         when(guardClient.check(eq("system"), eq("doro"), eq("admin"), anyString())).thenReturn(true);
         newUserWithSession();
 
-        assertThatThrownBy(() -> adminController.getAllUsers(admin, 0, 501)).isInstanceOf(AuthException.class);
-        assertThatThrownBy(() -> adminController.getAllUsers(admin, 0, 0)).isInstanceOf(AuthException.class);
-        assertThatThrownBy(() -> adminController.getAllUsers(admin, -1, 10)).isInstanceOf(AuthException.class);
+        assertThatThrownBy(() -> adminController.getAllUsers(admin, 0, 501, null, null)).isInstanceOf(AuthException.class);
+        assertThatThrownBy(() -> adminController.getAllUsers(admin, 0, 0, null, null)).isInstanceOf(AuthException.class);
+        assertThatThrownBy(() -> adminController.getAllUsers(admin, -1, 10, null, null)).isInstanceOf(AuthException.class);
 
-        ResponseEntity<ApiResponse<List<UserProfileResponse>>> paged = adminController.getAllUsers(admin, 0, 1);
+        ResponseEntity<ApiResponse<List<UserProfileResponse>>> paged = adminController.getAllUsers(admin, 0, 1, null, null);
         assertThat(paged.getHeaders().getFirst("X-Total-Count")).isNotNull();
         assertThat(paged.getBody().getData()).hasSize(1);
 
-        ResponseEntity<ApiResponse<List<UserProfileResponse>>> all = adminController.getAllUsers(admin, null, null);
+        ResponseEntity<ApiResponse<List<UserProfileResponse>>> all = adminController.getAllUsers(admin, null, null, null, null);
         assertThat(all.getHeaders().getFirst("X-Total-Count")).isNull();
         assertThat(all.getBody().getData().size()).isGreaterThanOrEqualTo(1);
     }

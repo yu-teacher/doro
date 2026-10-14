@@ -1,6 +1,7 @@
 import { apiClient } from './client';
 import { cookieSessionHeaders } from './cookieSession';
-import { AccountDeletionResult, LoginData, TokenResponse, TotpSetupData, SessionResponseDto, UserProfileData } from '../types/auth';
+import { AccountDeletionResult, AdminUserSummary, LoginData, TokenResponse, TotpSetupData, SessionResponseDto, UserProfileData } from '../types/auth';
+import { AdminUserListParams, adminUserListParams, parseTotalCount } from '../utils/adminUserList';
 
 export const authApi = {
   // 1. 회원가입
@@ -110,9 +111,19 @@ export const authApi = {
     return response.data;
   },
 
-  // 13. 관리자 전용 사용자 목록 조회 (ADMIN, SUPER_ADMIN)
-  getAdminUsers: async () => {
-    const response = await apiClient.get<{ success: boolean; data: UserProfileData[] }>('/api/v1/admin/users');
+  // 13. 관리자 전용 사용자 목록 조회 (ADMIN, SUPER_ADMIN). 서버에서 검색·필터·페이지를 처리하고, 조건에 맞는 전체 수는 X-Total-Count 로 온다.
+  getAdminUsersPage: async (params: AdminUserListParams) => {
+    const response = await apiClient.get<{ success: boolean; data: UserProfileData[] }>('/api/v1/admin/users', {
+      params: adminUserListParams(params),
+    });
+    const users = response.data.data ?? [];
+    const total = parseTotalCount(response.headers?.['x-total-count']) ?? users.length;
+    return { users, total };
+  },
+
+  // 13-1. 관리자 목록 탭별 개수 (전체, 역할별, 2FA, 정지·잠김)
+  getAdminUserSummary: async () => {
+    const response = await apiClient.get<{ success: boolean; data: AdminUserSummary }>('/api/v1/admin/users/summary');
     return response.data.data;
   },
 

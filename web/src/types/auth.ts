@@ -22,6 +22,19 @@ export interface UserProfileData {
   locked?: boolean;
 }
 
+/** 관리자 목록의 필터 탭(서버의 AdminUserFilter 와 같다). */
+export type AdminUserFilter = 'ALL' | 'SUPER_ADMIN' | 'ADMIN' | 'USER' | 'TOTP' | 'SUSPENDED';
+
+/** 관리자 목록 탭별 개수. 검색어와 무관한 전체 기준이다. */
+export interface AdminUserSummary {
+  total: number;
+  superAdmins: number;
+  admins: number;
+  users: number;
+  totp: number;
+  suspendedOrLocked: number;
+}
+
 export interface AuthAccount {
   userId: string;
   email: string;
