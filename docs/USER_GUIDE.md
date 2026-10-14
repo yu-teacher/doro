@@ -376,7 +376,8 @@ curl -s -X PUT $IAM/api/v1/users/me/password -H "Authorization: Bearer $TOKEN" -
 
 | 호출 | Guard 판정 | 설명 |
 |---|---|---|
-| `GET /api/v1/admin/users` | `system:doro#admin` | 전체 사용자 목록(`UserProfileResponse[]`) |
+| `GET /api/v1/admin/users` | `system:doro#admin` | 사용자 목록(`UserProfileResponse[]`). 파라미터가 없으면 전체를 돌려줍니다. `page`(0부터)·`size`(1~500)를 주면 한 페이지만 돌려주고 조건에 맞는 전체 수를 응답 헤더 `X-Total-Count`에 담습니다. `q`(이름·이메일 부분 일치, 100자 이하)와 `filter`(`ALL`·`SUPER_ADMIN`·`ADMIN`·`USER`·`TOTP`·`SUSPENDED`, `SUSPENDED`는 정지+잠김)는 서버에서 적용합니다. 사용자가 많으면 페이지를 나눠 호출하세요 |
+| `GET /api/v1/admin/users/summary` | `system:doro#admin` | 목록 탭별 개수 `{total, superAdmins, admins, users, totp, suspendedOrLocked}` (검색어와 무관한 전체 기준) |
 | `PATCH /api/v1/admin/users/{userId}/role` | `system:doro#manage_roles` | 본문 `{"role":"ADMIN"}` (`USER`/`ADMIN`/`SUPER_ADMIN`, 대소문자 무관). 자기 자신은 `400`. 성공하면 대상의 **모든 세션이 종료**되고 Guard 튜플이 갱신됩니다 |
 | `DELETE /api/v1/admin/users/{userId}/2fa` | `user:{대상}#can_reset_2fa` | 대상의 2FA(대기 시크릿 포함)와 실패 카운터를 지우고 대상의 모든 세션을 종료 |
 | `PUT /api/v1/admin/users/{userId}/suspension` | `system:doro#admin` (+ 관리자 대상은 `manage_roles`) | 본문 `{"reason":"..."}`(필수, 200자 이내). 계정을 정지(`SUSPENDED`)해 로그인·토큰 갱신·OAuth 발급을 막고 대상의 **모든 세션을 종료**합니다(이미 받은 액세스 토큰도 즉시 쓸 수 없음). 본인은 `400`, 최고 관리자는 `403`, 관리자(ADMIN) 계정은 최고 관리자만 가능, 탈퇴 유예 중·탈퇴 계정은 `409`. 이미 정지된 계정에 다시 보내도 처음 기록을 유지합니다. 사유·시각·정지한 관리자는 관리자 목록에만 보입니다(`suspensionReason`, `suspendedAt`) |

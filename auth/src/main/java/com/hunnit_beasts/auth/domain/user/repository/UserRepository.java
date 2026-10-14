@@ -5,6 +5,7 @@ import com.hunnit_beasts.auth.domain.user.dto.DeletedUserRef;
 import com.hunnit_beasts.auth.domain.user.entity.UserStatus;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -14,7 +15,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface UserRepository extends JpaRepository<User, UUID> {
+public interface UserRepository extends JpaRepository<User, UUID>, JpaSpecificationExecutor<User> {
 
     /**
      * 대소문자를 구분하지 않는 이메일 조회. 과거 데이터에 대소문자만 다른 행이 공존할 수 있으므로

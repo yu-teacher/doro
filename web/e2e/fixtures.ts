@@ -36,7 +36,7 @@ function profileOf(account: FakeAccount) {
 }
 
 /** 관리자 화면에 쓰는 사용자 목록: 긴 이름·긴 이메일·정지 사유·잠김 등 레이아웃을 깨기 쉬운 값을 섞는다. */
-function adminUsers(me: FakeAccount) {
+function adminUsers(me: FakeAccount, extra = 0) {
   const base = { profileImageUrl: null, hasTotp: false, createdAt: '2026-02-01T00:00:00Z' };
   return [
     profileOf(me),
@@ -45,7 +45,41 @@ function adminUsers(me: FakeAccount) {
     { ...base, id: 'u3', email: 'suspended@doro.test', name: '정지된회원', status: 'SUSPENDED', role: 'USER', suspendedAt: '2026-10-01T00:00:00Z', suspensionReason: `스팸 게시물 반복 등록 ${LONG_UNBROKEN}` },
     { ...base, id: 'u4', email: 'locked@doro.test', name: '잠긴회원', status: 'ACTIVE', role: 'USER', locked: true },
     { ...base, id: 'u5', email: 'other-admin@doro.test', name: '다른관리자', status: 'ACTIVE', role: 'ADMIN' },
+    // 페이지 이동을 확인하기 위한 대량 사용자(일반 회원, 이메일 bulk-NNN@doro.test)
+    ...Array.from({ length: extra }, (_, i) => {
+      const n = String(i + 1).padStart(3, '0');
+      return { ...base, id: `bulk-${n}`, email: `bulk-${n}@doro.test`, name: `대량회원${n}`, status: 'ACTIVE', role: 'USER' };
+    }),
   ];
+}
+
+type FakeAdminUser = ReturnType<typeof adminUsers>[number] & { locked?: boolean };
+
+/** 서버(AdminController)가 하는 일을 흉내 낸다: 이름·이메일 부분 일치 검색, 필터 탭, 페이지. */
+function listAdminUsers(all: FakeAdminUser[], params: URLSearchParams) {
+  const q = (params.get('q') ?? '').trim().toLowerCase();
+  const filter = params.get('filter') ?? 'ALL';
+  const matched = all.filter((u) => {
+    if (q && !u.name.toLowerCase().includes(q) && !u.email.toLowerCase().includes(q)) return false;
+    if (filter === 'SUPER_ADMIN' || filter === 'ADMIN' || filter === 'USER') return u.role === filter;
+    if (filter === 'TOTP') return u.hasTotp;
+    if (filter === 'SUSPENDED') return u.status === 'SUSPENDED' || u.locked === true;
+    return true;
+  });
+  const size = Number(params.get('size') ?? matched.length);
+  const page = Number(params.get('page') ?? 0);
+  return { total: matched.length, rows: matched.slice(page * size, page * size + size) };
+}
+
+function adminSummary(all: FakeAdminUser[]) {
+  return {
+    total: all.length,
+    superAdmins: all.filter((u) => u.role === 'SUPER_ADMIN').length,
+    admins: all.filter((u) => u.role === 'ADMIN').length,
+    users: all.filter((u) => u.role === 'USER').length,
+    totp: all.filter((u) => u.hasTotp).length,
+    suspendedOrLocked: all.filter((u) => u.status === 'SUSPENDED' || u.locked === true).length,
+  };
 }
 
 function logLines() {
@@ -63,6 +97,8 @@ function logLines() {
 export interface MockApiOptions {
   /** 로그인된 계정(없으면 비로그인) */
   account?: FakeAccount;
+  /** 관리자 목록에 더할 대량 사용자 수(페이지 이동 확인용) */
+  adminExtraUsers?: number;
 }
 
 const json = (route: Route, body: unknown, status = 200) =>
@@ -96,7 +132,19 @@ export async function mockApi(page: Page, options: MockApiOptions = {}): Promise
         ],
       });
     }
-    if (pathname === '/api/v1/admin/users' && method === 'GET') return json(route, { success: true, data: adminUsers(me) });
+    if (pathname === '/api/v1/admin/users' && method === 'GET') {
+      const all = adminUsers(me, options.adminExtraUsers ?? 0) as FakeAdminUser[];
+      const { total, rows } = listAdminUsers(all, new URL(request.url()).searchParams);
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        headers: { 'x-total-count': String(total), 'access-control-expose-headers': 'X-Total-Count' },
+        body: JSON.stringify({ success: true, data: rows }),
+      });
+    }
+    if (pathname === '/api/v1/admin/users/summary' && method === 'GET') {
+      return json(route, { success: true, data: adminSummary(adminUsers(me, options.adminExtraUsers ?? 0) as FakeAdminUser[]) });
+    }
     if (pathname === '/oauth2/client-info') return json(route, { success: true, data: { firstParty: false } });
     if (pathname.startsWith('/loki/api/v1/query_range')) return json(route, { status: 'success', data: { resultType: 'streams', result: logLines() } });
     if (pathname.startsWith('/loki/api/v1/label/service/values')) return json(route, { status: 'success', data: ['auth', 'blog', 'guard', 'party', 'games'] });

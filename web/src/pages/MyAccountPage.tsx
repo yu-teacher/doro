@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { authApi } from '../api/authApi';
-import { SessionResponseDto, TotpSetupData, UserProfileData } from '../types/auth';
+import { AdminUserFilter, AdminUserSummary, SessionResponseDto, TotpSetupData, UserProfileData } from '../types/auth';
 import { AvatarModal } from '../components/profile/AvatarModal';
 import { DeleteAccountSection } from '../components/profile/DeleteAccountSection';
 import { deletionNotice } from '../utils/accountDeletion';
@@ -36,6 +36,7 @@ import {
 import { getErrorMessage } from '../utils/errorUtils';
 import { loginStateFrom } from '../utils/afterLogin';
 import { moderationFor, validateSuspensionReason } from '../utils/adminModeration';
+import { clampPage, pageRangeLabel, totalPages } from '../utils/adminUserList';
 import { getBlogUrl, getMenuUrl } from '../utils/urlUtils';
 import { UserRole } from '../types/auth';
 
@@ -64,18 +65,56 @@ export const MyAccountPage: React.FC = () => {
   const [adminSuccessMsg, setAdminSuccessMsg] = useState<string | null>(null);
   const [adminErrorMsg, setAdminErrorMsg] = useState<string | null>(null);
 
+  // 목록은 서버가 검색·필터·페이지를 처리한다(사용자가 많아도 한 번에 한 페이지만 받는다).
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [selectedRoleFilter, setSelectedRoleFilter] = useState<AdminUserFilter>('ALL');
+  const [adminPage, setAdminPage] = useState(0);
+  const [adminTotal, setAdminTotal] = useState(0);
+  const [adminSummary, setAdminSummary] = useState<AdminUserSummary | null>(null);
+  const adminRequestSeq = useRef(0);
+
   const fetchAdminUsers = async () => {
+    const seq = ++adminRequestSeq.current;
     setLoadingAdminUsers(true);
     setAdminErrorMsg(null);
     try {
-      const data = await authApi.getAdminUsers();
-      setAdminUsers(data || []);
+      const { users, total } = await authApi.getAdminUsersPage({ page: adminPage, q: debouncedQuery, filter: selectedRoleFilter });
+      if (seq !== adminRequestSeq.current) return; // 더 나중에 보낸 요청이 있으면 이전 응답은 버린다
+      if (users.length === 0 && total > 0 && adminPage > 0) {
+        setAdminPage(clampPage(adminPage, total)); // 마지막 페이지가 비었으면 앞 페이지로
+        return;
+      }
+      setAdminUsers(users);
+      setAdminTotal(total);
     } catch (err: unknown) {
-      setAdminErrorMsg(getErrorMessage(err, '사용자 목록을 불러오지 못했습니다.'));
+      if (seq === adminRequestSeq.current) setAdminErrorMsg(getErrorMessage(err, '사용자 목록을 불러오지 못했습니다.'));
     } finally {
-      setLoadingAdminUsers(false);
+      if (seq === adminRequestSeq.current) setLoadingAdminUsers(false);
     }
   };
+
+  // 탭별 개수는 보조 정보라서 실패해도 목록은 그대로 둔다.
+  const fetchAdminSummary = async () => {
+    try {
+      setAdminSummary(await authApi.getAdminUserSummary());
+    } catch {
+      /* 개수 표시만 이전 값을 유지한다 */
+    }
+  };
+
+  const selectAdminFilter = (filter: AdminUserFilter) => {
+    setSelectedRoleFilter(filter);
+    setAdminPage(0);
+  };
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQuery(searchQuery.trim());
+      setAdminPage(0);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   const handleSetUserRole = async (targetUserId: string, targetName: string, newRole: UserRole) => {
     if (newRole === 'SUPER_ADMIN') {
@@ -89,6 +128,7 @@ export const MyAccountPage: React.FC = () => {
     try {
       const updated = await authApi.updateUserRole(targetUserId, newRole);
       setAdminUsers((prev) => prev.map((u) => (u.id === targetUserId ? updated : u)));
+      void fetchAdminSummary();
       setAdminSuccessMsg(`${targetName || '사용자'}님의 권한 등급이 ${newRole}로 변경되었습니다.`);
     } catch (err: unknown) {
       setAdminErrorMsg(getErrorMessage(err, '권한 변경에 실패했습니다.'));
@@ -115,6 +155,7 @@ export const MyAccountPage: React.FC = () => {
       setAdminUsers((prev) =>
         prev.map((u) => (u.id === targetUserId ? { ...u, hasTotp: false } : u))
       );
+      void fetchAdminSummary();
       setAdminSuccessMsg(`${targetName || '사용자'}님의 2단계 인증(2FA)이 성공적으로 취소(해제)되었습니다.`);
     } catch (err: unknown) {
       setAdminErrorMsg(getErrorMessage(err, '2단계 인증 취소에 실패했습니다.'));
@@ -138,6 +179,7 @@ export const MyAccountPage: React.FC = () => {
     try {
       const updated = await action();
       setAdminUsers((prev) => prev.map((u) => (u.id === targetUserId ? updated : u)));
+      void fetchAdminSummary();
       setAdminSuccessMsg(successMessage);
     } catch (err: unknown) {
       setAdminErrorMsg(getErrorMessage(err, failureMessage));
@@ -175,10 +217,6 @@ export const MyAccountPage: React.FC = () => {
     const name = targetName || '해당 사용자';
     await runModeration(targetUserId, () => authApi.unlockUser(targetUserId), `${name}님의 로그인 잠금을 해제했습니다.`, '잠금 해제에 실패했습니다.');
   };
-
-  // 관리자 사용자 검색 및 필터 상태
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedRoleFilter, setSelectedRoleFilter] = useState<'ALL' | 'SUPER_ADMIN' | 'ADMIN' | 'USER' | 'TOTP' | 'SUSPENDED'>('ALL');
 
   // 프로필 사진 변경 모달 상태
   const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
@@ -255,10 +293,19 @@ export const MyAccountPage: React.FC = () => {
     if (activeTab === 'info') {
       fetchProfile();
     }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 'admin') {
+      fetchAdminSummary();
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
     if (activeTab === 'admin') {
       fetchAdminUsers();
     }
-  }, [activeTab]);
+  }, [activeTab, adminPage, debouncedQuery, selectedRoleFilter]);
 
   const fetchProfile = async () => {
     setLoadingProfile(true);
@@ -1279,64 +1326,64 @@ export const MyAccountPage: React.FC = () => {
 
                 <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
                   <button
-                    onClick={() => setSelectedRoleFilter('ALL')}
+                    onClick={() => selectAdminFilter('ALL')}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                       selectedRoleFilter === 'ALL'
                         ? 'bg-slate-900 text-white shadow-xs'
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                     }`}
                   >
-                    전체 ({adminUsers.length})
+                    전체 ({adminSummary ? adminSummary.total.toLocaleString('ko-KR') : '…'})
                   </button>
                   <button
-                    onClick={() => setSelectedRoleFilter('SUPER_ADMIN')}
+                    onClick={() => selectAdminFilter('SUPER_ADMIN')}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                       selectedRoleFilter === 'SUPER_ADMIN'
                         ? 'bg-purple-600 text-white shadow-xs'
                         : 'bg-purple-50 text-purple-700 hover:bg-purple-100'
                     }`}
                   >
-                    👑 최고 ({adminUsers.filter((u) => u.role === 'SUPER_ADMIN').length})
+                    👑 최고 ({adminSummary ? adminSummary.superAdmins.toLocaleString('ko-KR') : '…'})
                   </button>
                   <button
-                    onClick={() => setSelectedRoleFilter('ADMIN')}
+                    onClick={() => selectAdminFilter('ADMIN')}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                       selectedRoleFilter === 'ADMIN'
                         ? 'bg-indigo-600 text-white shadow-xs'
                         : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
                     }`}
                   >
-                    🛡️ 관리자 ({adminUsers.filter((u) => u.role === 'ADMIN').length})
+                    🛡️ 관리자 ({adminSummary ? adminSummary.admins.toLocaleString('ko-KR') : '…'})
                   </button>
                   <button
-                    onClick={() => setSelectedRoleFilter('USER')}
+                    onClick={() => selectAdminFilter('USER')}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                       selectedRoleFilter === 'USER'
                         ? 'bg-slate-600 text-white shadow-xs'
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                     }`}
                   >
-                    👤 일반 ({adminUsers.filter((u) => u.role === 'USER').length})
+                    👤 일반 ({adminSummary ? adminSummary.users.toLocaleString('ko-KR') : '…'})
                   </button>
                   <button
-                    onClick={() => setSelectedRoleFilter('TOTP')}
+                    onClick={() => selectAdminFilter('TOTP')}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                       selectedRoleFilter === 'TOTP'
                         ? 'bg-emerald-600 text-white shadow-xs'
                         : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
                     }`}
                   >
-                    🔐 2FA ({adminUsers.filter((u) => u.hasTotp).length})
+                    🔐 2FA ({adminSummary ? adminSummary.totp.toLocaleString('ko-KR') : '…'})
                   </button>
                   <button
-                    onClick={() => setSelectedRoleFilter('SUSPENDED')}
+                    onClick={() => selectAdminFilter('SUSPENDED')}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                       selectedRoleFilter === 'SUSPENDED'
                         ? 'bg-rose-600 text-white shadow-xs'
                         : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
                     }`}
                   >
-                    🚫 정지·잠김 ({adminUsers.filter((u) => u.status === 'SUSPENDED' || u.locked === true).length})
+                    🚫 정지·잠김 ({adminSummary ? adminSummary.suspendedOrLocked.toLocaleString('ko-KR') : '…'})
                   </button>
                 </div>
               </div>
@@ -1345,33 +1392,14 @@ export const MyAccountPage: React.FC = () => {
               <div className="space-y-3">
                 {adminUsers.length === 0 && !loadingAdminUsers && (
                   <div className="py-12 text-center text-slate-400 text-xs">
-                    등록된 사용자가 없거나 목록을 불러올 수 없습니다.
+                    {debouncedQuery !== '' || selectedRoleFilter !== 'ALL'
+                      ? '검색 및 필터 조건과 일치하는 사용자가 없습니다.'
+                      : '등록된 사용자가 없거나 목록을 불러올 수 없습니다.'}
                   </div>
                 )}
 
                 {(() => {
-                  const q = searchQuery.trim().toLowerCase();
-                  const filtered = adminUsers.filter((u) => {
-                    const matches =
-                      !q ||
-                      (u.name && u.name.toLowerCase().includes(q)) ||
-                      u.email.toLowerCase().includes(q);
-                    if (!matches) return false;
-                    if (selectedRoleFilter === 'SUPER_ADMIN') return u.role === 'SUPER_ADMIN';
-                    if (selectedRoleFilter === 'ADMIN') return u.role === 'ADMIN';
-                    if (selectedRoleFilter === 'USER') return u.role === 'USER';
-                    if (selectedRoleFilter === 'TOTP') return u.hasTotp;
-                    if (selectedRoleFilter === 'SUSPENDED') return u.status === 'SUSPENDED' || u.locked === true;
-                    return true;
-                  });
-
-                  if (filtered.length === 0 && adminUsers.length > 0) {
-                    return (
-                      <div className="py-12 text-center text-slate-400 text-xs">
-                        검색 및 필터 조건과 일치하는 사용자가 없습니다.
-                      </div>
-                    );
-                  }
+                  const filtered = adminUsers;
 
                   return filtered.map((u) => {
                     const isCurrent = u.id === activeAccount.userId;
@@ -1539,6 +1567,33 @@ export const MyAccountPage: React.FC = () => {
                     );
                   });
                 })()}
+
+                {adminTotal > 0 && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2" data-testid="admin-pager">
+                    <span className="text-[11px] text-slate-500 font-semibold">
+                      {pageRangeLabel(adminPage, adminUsers.length, adminTotal)}
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => setAdminPage((p) => Math.max(0, p - 1))}
+                        disabled={adminPage === 0 || loadingAdminUsers}
+                        className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                      >
+                        이전
+                      </button>
+                      <span className="text-[11px] text-slate-500 font-semibold px-1">
+                        {adminPage + 1} / {totalPages(adminTotal)}
+                      </span>
+                      <button
+                        onClick={() => setAdminPage((p) => p + 1)}
+                        disabled={adminPage + 1 >= totalPages(adminTotal) || loadingAdminUsers}
+                        className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                      >
+                        다음
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}

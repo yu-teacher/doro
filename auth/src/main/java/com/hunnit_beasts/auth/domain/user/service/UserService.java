@@ -12,7 +12,9 @@ import com.hunnit_beasts.auth.domain.user.dto.ChangePasswordRequest;
 import com.hunnit_beasts.auth.domain.user.dto.UpdateProfileRequest;
 import com.hunnit_beasts.auth.domain.user.dto.UserProfileResponse;
 import com.hunnit_beasts.auth.domain.user.entity.User;
+import com.hunnit_beasts.auth.domain.user.repository.AdminUserFilter;
 import com.hunnit_beasts.auth.domain.user.repository.UserRepository;
+import com.hunnit_beasts.auth.domain.user.repository.UserSpecifications;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -115,17 +117,23 @@ public class UserService {
         return getUsers(adminId, Pageable.unpaged()).getContent();
     }
 
-    /** 사용자 목록. pageable 이 unpaged 면 전체를 돌려준다. 페이지를 나눌 때는 createdAt, id 순으로 고정해 페이지 사이에 겹치거나 빠지지 않게 한다. */
     @Transactional(readOnly = true)
     public Page<UserProfileResponse> getUsers(UUID adminId, Pageable pageable) {
-        // JWT 역할 클레임은 토큰 수명만큼 낡을 수 있으므로 최종 인가는 Guard 에 위임한다.
-        if (adminId == null || !guardClient.check("system", "doro", "admin", adminId.toString())) {
-            throw new AuthException(ErrorCode.ACCESS_DENIED);
-        }
+        return getUsers(adminId, pageable, null, AdminUserFilter.ALL);
+    }
+
+    /**
+     * 사용자 목록. pageable 이 unpaged 면 전체를 돌려준다. 페이지를 나눌 때는 createdAt, id 순으로 고정해
+     * 페이지 사이에 겹치거나 빠지지 않게 한다. q(이름·이메일 부분 일치)와 filter 는 서버에서 적용한다.
+     */
+    @Transactional(readOnly = true)
+    public Page<UserProfileResponse> getUsers(UUID adminId, Pageable pageable, String q, AdminUserFilter filter) {
+        requireAdmin(adminId);
         Pageable effective = pageable.isPaged()
                 ? PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.by("createdAt", "id"))
                 : pageable;
-        Page<User> users = userRepository.findAll(effective);
+        Page<User> users = userRepository.findAll(
+                UserSpecifications.matchesQuery(q).and(UserSpecifications.withFilter(filter)), effective);
         // 사용자마다 credential 을 따로 조회하면 N+1 이라 한 번에 가져온다.
         Map<UUID, Credential> credentials = credentialRepository
                 .findAllByUserIdIn(users.getContent().stream().map(User::getId).toList()).stream()
@@ -137,6 +145,29 @@ public class UserService {
             boolean locked = credential != null && credential.getLockedUntil() != null && now.isBefore(credential.getLockedUntil());
             return UserProfileResponse.forAdmin(user, hasTotp, locked);
         });
+    }
+
+    /** 관리자 목록의 탭별 개수(전체, 역할별, 2FA, 정지·잠김). 검색어와 무관하게 전체 기준이다. */
+    @Transactional(readOnly = true)
+    public AdminUserSummary getUserSummary(UUID adminId) {
+        requireAdmin(adminId);
+        return new AdminUserSummary(
+                userRepository.count(),
+                userRepository.count(UserSpecifications.withFilter(AdminUserFilter.SUPER_ADMIN)),
+                userRepository.count(UserSpecifications.withFilter(AdminUserFilter.ADMIN)),
+                userRepository.count(UserSpecifications.withFilter(AdminUserFilter.USER)),
+                userRepository.count(UserSpecifications.withFilter(AdminUserFilter.TOTP)),
+                userRepository.count(UserSpecifications.withFilter(AdminUserFilter.SUSPENDED)));
+    }
+
+    public record AdminUserSummary(long total, long superAdmins, long admins, long users, long totp, long suspendedOrLocked) {
+    }
+
+    private void requireAdmin(UUID adminId) {
+        // JWT 역할 클레임은 토큰 수명만큼 낡을 수 있으므로 최종 인가는 Guard 에 위임한다.
+        if (adminId == null || !guardClient.check("system", "doro", "admin", adminId.toString())) {
+            throw new AuthException(ErrorCode.ACCESS_DENIED);
+        }
     }
 
     @Transactional

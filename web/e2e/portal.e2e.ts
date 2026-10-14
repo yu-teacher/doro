@@ -95,3 +95,49 @@ test.describe('포털: 관리자', () => {
     await expectMobileFriendly(page);
   });
 });
+
+test.describe('포털: 관리자 — 사용자가 많을 때', () => {
+  // 가짜 사용자 6명 + 대량 회원 45명 = 51명 → 20명씩 3페이지
+  test.beforeEach(async ({ page }) => {
+    await mockApi(page, { account: ADMIN_ACCOUNT, adminExtraUsers: 45 });
+    await seedLoggedIn(page, ADMIN_ACCOUNT);
+    await page.goto('/account');
+    await page.getByRole('button', { name: '사용자 및 권한 관리' }).click();
+  });
+
+  test('한 페이지에 20명만 보이고 다음·이전으로 이동한다', async ({ page }) => {
+    const pager = page.getByTestId('admin-pager');
+    await expect(pager.getByText('1–20 / 51')).toBeVisible();
+    // 1페이지는 기본 사용자 6명 + 대량회원 001~014. 015 부터는 2페이지에 있다.
+    await expect(page.getByText('대량회원014')).toBeVisible();
+    await expect(page.getByText('대량회원015')).toBeHidden();
+    await pager.getByRole('button', { name: '다음' }).click();
+    await expect(pager.getByText('21–40 / 51')).toBeVisible();
+    await pager.getByRole('button', { name: '다음' }).click();
+    await expect(pager.getByText('41–51 / 51')).toBeVisible();
+    await expect(pager.getByRole('button', { name: '다음' })).toBeDisabled();
+    await pager.getByRole('button', { name: '이전' }).click();
+    await expect(pager.getByText('21–40 / 51')).toBeVisible();
+  });
+
+  test('탭 개수는 전체 사용자 기준이고, 필터를 고르면 첫 페이지로 돌아간다', async ({ page }) => {
+    await expect(page.getByRole('button', { name: /^전체 \(51\)/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /일반 \(49\)/ })).toBeVisible();
+    await page.getByTestId('admin-pager').getByRole('button', { name: '다음' }).click();
+    await page.getByRole('button', { name: /2FA \(1\)/ }).click();
+    await expect(page.getByTestId('admin-pager').getByText('1–1 / 1')).toBeVisible();
+  });
+
+  test('검색은 서버에서 처리해 전체 사용자 중에서 찾는다', async ({ page }) => {
+    await page.getByPlaceholder('이름 또는 이메일로 검색...').fill('대량회원045');
+    await expect(page.getByText('대량회원045')).toBeVisible();
+    await expect(page.getByTestId('admin-pager').getByText('1–1 / 1')).toBeVisible();
+    await page.getByPlaceholder('이름 또는 이메일로 검색...').fill('없는사용자zzz');
+    await expect(page.getByText('검색 및 필터 조건과 일치하는 사용자가 없습니다.')).toBeVisible();
+  });
+
+  test('모바일에서도 목록과 페이지 이동이 깨지지 않는다', async ({ page }) => {
+    await expect(page.getByTestId('admin-pager')).toBeVisible();
+    await expectMobileFriendly(page);
+  });
+});
