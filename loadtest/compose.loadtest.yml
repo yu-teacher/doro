@@ -1,0 +1,7 @@
+# 부하 테스트용 오버라이드. 운영 설정은 건드리지 않고 로컬에서만 쓴다.
+#   docker compose -f docker-compose.yml -f loadtest/compose.loadtest.yml up -d --build postgres redis guard-api auth-api
+services:
+  auth-api:
+    environment:
+      DORO_IAM_RATE_LIMIT_ENABLED: "false"          # 로그인/가입 rate limit 해제 (성능 측정용)
+      DORO_IAM_BOOTSTRAP_TOKEN: "loadtest-bootstrap-token-local-only"   # 로컬 전용 테스트 값. 관리자 시나리오가 첫 SUPER_ADMIN 을 만든다
