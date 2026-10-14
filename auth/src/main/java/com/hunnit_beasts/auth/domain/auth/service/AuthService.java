@@ -27,6 +27,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.util.Map;
@@ -49,6 +50,7 @@ public class AuthService {
     private final TotpService totpService;
     private final SessionRevocationService sessionRevocationService;
     private final UserRelationSyncService userRelationSyncService;
+    private final TransactionTemplate transactionTemplate;
 
     private record TwoFactorTicketSession(UUID userId, AtomicInteger failedAttempts, Instant expiresAt) {}
 
@@ -135,7 +137,11 @@ public class AuthService {
         return new AccountLookupResponse(user.getEmail(), user.getName(), user.getProfileImageUrl());
     }
 
-    @Transactional
+    /**
+     * 트랜잭션을 걸지 않는다. Argon2id 검증(수백 ms, 64MB)을 하는 동안 DB 커넥션을 쥐고 있으면
+     * 동시 로그인이 풀 크기에 닿는 순간 REQUIRES_NEW 가 두 번째 커넥션을 기다리며 풀이 교착한다.
+     * 조회·검증은 커넥션 없이(또는 짧은 개별 쿼리로) 하고, 세션·토큰 발급만 한 트랜잭션으로 묶는다.
+     */
     public LoginResponse login(LoginRequest request, String ipAddress, String userAgent) {
         User user = userRepository.findByEmailIgnoreCase(request.email())
                 .orElseThrow(() -> new AuthException(ErrorCode.INVALID_CREDENTIALS));
@@ -171,12 +177,14 @@ public class AuthService {
             return LoginResponse.requiresTwoFactor(tempTicket);
         }
 
+        // REQUIRES_NEW 라서 발급 트랜잭션을 열기 전에 호출한다(커넥션을 쥔 채 두 번째를 요구하지 않도록).
         credentialService.resetFailedAttempts(user.getId());
-        TokenResponse tokenResponse = issueSessionAndTokens(user, request.deviceInfo(), ipAddress, userAgent);
+        TokenResponse tokenResponse = transactionTemplate.execute(
+                status -> issueSessionAndTokens(user, request.deviceInfo(), ipAddress, userAgent));
         return LoginResponse.directSuccess(tokenResponse);
     }
 
-    @Transactional
+    /** 트랜잭션을 걸지 않는다(이유는 {@link #login}). 세션·토큰 발급만 한 트랜잭션으로 묶는다. */
     public TokenResponse loginWithTotp(TotpLoginRequest request, String ipAddress, String userAgent) {
         TwoFactorTicketSession session = pendingTwoFactorTickets.get(request.tempTicket());
         if (session == null || Instant.now().isAfter(session.expiresAt())) {
@@ -216,11 +224,11 @@ public class AuthService {
         // 인증 성공 시에만 티켓 즉시 파기
         pendingTwoFactorTickets.remove(request.tempTicket());
         credentialService.resetFailedAttempts(user.getId());
-        return issueSessionAndTokens(user, request.deviceInfo(), ipAddress, userAgent);
+        return transactionTemplate.execute(
+                status -> issueSessionAndTokens(user, request.deviceInfo(), ipAddress, userAgent));
     }
 
     /** 2FA 등록 시작: 시크릿을 "대기" 상태로만 저장한다. verifyTotp 로 코드를 확인해야 활성화된다. */
-    @Transactional
     public TotpSetupResponse setupTotp(UUID userId, String currentPassword) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new AuthException(ErrorCode.USER_NOT_FOUND));
@@ -236,24 +244,29 @@ public class AuthService {
             credentialService.recordFailedAttempt(userId);
             throw new AuthException(ErrorCode.INVALID_CREDENTIALS, "현재 비밀번호가 일치하지 않습니다.");
         }
-        credential.resetFailedAttempts();
 
-        if (credential.hasActiveTotp()) {
-            throw new AuthException(ErrorCode.INVALID_INPUT, "이미 2단계 인증이 활성화되어 있습니다. 해제한 뒤 다시 설정해 주세요.");
-        }
+        // 비밀번호 검증(느림)은 트랜잭션 밖에서 끝냈다. 엔티티 수정만 짧은 트랜잭션으로 묶는다.
+        return transactionTemplate.execute(status -> {
+            Credential fresh = credentialRepository.findByUserId(userId)
+                    .orElseThrow(() -> new AuthException(ErrorCode.INVALID_CREDENTIALS));
+            fresh.resetFailedAttempts();
 
-        String secret = totpService.generateSecret();
-        credential.beginTotpEnrollment(secret);
+            if (fresh.hasActiveTotp()) {
+                throw new AuthException(ErrorCode.INVALID_INPUT, "이미 2단계 인증이 활성화되어 있습니다. 해제한 뒤 다시 설정해 주세요.");
+            }
 
-        String qrUri = totpService.generateQrUri(user.getEmail(), secret, "Doro");
-        return new TotpSetupResponse(secret, qrUri);
+            String secret = totpService.generateSecret();
+            fresh.beginTotpEnrollment(secret);
+
+            String qrUri = totpService.generateQrUri(user.getEmail(), secret, "Doro");
+            return new TotpSetupResponse(secret, qrUri);
+        });
     }
 
     /**
      * 등록 대기 중이면 코드를 확인해 2FA 를 활성화하고, 이미 활성화된 계정이면 코드만 검증한다.
      * 실패는 계정 잠금 카운트에 합산한다.
      */
-    @Transactional
     public void verifyTotp(UUID userId, String code) {
         Credential credential = credentialRepository.findByUserId(userId)
                 .orElseThrow(() -> new AuthException(ErrorCode.INVALID_CREDENTIALS));
@@ -267,7 +280,9 @@ public class AuthService {
                 credentialService.recordFailedAttempt(userId);
                 throw new AuthException(ErrorCode.INVALID_2FA_CODE);
             }
-            credential.confirmTotpEnrollment();
+            transactionTemplate.executeWithoutResult(status -> credentialRepository.findByUserId(userId)
+                    .orElseThrow(() -> new AuthException(ErrorCode.INVALID_CREDENTIALS))
+                    .confirmTotpEnrollment());
             log.info("User 2FA (TOTP) enabled after code confirmation: userId={}", userId);
             return;
         }
@@ -279,7 +294,6 @@ public class AuthService {
     }
 
     /** 2FA 해제는 현재 유효한 OTP 코드로 재인증해야 한다. (탈취된 세션만으로 보호를 끄지 못하게 한다) */
-    @Transactional
     public void disableTotp(UUID userId, String code) {
         Credential credential = credentialRepository.findByUserId(userId)
                 .orElseThrow(() -> new AuthException(ErrorCode.INVALID_CREDENTIALS));
@@ -289,7 +303,9 @@ public class AuthService {
         }
 
         if (!credential.hasActiveTotp()) {
-            credential.clearPendingTotp();
+            transactionTemplate.executeWithoutResult(status -> credentialRepository.findByUserId(userId)
+                    .orElseThrow(() -> new AuthException(ErrorCode.INVALID_CREDENTIALS))
+                    .clearPendingTotp());
             return;
         }
 
@@ -297,12 +313,19 @@ public class AuthService {
             credentialService.recordFailedAttempt(userId);
             throw new AuthException(ErrorCode.INVALID_2FA_CODE);
         }
-        credential.updateTotpSecret(null);
-        credential.clearPendingTotp();
+        transactionTemplate.executeWithoutResult(status -> {
+            Credential fresh = credentialRepository.findByUserId(userId)
+                    .orElseThrow(() -> new AuthException(ErrorCode.INVALID_CREDENTIALS));
+            fresh.updateTotpSecret(null);
+            fresh.clearPendingTotp();
+        });
         log.info("User 2FA (TOTP) disabled after code re-authentication: userId={}", userId);
     }
 
-    @Transactional
+    /**
+     * 바깥 트랜잭션을 걸지 않는다. rotateRefreshToken 이 REQUIRES_NEW 라서, 바깥이 커넥션을 쥔 채 호출하면
+     * 동시 갱신이 풀 크기에 닿는 순간 서로 두 번째 커넥션을 기다리며 교착한다.
+     */
     public TokenResponse refresh(RefreshTokenRequest request) {
         // OAuth 클라이언트용 세션의 리프레시 토큰으로 일반 로그인 토큰(사용자의 실제 role, cid 없음)을 발급받으면 OAuth 토큰 격리가
         // 무너진다. 회전하기 전에 확인해서, 거부된 시도가 정상 클라이언트의 토큰을 소모하지도 않게 한다.
@@ -320,7 +343,8 @@ public class AuthService {
                 .orElseThrow(() -> new AuthException(ErrorCode.USER_NOT_FOUND));
 
         if (!user.isActive()) {
-            session.deactivate();
+            // 회전한 세션 엔티티는 이미 분리된 상태라 deactivate() 만으로는 저장되지 않는다. 서비스로 종료한다(OAuth2Service.refresh 와 동일).
+            sessionService.deactivateSession(session.getId());
             throw new AuthException(ErrorCode.ACCOUNT_SUSPENDED);
         }
 

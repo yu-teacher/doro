@@ -16,8 +16,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -38,11 +38,12 @@ public class AccountDeletionService {
     private final PasswordEncoder passwordEncoder;
     private final TotpService totpService;
     private final SessionRevocationService sessionRevocationService;
+    private final TransactionTemplate transactionTemplate;
 
     @Value("${doro.iam.account-deletion.grace-days:30}")
     private long graceDays;
 
-    @Transactional
+    /** 트랜잭션을 걸지 않는다: 비밀번호 검증(느림)과 실패 기록(REQUIRES_NEW)을 커넥션 없이 끝내고 상태 변경만 묶는다. */
     public DeleteAccountResponse requestDeletion(UUID userId, DeleteAccountRequest request) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new AuthException(ErrorCode.USER_NOT_FOUND));
@@ -78,9 +79,13 @@ public class AccountDeletionService {
 
         credentialService.resetFailedAttempts(userId);
         Instant now = Instant.now();
-        user.requestDeletion(now);
-        // 계정 상태가 바뀌면 토큰 폐기 확인(assertSessionLive)이 이미 거부하지만, 세션·리프레시 토큰·OAuth 세션도 모두 닫는다.
-        sessionRevocationService.revokeOtherSessions(userId, null, "ACCOUNT_DELETION_REQUESTED");
+        transactionTemplate.executeWithoutResult(status -> {
+            User fresh = userRepository.findById(userId)
+                    .orElseThrow(() -> new AuthException(ErrorCode.USER_NOT_FOUND));
+            fresh.requestDeletion(now);
+            // 계정 상태가 바뀌면 토큰 폐기 확인(assertSessionLive)이 이미 거부하지만, 세션·리프레시 토큰·OAuth 세션도 모두 닫는다.
+            sessionRevocationService.revokeOtherSessions(userId, null, "ACCOUNT_DELETION_REQUESTED");
+        });
 
         Instant purgeAt = now.plus(Duration.ofDays(graceDays));
         log.info("Account deletion requested: userId={}, scheduledPurgeAt={}", userId, purgeAt);

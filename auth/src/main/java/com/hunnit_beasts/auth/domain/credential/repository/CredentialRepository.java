@@ -7,11 +7,16 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 public interface CredentialRepository extends JpaRepository<Credential, UUID> {
     Optional<Credential> findByUserId(UUID userId);
+
+    /** 여러 사용자의 credential 을 한 번에 조회한다(목록 화면의 N+1 방지). */
+    List<Credential> findAllByUserIdIn(Collection<UUID> userIds);
     void deleteByUserId(UUID userId);
 
     /**
