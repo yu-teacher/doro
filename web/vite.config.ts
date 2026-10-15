@@ -61,6 +61,9 @@ export default defineConfig({
       '/oauth2': {
         target: IAM_DEV_TARGET,
         changeOrigin: true,
+        // /oauth2/consent 는 IAM 이 아니라 포털의 화면(SPA 라우트)이다. 운영 게이트웨이도 이 경로만 포털로 보낸다.
+        // IAM 이 로그인 전 인가 요청을 이 주소로 리다이렉트하므로, 개발 서버가 그대로 IAM 에 넘기면 404 JSON 이 뜬다.
+        bypass: (req) => (req.url?.startsWith('/oauth2/consent') ? req.url : undefined),
       },
       '/.well-known': {
         target: IAM_DEV_TARGET,
