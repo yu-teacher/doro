@@ -1,1 +1,3 @@
 com.hunnit_beasts.doro.sdk.config.DoroAutoConfiguration
+com.hunnit_beasts.doro.sdk.config.DoroBffAutoConfiguration
+com.hunnit_beasts.doro.sdk.config.DoroDeletedUsersAutoConfiguration
