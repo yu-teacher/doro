@@ -156,8 +156,16 @@ public class BffAuthService {
 
     // ------------------------------------------------------------------ 요청 인증
 
+    /** 인증된 세션의 사용자와, 그 사용자의 (복호화한) 액세스 토큰. 토큰은 게이트웨이가 백엔드 요청에 Bearer 로 붙일 때 쓴다. */
+    public record Authenticated(DoroUser user, String accessToken) {}
+
     /** 세션 쿠키를 사용자로 바꾼다. 만료·폐기·검증 실패면 비어 있다. 액세스 토큰이 곧 만료되면 먼저 갱신한다. */
     public Optional<DoroUser> authenticate(String cookieValue) {
+        return authenticateWithToken(cookieValue).map(Authenticated::user);
+    }
+
+    /** {@link #authenticate} 와 같되 액세스 토큰도 돌려준다. */
+    public Optional<Authenticated> authenticateWithToken(String cookieValue) {
         if (isBlank(cookieValue)) {
             return Optional.empty();
         }
@@ -205,7 +213,7 @@ public class BffAuthService {
             return Optional.empty();
         }
         touchIfStale(session, now);
-        return Optional.of(user);
+        return Optional.of(new Authenticated(user, accessToken));
     }
 
     private boolean needsRefresh(BffSession session, Instant now) {
