@@ -179,7 +179,19 @@ function activeIamSessions(): number {
   return Number(out);
 }
 
+/**
+ * 이 시험 계정의 블로그 IAM 세션을 모두 끝내 깨끗한 상태로 만든다. 서비스별 기기 수 상한(3) 덕분에 앞선 시험이 만든 세션이
+ * 남아 있으므로, 세션 수를 세는 시험은 시작할 때 비운다.
+ */
+function resetBlogIamSessions() {
+  execSync(
+    `docker exec e2e-postgres psql -U doro_admin -d doro_auth -c "update user_sessions set is_active = false where user_agent = 'OAuth2 PKCE Flow: doro-blog' and user_id = (select id from users where email = '${state.userEmail}')"`,
+    { stdio: 'pipe' },
+  );
+}
+
 test('로그아웃은 도로(IAM) 세션도 끝낸다: IAM 의 활성 세션이 사라지고, 훔쳐 둔 쿠키로도 로그인되지 않는다', async ({ browser }) => {
+  resetBlogIamSessions();
   const ctx = await newLoggedInContext(browser);
   const stolen = (await cookieNamed(ctx, SESSION_COOKIE))!.value;
   expect(activeIamSessions(), '로그인 중에는 IAM 에 블로그 세션이 하나 있다').toBe(1);
@@ -192,4 +204,35 @@ test('로그아웃은 도로(IAM) 세션도 끝낸다: IAM 의 활성 세션이 
   expect((await sessionOf(thief)).authenticated, '훔쳐 둔 쿠키로는 익명').toBe(false);
   await thief.close();
   await ctx.close();
+});
+
+function psql(sql: string): string {
+  return execSync(`docker exec e2e-postgres psql -U doro_admin -d doro_auth -tAc "${sql}"`, { stdio: 'pipe' }).toString().trim();
+}
+
+test('서비스별 기기 3개: 같은 사용자가 3개 기기로 로그인해 둘 수 있고, 4번째가 오면 가장 오래 쓰지 않은 기기만 로그아웃된다', async ({ browser }) => {
+  resetBlogIamSessions();
+  const devices: BrowserContext[] = [];
+  for (let i = 0; i < 3; i++) {
+    devices.push(await newLoggedInContext(browser));
+  }
+  for (const [i, ctx] of devices.entries()) {
+    expect((await sessionOf(ctx)).authenticated, `기기 ${i + 1} 은 로그인 상태`).toBe(true);
+  }
+  expect(activeIamSessions(), '같은 서비스에 IAM 세션이 3개').toBe(3);
+
+  // 두 번째로 만든 기기를 "가장 오래 쓰지 않은" 기기로 만든다(만든 순서가 아니라 마지막 사용 기준임을 보려는 것)
+  psql(`update user_sessions set last_active_at = now() - interval '1 hour' where id = (select s.id from user_sessions s join users u on u.id = s.user_id where u.email = '${state.userEmail}' and s.is_active and s.user_agent = 'OAuth2 PKCE Flow: doro-blog' order by s.created_at offset 1 limit 1)`);
+
+  const fourth = await newLoggedInContext(browser);
+  expect(activeIamSessions(), '4번째가 와도 여전히 3개').toBe(3);
+
+  // 액세스 토큰이 만료되면(20초) 각 서비스 세션이 IAM 에서 갱신을 시도한다: 종료된 세션만 로그인 상태가 풀린다
+  await new Promise((r) => setTimeout(r, 28_000));
+  expect((await sessionOf(devices[0])).authenticated, '처음 만들었지만 최근에 쓴 기기는 유지').toBe(true);
+  expect((await sessionOf(devices[1])).authenticated, '가장 오래 쓰지 않은 기기만 로그아웃').toBe(false);
+  expect((await sessionOf(devices[2])).authenticated).toBe(true);
+  expect((await sessionOf(fourth)).authenticated, '새 기기는 로그인 상태').toBe(true);
+
+  for (const ctx of [...devices, fourth]) await ctx.close();
 });

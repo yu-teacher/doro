@@ -270,7 +270,7 @@ doro:
 
 - **grant**: `authorization_code`, `refresh_token`(둘 다 지원). 리프레시 grant 는 **그 `client_id` 의 OAuth 세션에 속한 토큰만** 허용하고(다른 클라이언트·일반 로그인 토큰은 소모하지 않고 거부), 기존 RTR(재사용 탐지 포함)을 쓴다. 리프레시 응답에는 `id_token` 이 없다.
 - **`id_token`**: `openid` 스코프가 승인됐을 때만 발급(교환 응답에서). 스코프: `openid`, `profile`, `email`. `scope` 를 생략하면 빈 스코프(= `id_token` 없음, 클레임 없음).
-- **세션/토큰**: 코드 교환은 새 세션을 만든다(IP 마커 `OAuth2`, UA `OAuth2 PKCE Flow: <client_id>`). 같은 클라이언트의 이전 OAuth 세션만 교체된다. 사용자당 세션 상한(기본 10)에 포함된다. OAuth 액세스 토큰은 `role=USER` + `cid`(§3).
+- **세션/토큰**: 코드 교환은 새 세션을 만든다(IP 마커 `OAuth2`, UA `OAuth2 PKCE Flow: <client_id>`). **서비스(클라이언트)별로 한 사용자가 3개 기기까지** 동시에 로그인해 둘 수 있고(`DORO_IAM_SESSION_MAX_OAUTH_PER_CLIENT`, 기본 3), 4번째 기기가 로그인하면 그 서비스에서 **가장 오래 쓰지 않은 세션**(마지막 활동 기준)만 종료된다. 다른 서비스·포털 세션은 영향이 없다. 1 로 두면 예전처럼 서비스당 하나만 유지한다(새 로그인이 이전 세션 대체). 사용자당 전체 활성 세션 상한(기본 20)에는 포함된다. OAuth 액세스 토큰은 `role=USER` + `cid`(§3).
 - **인가 코드 저장소**: `doro.oauth.code-store` = `auto`(기본: 기동 시 Redis 에 닿으면 Redis, 아니면 WARN 후 메모리) | `redis` | `memory`. 메모리 모드는 재시작/다중 인스턴스에서 코드가 유실되고 `max-pending-authorization-codes`(10000) 초과 시 429. `auto` 가 기동 시 Redis 에 닿지 못하면 **재시작 전까지 메모리**를 쓴다.
 
 ### 5.3 클라이언트 등록과 모드
@@ -554,6 +554,7 @@ curl -s -o /dev/null -w '%{http_code}\n' \
 
 ## 14. 변경 이력
 
+- **2026-10-15** — 내부 API `GET /internal/v1/users/{userId}/status`(계정 상태 `ACTIVE`/`SUSPENDED`/`PENDING_DELETION`/`DELETED`, 개인정보 없음, 서비스 토큰 필수, 게이트웨이 경유 요청은 404) 추가: 블로그 API 키처럼 IAM 세션 없이 오래 쓰는 자격 증명이 정지·탈퇴 유예 동안 쓰이지 않게 하는 데 쓴다. OAuth 세션은 서비스별 3기기, IPv6 는 /64 로 묶어 제한, `lookup` 이미지 크기 제한.
 - **2026-10-08** — 내부 API(`/internal/v1/deleted-users`) 호출자 인증 추가: 호출자별 서비스 토큰(`X-Doro-Service-Token`, `DORO_IAM_INTERNAL_TOKENS`), 모드 `DORO_IAM_INTERNAL_AUTH_MODE`(기본 ENFORCE), 게이트웨이 경유 요청은 항상 404. 블로그는 `DORO_IAM_INTERNAL_TOKEN` 으로 토큰을 보낸다.
 - **2026-10-02** — 현재 코드(`12d6582`) 기준으로 본문 전체 재작성. 2026-09-30 본문(커밋 `84b8da7` + working tree)과 부록(`hardening/phase1` 브랜치 메모)을 합치고 각 항목을 다시 검증했다. 부록의 운영 메모는 §13 으로 줄여 옮겼다.
   - **해결됨(2026-09-30 본문에서 결함으로 적었던 것)**:

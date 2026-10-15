@@ -131,6 +131,18 @@ class AccountLockoutPolicyTest {
         assertThat(login(victim, PASSWORD, "203.0.113.101")).as("해제하면 쌍 카운터도 초기화된다").isEqualTo(200);
     }
 
+    @Test
+    @DisplayName("IPv6 는 /64 로 묶어 센다: 같은 /64 안에서 주소만 바꿔도 잠금을 피하지 못하고, 다른 /64 의 본인은 영향이 없다")
+    void ipv6AddressesInTheSame64ShareOneLockout() throws Exception {
+        String victim = newUser();
+        for (int i = 1; i <= 5; i++) {
+            assertThat(login(victim, "wrong-password-" + i, "2001:db8:abcd:12::" + i)).as("틀린 비밀번호는 401").isEqualTo(401);
+        }
+
+        assertThat(login(victim, PASSWORD, "2001:db8:abcd:12::99")).as("같은 /64 의 다른 주소도 잠긴다").isEqualTo(403);
+        assertThat(login(victim, PASSWORD, "2001:db8:abcd:13::1")).as("다른 /64 의 본인").isEqualTo(200);
+    }
+
     private String loginToken(String email) throws Exception {
         String body = mockMvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
                         .header("X-Real-IP", "192.0.2.251")

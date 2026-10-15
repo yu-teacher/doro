@@ -27,6 +27,8 @@ public class SessionService {
     static final String REASON_REPLACED_BY_NEW_LOGIN = "REPLACED_BY_NEW_LOGIN";
     /** 사용자별 최대 활성 세션 수를 넘겨 가장 오래된 세션을 종료할 때의 사유 */
     static final String REASON_SESSION_LIMIT_EXCEEDED = "SESSION_LIMIT_EXCEEDED";
+    /** 한 서비스(OAuth 클라이언트)의 기기 수 상한을 넘겨 가장 오래 쓰지 않은 세션을 종료할 때의 사유 */
+    static final String REASON_CLIENT_DEVICE_LIMIT = "CLIENT_DEVICE_LIMIT_EXCEEDED";
 
     private final UserSessionRepository sessionRepository;
     private final SessionRevocationService sessionRevocationService;
@@ -37,6 +39,33 @@ public class SessionService {
     /** 사용자당 동시 활성 세션 상한(새 세션 포함). 0 이하이면 무제한. */
     @Value("${doro.iam.session.max-active-sessions-per-user:10}")
     private int maxActiveSessionsPerUser;
+
+    /**
+     * 한 서비스(OAuth 클라이언트)에 한 사용자가 동시에 로그인해 둘 수 있는 기기 수. 상한에 닿은 뒤 새 기기가 로그인하면 그 서비스에서
+     * 가장 오래 쓰지 않은 세션이 종료된다. 1 이면 예전처럼 서비스당 하나만 유지한다(새 로그인이 이전 세션을 대체).
+     */
+    @Value("${doro.iam.session.max-oauth-sessions-per-client:3}")
+    private int maxOAuthSessionsPerClient;
+
+    /**
+     * OAuth 클라이언트(서비스)용 세션. OAuth 세션은 IP·user agent 가 클라이언트마다 고정값이라 "같은 기기" 를 알 수 없으므로
+     * 기기 대체 규칙을 쓰지 않고, 서비스별 기기 수 상한({@link #maxOAuthSessionsPerClient})으로 관리한다.
+     * 다른 서비스의 세션과 포털 세션은 이 상한에 영향을 주지 않는다.
+     */
+    @Transactional
+    public UserSession createClientSession(UUID userId, String deviceInfo, String ipAddress, String userAgent) {
+        int limit = Math.max(1, maxOAuthSessionsPerClient);
+        List<UserSession> sameClient = sessionRepository
+                .findByUserIdAndUserAgentAndIsActiveTrueOrderByLastActiveAtAsc(userId, userAgent);
+        int excess = sameClient.size() - (limit - 1);
+        if (excess > 0) {
+            List<UserSession> stalest = List.copyOf(sameClient.subList(0, excess));
+            sessionRevocationService.revokeSessions(stalest, REASON_CLIENT_DEVICE_LIMIT);
+            log.info("Revoked {} least-recently-used session(s) over the per-client device limit: userId={}, limit={}",
+                    stalest.size(), userId, limit);
+        }
+        return persistSession(userId, deviceInfo, ipAddress, userAgent);
+    }
 
     @Transactional
     public UserSession createSession(UUID userId, String deviceInfo, String ipAddress, String userAgent) {
@@ -52,6 +81,10 @@ public class SessionService {
             }
         }
 
+        return persistSession(userId, deviceInfo, ipAddress, userAgent);
+    }
+
+    private UserSession persistSession(UUID userId, String deviceInfo, String ipAddress, String userAgent) {
         enforceSessionLimit(userId);
 
         int nextIndex = sessionRepository.findMaxActiveUserIndex(userId)

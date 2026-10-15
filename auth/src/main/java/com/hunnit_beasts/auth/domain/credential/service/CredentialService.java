@@ -69,7 +69,8 @@ public class CredentialService {
     /** 요청 스레드에서만 의미가 있다. 요청 밖(스케줄러·단위 시험)이면 "UNKNOWN". */
     private String currentIp() {
         if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attrs) {
-            return clientIpResolver.resolve(attrs.getRequest());
+            // IPv6 는 /64 로 묶는다(주소만 바꿔 쌍 잠금을 피하지 못하게)
+            return com.hunnit_beasts.auth.common.web.IpPrefix.rateLimitKey(clientIpResolver.resolve(attrs.getRequest()));
         }
         return "UNKNOWN";
     }
