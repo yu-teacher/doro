@@ -20,20 +20,13 @@ public interface CredentialRepository extends JpaRepository<Credential, UUID> {
     void deleteByUserId(UUID userId);
 
     /**
-     * 동시 실패 요청에서도 카운트가 유실되지 않도록 DB 에서 원자적으로 증가시킨다.
-     * 잠금 시간이 이미 지났다면 이전 실패는 잊고 1부터 다시 센다. 그러지 않으면 잠금이 풀린 직후의 첫 실패 한 번이
-     * (DB 에 남은 카운터 5 가 6 이 되어) 곧바로 다시 잠그므로, 15분마다 요청 한 번으로 계정을 계속 잠가 둘 수 있다.
+     * 계정 전체 잠금을 기록한다(여러 IP 의 실패가 합쳐 한도에 닿았을 때). 관리자 목록의 "잠김" 표시와 잠금 해제 API 가 이 값을 쓴다.
+     * 이미 더 늦게까지 잠겨 있으면 줄이지 않는다.
      */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("UPDATE Credential c SET "
-            + "c.failedAttempts = CASE WHEN c.lockedUntil IS NOT NULL AND c.lockedUntil < :now THEN 1 ELSE c.failedAttempts + 1 END, "
-            + "c.lockedUntil = CASE WHEN c.lockedUntil IS NOT NULL AND c.lockedUntil < :now THEN NULL ELSE c.lockedUntil END "
-            + "WHERE c.userId = :userId")
-    int incrementFailedAttempts(@Param("userId") UUID userId, @Param("now") Instant now);
-
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("UPDATE Credential c SET c.lockedUntil = :lockedUntil WHERE c.userId = :userId AND c.failedAttempts >= :threshold")
-    int lockIfThresholdReached(@Param("userId") UUID userId,
-                               @Param("threshold") int threshold,
-                               @Param("lockedUntil") Instant lockedUntil);
+    @Query("UPDATE Credential c SET c.lockedUntil = :lockedUntil, c.failedAttempts = :failures "
+            + "WHERE c.userId = :userId AND (c.lockedUntil IS NULL OR c.lockedUntil < :lockedUntil)")
+    int lockAccountUntil(@Param("userId") UUID userId,
+                         @Param("lockedUntil") Instant lockedUntil,
+                         @Param("failures") int failures);
 }

@@ -149,14 +149,13 @@ class AccountDeletionTest {
     }
 
     @Test
-    @DisplayName("비밀번호가 틀리면 탈퇴되지 않고 실패가 잠금 카운트에 합산된다")
+    @DisplayName("비밀번호가 틀리면 탈퇴되지 않는다 (실패는 잠금 카운트에 들어가며, 누적 잠금은 아래 테스트가 본다)")
     void wrongPasswordDoesNotDelete() throws Exception {
         Account account = account();
 
         assertThat(requestDeletion(account, "Wrong-Password1!", null)).isEqualTo(401);
 
         assertThat(statusOf(account.id())).isEqualTo("ACTIVE");
-        assertThat(credentialRepository.findByUserId(account.id()).orElseThrow().getFailedAttempts()).isEqualTo(1);
         // 세션도 그대로여야 한다
         mockMvc.perform(get("/api/v1/users/me").header("Authorization", "Bearer " + account.token()))
                 .andExpect(status().isOk());
@@ -167,7 +166,7 @@ class AccountDeletionTest {
     void repeatedWrongPasswordsLockTheAccount() throws Exception {
         Account account = account();
 
-        for (int i = 0; i < Credential.MAX_FAILED_ATTEMPTS; i++) {
+        for (int i = 0; i < 5; i++) {   // 같은 IP(쌍) 5번 실패 → 그 IP 에서는 잠긴다
             assertThat(requestDeletion(account, "Wrong-Password1!", null)).isEqualTo(401);
         }
         // 이제는 올바른 비밀번호여도 잠겨 있다

@@ -18,9 +18,6 @@ import java.util.UUID;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Credential extends BaseTimeEntity {
 
-    public static final int MAX_FAILED_ATTEMPTS = 5;
-    public static final int LOCK_DURATION_MINUTES = 15;
-
     @Id
     @Column(name = "id", nullable = false, updatable = false)
     private UUID id;
@@ -60,13 +57,6 @@ public class Credential extends BaseTimeEntity {
     public void updatePassword(String newPasswordHash) {
         this.passwordHash = newPasswordHash;
         resetFailedAttempts();
-    }
-
-    public void recordFailedAttempt() {
-        this.failedAttempts++;
-        if (this.failedAttempts >= MAX_FAILED_ATTEMPTS) {
-            this.lockedUntil = Instant.now().plus(LOCK_DURATION_MINUTES, ChronoUnit.MINUTES);
-        }
     }
 
     public void resetFailedAttempts() {

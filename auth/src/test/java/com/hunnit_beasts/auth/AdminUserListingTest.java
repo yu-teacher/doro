@@ -43,6 +43,7 @@ class AdminUserListingTest {
     @Autowired private UserService userService;
     @Autowired private UserRepository userRepository;
     @Autowired private CredentialRepository credentialRepository;
+    @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbc;
     @Autowired private AdminController adminController;
     @MockitoBean private GuardClient guardClient;
 
@@ -73,11 +74,8 @@ class AdminUserListingTest {
         c.suspend(Instant.now(), admin, "test");
         userRepository.save(c);
 
-        Credential d = credentialRepository.findByUserId(lockedUser).orElseThrow();
-        for (int i = 0; i < Credential.MAX_FAILED_ATTEMPTS; i++) {
-            d.recordFailedAttempt();
-        }
-        credentialRepository.save(d);
+        jdbc.update("update credentials set locked_until = ?, failed_attempts = 30 where user_id = ?",
+                java.sql.Timestamp.from(Instant.now().plusSeconds(3600)), lockedUser);
     }
 
     private UUID signup(String tag, String name) {

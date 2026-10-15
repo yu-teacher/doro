@@ -207,7 +207,7 @@ public class UserService {
                 .orElseThrow(() -> new AuthException(ErrorCode.USER_NOT_FOUND));
 
         // 본인 확인은 로그인과 같은 실패 카운트(잠금)를 공유해, 탈취된 토큰으로 현재 비밀번호를 무차별 대입하지 못하게 한다.
-        if (credential.isLocked()) {
+        if (credentialService.isLocked(credential)) {
             throw new AuthException(ErrorCode.ACCOUNT_LOCKED);
         }
         if (!passwordEncoder.matches(request.currentPassword(), credential.getPasswordHash())) {
@@ -222,6 +222,7 @@ public class UserService {
                     .orElseThrow(() -> new AuthException(ErrorCode.USER_NOT_FOUND));
             // 같은 트랜잭션에서 이 엔티티를 바로 수정하므로 별도 트랜잭션이 아니라 엔티티로 초기화한다(낡은 값 덮어쓰기 방지).
             fresh.resetFailedAttempts();
+            credentialService.clearPairFailures(userId);
             fresh.updatePassword(encodedNewPassword);
             sessionRevocationService.revokeOtherSessions(userId, keepSessionId, "PASSWORD_CHANGED");
         });

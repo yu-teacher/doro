@@ -35,6 +35,9 @@ class AuthSecurityEdgeCaseTest {
     private CredentialRepository credentialRepository;
 
     @Autowired
+    private com.hunnit_beasts.auth.domain.credential.service.CredentialService credentialService;
+
+    @Autowired
     private com.hunnit_beasts.auth.core.totp.TotpService totpService;
 
     private String currentCode(String secret) {
@@ -47,7 +50,7 @@ class AuthSecurityEdgeCaseTest {
     private CustomArgon2PasswordEncoder passwordEncoder;
 
     @Test
-    @DisplayName("엣지케이스: 비밀번호 5회 연속 실패 시 계정 자동 잠금(15분) 및 올바른 비밀번호도 차단")
+    @DisplayName("엣지케이스: 같은 IP 에서 비밀번호 5회 연속 실패 시 그 IP 잠금(15분) 및 올바른 비밀번호도 차단, 해제 뒤 로그인")
     void testAccountLockoutAfter5FailedAttempts() {
         String email = "lockout.test@doro.local";
         UUID userId = authService.signup(new SignUpRequest(email, "CorrectPass123!", "Lockout User"));
@@ -72,12 +75,11 @@ class AuthSecurityEdgeCaseTest {
                 .isInstanceOf(AuthException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.ACCOUNT_LOCKED);
 
-        // 15분 경과 시뮬레이션 (lockedUntil을 과거로 설정)
-        Credential credential = credentialRepository.findByUserId(userId).orElseThrow();
-        ReflectionTestUtils.setField(credential, "lockedUntil", Instant.now().minus(1, ChronoUnit.MINUTES));
-        credentialRepository.save(credential);
+        // 잠금은 (계정, IP) 쌍 단위로 메모리에 있다. 15분 만료는 LoginAttemptTrackerTest 가 가짜 시계로 시험하고,
+        // 여기서는 관리자 해제를 거쳐 다시 로그인되는지 본다.
+        credentialService.clearAllLockState(userId);
 
-        // 15분 후 올바른 비밀번호로 로그인 성공 및 실패 카운트 리셋 검증
+        // 해제 뒤 올바른 비밀번호로 로그인 성공 및 실패 카운트 리셋 검증
         LoginResponse response = authService.login(correctLogin, "127.0.0.1", "UA");
         assertThat(response.requires2fa()).isFalse();
         assertThat(response.tokens().accessToken()).isNotBlank();

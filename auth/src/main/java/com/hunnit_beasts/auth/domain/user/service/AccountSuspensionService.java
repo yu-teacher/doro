@@ -44,6 +44,7 @@ public class AccountSuspensionService {
     private final CredentialRepository credentialRepository;
     private final SessionRevocationService sessionRevocationService;
     private final GuardClient guardClient;
+    private final com.hunnit_beasts.auth.domain.credential.service.CredentialService credentialService;
 
     @Transactional
     public UserProfileResponse suspend(UUID targetId, String rawReason, UUID adminId) {
@@ -80,6 +81,7 @@ public class AccountSuspensionService {
         if (target.isSuspended()) {
             target.reinstate();
             credentialRepository.findByUserId(targetId).ifPresent(Credential::resetFailedAttempts);
+            credentialService.clearAllLockState(targetId);
             log.warn("SECURITY AUDIT: account reinstated: targetUserId={}, targetEmail={}, adminId={}",
                     targetId, LogMasking.maskEmail(target.getEmail()), adminId);
         } else if (!target.isActive()) {
@@ -98,6 +100,8 @@ public class AccountSuspensionService {
         Credential credential = credentialRepository.findByUserId(targetId)
                 .orElseThrow(() -> new AuthException(ErrorCode.USER_NOT_FOUND));
         credential.resetFailedAttempts();
+        // IP 별 쌍 잠금과 계정 합산도 함께 풀어야 관리자 해제가 실제로 로그인을 되살린다.
+        credentialService.clearAllLockState(targetId);
         log.warn("SECURITY AUDIT: account lock cleared: targetUserId={}, targetEmail={}, adminId={}",
                 targetId, LogMasking.maskEmail(target.getEmail()), adminId);
         return response(target);

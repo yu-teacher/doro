@@ -110,7 +110,7 @@ IAM ──(REST, 관리자 판정·역할 튜플 동기화)──▶ Guard
 
 ### 2.3 로그인 보안 동작 [코드]
 
-- 비밀번호 **5회 연속 실패 → 15분 잠금 → HTTP 403** `ACCOUNT_LOCKED`. 2FA(OTP) 실패와 `2fa/verify`·`disable` 실패도 같은 카운트에 합산된다. 실패 카운트는 원자적(조건부 UPDATE)이다.
+- 잠금은 **(계정, IP) 쌍 5회/15분 → 그 IP 만 15분, 계정 전체 30회/1시간(여러 IP 합산, 쌍 잠금 중 시도는 제외) → 1시간 → HTTP 403** `ACCOUNT_LOCKED`. 이메일만 알아서는 남의 계정을 잠글 수 없게 한 정책이다. 2FA(OTP) 실패와 `2fa/verify`·`disable` 실패도 같은 카운트에 합산된다. 카운터는 메모리의 `LoginAttemptTracker`(재시작하면 초기화, 계정 전체 잠금만 DB `credentials.locked_until`)이고 수치는 `doro.iam.lockout.*`. 풀기: 관리자 API `DELETE /admin/users/{id}/lock`(둘 다 해제), 비상시 서버에서 `scripts/unlock-account.sh`. [코드: `LoginAttemptTracker`, `CredentialService`]
 - 2FA 티켓: 5분 유효, OTP 5회 실패 시 폐기. **인메모리 저장**이라 IAM 재시작/다중 인스턴스에서 깨진다(보관 상한 `max-pending-tickets` 초과 시 429).
 - OTP: 시간 오차 ±1 스텝 허용, **같은 스텝 재사용 방지**(인메모리 맵).
 - 비밀번호는 Argon2id (`CustomArgon2PasswordEncoder`).

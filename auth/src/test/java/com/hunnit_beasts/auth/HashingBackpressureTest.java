@@ -38,6 +38,7 @@ class HashingBackpressureTest {
 
     @Autowired private AuthService authService;
     @Autowired private CredentialRepository credentialRepository;
+    @Autowired private com.hunnit_beasts.auth.domain.credential.service.LoginAttemptTracker tracker;
     @MockitoBean private GuardClient guardClient;
 
     @Test
@@ -74,7 +75,7 @@ class HashingBackpressureTest {
 
         assertThat(invalid + busy).as("모든 요청이 401 또는 503 으로 끝난다").isEqualTo(callers);
         assertThat(busy).as("동시 1개·줄 0개이므로 일부는 혼잡으로 거절된다").isGreaterThanOrEqualTo(1);
-        assertThat(credentialRepository.findByUserId(userId).orElseThrow().getFailedAttempts())
+        assertThat(tracker.recentPairFailures(userId, "UNKNOWN"))   // 요청 컨텍스트 없이 서비스를 직접 부르면 IP 는 UNKNOWN
                 .as("실패 횟수는 실제로 비밀번호가 틀린 횟수만큼만 올라간다(거절된 요청은 합산하지 않는다)")
                 .isEqualTo(invalid);
     }
