@@ -1,0 +1,94 @@
+# 통합(E2E) 시험용 격리 스택: 진짜 IAM(auth) + Guard + Postgres + Redis + S3(목).
+# 개발·운영 스택과 컨테이너 이름·포트·볼륨이 겹치지 않는다(프로젝트 이름 doro-e2e, 볼륨 없음 = 내려가면 데이터도 사라진다).
+#   docker compose -p doro-e2e --env-file e2e.env -f compose.e2e.yml up -d --build
+name: doro-e2e
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: e2e-postgres
+    environment:
+      POSTGRES_DB: doro_iam
+      POSTGRES_USER: doro_admin
+      POSTGRES_PASSWORD: ${E2E_DB_PASSWORD}
+      POSTGRES_MULTIPLE_DATABASES: doro_auth,doro_guard,service_blog
+    volumes:
+      - ../init-db:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:${E2E_PG_PORT}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U doro_admin -d doro_iam"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    container_name: e2e-redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  guard-api:
+    build:
+      context: ../guard
+    container_name: e2e-guard
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/doro_guard
+      SPRING_DATASOURCE_USERNAME: doro_admin
+      SPRING_DATASOURCE_PASSWORD: ${E2E_DB_PASSWORD}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      PORT: 8081
+      GRPC_PORT: 9090
+      DORO_GUARD_SECURITY_MODE: "OFF"
+      DORO_GUARD_VALIDATION_MODE: WARN
+    ports:
+      - "127.0.0.1:${E2E_GUARD_HTTP_PORT}:8081"
+      - "127.0.0.1:${E2E_GUARD_GRPC_PORT}:9090"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  auth-api:
+    build:
+      context: ../auth
+    container_name: e2e-auth
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/doro_auth
+      SPRING_DATASOURCE_USERNAME: doro_admin
+      SPRING_DATASOURCE_PASSWORD: ${E2E_DB_PASSWORD}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      DORO_IAM_ISSUER: http://localhost:${E2E_AUTH_PORT}
+      DORO_GUARD_URL: http://guard-api:8081
+      DORO_IAM_ACCESS_TOKEN_TTL_SECONDS: ${E2E_ACCESS_TOKEN_TTL_SECONDS}
+      DORO_IAM_RATE_LIMIT_ENABLED: "false"
+      DORO_IAM_BOOTSTRAP_TOKEN: ${E2E_BOOTSTRAP_TOKEN}
+      DORO_IAM_REFRESH_COOKIE_SECURE: "false"
+      DORO_OAUTH_CLIENT_REGISTRY_MODE: ENFORCE
+      DORO_OAUTH_CODE_STORE: auto
+      DORO_CORS_ALLOWED_ORIGIN_PATTERNS: http://localhost:*,http://127.0.0.1:*
+    ports:
+      - "127.0.0.1:${E2E_AUTH_PORT}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      guard-api:
+        condition: service_started
+
+  s3:
+    image: adobe/s3mock:latest
+    container_name: e2e-s3
+    environment:
+      initialBuckets: doro-blog-media
+    ports:
+      - "127.0.0.1:${E2E_S3_PORT}:9090"

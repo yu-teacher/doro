@@ -83,6 +83,11 @@ Doro 가 알려 주는 "영구 탈퇴한 사용자 ID"(`GET /internal/v1/deleted
 3. 게이트웨이에 `/서비스/` 와 `/서비스/api/` location, 쓰기·로그인 속도 제한, CSP 를 추가한다([GATEWAY_ROUTING_RULES.md](GATEWAY_ROUTING_RULES.md)).
 4. IAM 서버 `.env` 에 내부 API 토큰(`DORO_IAM_INTERNAL_TOKENS`)과 Guard 서비스 토큰·네임스페이스를 등록한다.
 
+## 통합(E2E) 시험
+
+가짜 IAM 이 아니라 진짜 IAM·Guard·서비스·Chromium 으로 로그인 흐름을 끝까지 확인하는 시험이 `e2e/` 에 있다(`e2e/run.sh`, 설명은 `e2e/README.md`).
+SDK 의 BFF 를 바꾸기 전후에 돌린다. 특히 "IAM 이 죽은 사이 토큰이 만료돼도 로그아웃되지 않는다"는 규칙은 SDK 를 일부러 옛 동작으로 바꿔 보면 이 시험이 실패하는 것으로 확인했다.
+
 ## 한계와 주의
 
 - 형제 앱과 포털이 **같은 오리진**이면 한쪽의 XSS 가 다른 쪽 세션 API 를 부를 수 있다. 근본 해결은 서비스별 서브도메인이다(커스텀 도메인 도입 때).

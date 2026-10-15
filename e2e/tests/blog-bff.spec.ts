@@ -1,0 +1,195 @@
+import { test, expect, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import { execSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+
+/**
+ * 진짜 IAM + 진짜 포털 로그인 화면 + 진짜 블로그 백엔드(SDK BFF) + 진짜 Chromium 으로 확인하는 로그인 흐름.
+ * 가짜 IAM 을 쓰는 단위·통합 시험이 못 보는 것(클라이언트 등록, redirect_uri 정확 일치, PKCE, cid 클레임, 쿠키 Path, 토큰 갱신)을 본다.
+ */
+const state = JSON.parse(readFileSync(new URL('../.state/e2e.json', import.meta.url), 'utf8')) as {
+  iam: string; blog: string; portal: string; userEmail: string; userPassword: string;
+};
+const BLOG = state.blog;
+const CSRF = { 'X-Blog-Csrf': '1' };
+const SESSION_COOKIE = 'doro_blog_session';
+const LOGIN_COOKIE = 'doro_blog_login';
+
+type SessionBody = { data: { authenticated: boolean; role: string | null } };
+
+async function sessionOf(ctx: BrowserContext): Promise<SessionBody['data']> {
+  const res = await ctx.request.get(`${BLOG}/api/v1/bff/session`);
+  expect(res.status(), '세션 조회는 로그인 여부와 무관하게 200').toBe(200);
+  return ((await res.json()) as SessionBody).data;
+}
+
+async function cookieNamed(ctx: BrowserContext, name: string) {
+  return (await ctx.cookies(BLOG)).find((c) => c.name === name);
+}
+
+/** 포털 로그인 화면에서 시험 계정으로 로그인한다(이메일 → 다음 → 비밀번호 → 로그인). */
+async function fillPortalLogin(page: Page) {
+  await page.getByPlaceholder('user@doro.local').fill(state.userEmail);
+  await page.getByRole('button', { name: '다음' }).click();
+  await page.getByPlaceholder('••••••••').fill(state.userPassword);
+  await page.getByRole('button', { name: '로그인', exact: true }).click();
+}
+
+/** 블로그 로그인 시작 → 도로(포털) 로그인 → 콜백 → 세션 쿠키. 돌아온 최종 URL 을 반환한다. */
+async function loginThroughBlog(page: Page, returnPath = '/after-login'): Promise<string> {
+  await page.goto(`${BLOG}/api/v1/bff/login?return=${encodeURIComponent(returnPath)}`);
+  await page.waitForURL(/\/login/, { timeout: 30_000 });
+  await fillPortalLogin(page);
+  await page.waitForURL((url) => url.origin === BLOG, { timeout: 45_000 });
+  return page.url();
+}
+
+function sh(cmd: string) {
+  execSync(cmd, { stdio: 'pipe' });
+}
+
+async function waitIamHealthy(timeoutMs = 120_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`${state.iam}/actuator/health`);
+      if (res.ok) return;
+    } catch { /* 아직 기동 중 */ }
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  throw new Error('IAM 이 다시 올라오지 않았다');
+}
+
+async function newLoggedInContext(browser: Browser): Promise<BrowserContext> {
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  await loginThroughBlog(page);
+  return ctx;
+}
+
+test.describe.configure({ mode: 'serial' });
+
+test('로그인: 블로그 → 도로 로그인 → 콜백 → 세션 쿠키(HttpOnly)와 원래 경로 복귀, 새로고침해도 유지', async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+
+  const finalUrl = await loginThroughBlog(page, '/after-login');
+
+  expect(new URL(finalUrl).pathname, '요청한 복귀 경로로 돌아온다').toBe('/after-login');
+  const session = await cookieNamed(ctx, SESSION_COOKIE);
+  expect(session, '세션 쿠키가 발급된다').toBeTruthy();
+  expect(session!.httpOnly, 'JavaScript 가 볼 수 없다').toBe(true);
+  expect(session!.sameSite).toBe('Lax');
+  expect(await cookieNamed(ctx, LOGIN_COOKIE), '로그인 진행 쿠키는 지워졌다').toBeUndefined();
+  expect((await sessionOf(ctx)).authenticated).toBe(true);
+
+  await page.reload();
+  expect((await sessionOf(ctx)).authenticated, '새로고침 뒤에도 로그인 상태').toBe(true);
+  await ctx.close();
+});
+
+test('토큰 만료: 액세스 토큰이 만료돼도 진짜 IAM 에서 갱신해 같은 쿠키로 로그인 상태가 이어진다', async ({ browser }) => {
+  const ctx = await newLoggedInContext(browser);
+  const before = (await cookieNamed(ctx, SESSION_COOKIE))!.value;
+
+  await new Promise((r) => setTimeout(r, 28_000));   // 액세스 토큰 수명 20초 + 시계 오차 허용 5초를 넘긴다
+
+  expect((await sessionOf(ctx)).authenticated).toBe(true);
+  expect((await cookieNamed(ctx, SESSION_COOKIE))!.value, '쿠키 값은 바뀌지 않는다(갱신은 서버 안에서만)').toBe(before);
+  await ctx.close();
+});
+
+test('IAM 장애: IAM 이 죽은 사이 토큰이 만료돼도 로그아웃되지 않고, IAM 이 돌아오면 같은 쿠키로 다시 로그인 상태다', async ({ browser }) => {
+  const ctx = await newLoggedInContext(browser);
+  try {
+    await new Promise((r) => setTimeout(r, 28_000));   // 액세스 토큰 만료
+    sh('docker stop e2e-auth');
+
+    const during = await ctx.request.get(`${BLOG}/api/v1/bff/session`);
+    expect(during.status(), 'IAM 이 죽어도 서버 오류가 아니다').toBe(200);
+    expect(((await during.json()) as SessionBody).data.authenticated, '이번 요청만 익명').toBe(false);
+    expect(await cookieNamed(ctx, SESSION_COOKIE), '브라우저 쿠키는 그대로').toBeTruthy();
+  } finally {
+    sh('docker start e2e-auth');
+  }
+  await waitIamHealthy();
+
+  expect((await sessionOf(ctx)).authenticated, '복구 뒤 다시 로그인하지 않아도 로그인 상태').toBe(true);
+  await ctx.close();
+});
+
+test('로그인 CSRF: 다른 브라우저가 가로채 연 콜백은 거부되고 세션이 생기지 않는다', async ({ browser }) => {
+  // 피해자 브라우저가 로그인을 끝까지 진행하되, 마지막 콜백 요청은 보내지 않고 URL 만 잡는다(공격자가 이 URL 을 손에 넣었다고 가정)
+  const victim = await browser.newContext();
+  const vpage = await victim.newPage();
+  let callbackUrl = '';
+  await vpage.route('**/api/v1/bff/callback**', async (route) => {
+    callbackUrl = route.request().url();
+    await route.abort();
+  });
+  await vpage.goto(`${BLOG}/api/v1/bff/login`);
+  await vpage.waitForURL(/\/login/, { timeout: 30_000 });
+  await fillPortalLogin(vpage);
+  await expect.poll(() => callbackUrl, { timeout: 45_000 }).toContain('/api/v1/bff/callback');
+  await victim.close();
+
+  // 다른 브라우저(로그인 진행 쿠키 없음)에서 그 콜백 주소를 연다
+  const attacker = await browser.newContext();
+  const apage = await attacker.newPage();
+  await apage.goto(callbackUrl);
+
+  expect(apage.url()).toContain('login_error=failed');
+  expect(await cookieNamed(attacker, SESSION_COOKIE), '세션 쿠키가 발급되지 않는다').toBeUndefined();
+  expect((await sessionOf(attacker)).authenticated).toBe(false);
+  await attacker.close();
+});
+
+test('실패한 콜백은 이미 로그인한 사용자의 세션을 건드리지 않는다', async ({ browser }) => {
+  const ctx = await newLoggedInContext(browser);
+  const page = await ctx.newPage();
+
+  await page.goto(`${BLOG}/api/v1/bff/callback?code=forged&state=forged`);
+
+  expect(page.url()).toContain('login_error=failed');
+  expect((await sessionOf(ctx)).authenticated, '가짜 콜백 링크 하나로 로그아웃되지 않는다').toBe(true);
+  await ctx.close();
+});
+
+test('쿠키로 상태를 바꾸는 요청은 CSRF 헤더가 있어야 하고, 로그아웃하면 세션이 끝난다', async ({ browser }) => {
+  const ctx = await newLoggedInContext(browser);
+
+  const noHeader = await ctx.request.post(`${BLOG}/api/v1/bff/logout`);
+  expect(noHeader.status(), 'CSRF 헤더 없이는 로그아웃도 거부').toBe(403);
+  expect((await sessionOf(ctx)).authenticated).toBe(true);
+
+  const ok = await ctx.request.post(`${BLOG}/api/v1/bff/logout`, { headers: CSRF });
+  expect(ok.status()).toBe(200);
+  expect((await sessionOf(ctx)).authenticated, '로그아웃 뒤에는 익명').toBe(false);
+  await ctx.close();
+});
+
+/**
+ * IAM 이 가진 이 시험 계정의 **블로그(OAuth 클라이언트 doro-blog) 활성 세션** 수(IAM DB 를 직접 본다).
+ * 포털 화면 로그인이 만드는 포털 자체 세션과 준비 단계의 세션은 세지 않는다.
+ */
+function activeIamSessions(): number {
+  const out = execSync(
+    `docker exec e2e-postgres psql -U doro_admin -d doro_auth -tAc "select count(*) from user_sessions s join users u on u.id = s.user_id where u.email = '${state.userEmail}' and s.is_active and s.user_agent = 'OAuth2 PKCE Flow: doro-blog'"`,
+    { stdio: 'pipe' },
+  ).toString().trim();
+  return Number(out);
+}
+
+test('로그아웃은 도로(IAM) 세션도 끝낸다: IAM 의 활성 세션이 사라지고, 훔쳐 둔 쿠키로도 로그인되지 않는다', async ({ browser }) => {
+  const ctx = await newLoggedInContext(browser);
+  const stolen = (await cookieNamed(ctx, SESSION_COOKIE))!.value;
+  expect(activeIamSessions(), '로그인 중에는 IAM 에 블로그 세션이 하나 있다').toBe(1);
+
+  await ctx.request.post(`${BLOG}/api/v1/bff/logout`, { headers: CSRF });
+
+  expect(activeIamSessions(), 'IAM 의 블로그 세션이 폐기됐다(블로그만 지운 것이 아니다)').toBe(0);
+  const thief = await browser.newContext();
+  await thief.addCookies([{ name: SESSION_COOKIE, value: stolen, url: BLOG }]);
+  expect((await sessionOf(thief)).authenticated, '훔쳐 둔 쿠키로는 익명').toBe(false);
+  await thief.close();
+  await ctx.close();
+});
