@@ -4,12 +4,18 @@
 #
 #   e2e/run.sh            # 전체 실행(처음엔 이미지 빌드로 몇 분 걸린다)
 #   KEEP=1 e2e/run.sh     # 시험 후에도 스택을 남겨 둔다(디버깅용; 직접 내릴 때: e2e/run.sh --down)
+#   E2E_BFF_MODE=embedded e2e/run.sh   # 블로그 안의 BFF(이전 방식)로 실행. 기본은 gateway(별도 BFF + nginx)
 #
 # 필요: Docker, Java 25, Node 24, 형제 디렉터리 ../doro-blog. 시험 계정 비밀번호는 실행마다 무작위이며 .state/ 에만 있다.
 set -Eeuo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
+MODE_OVERRIDE="${E2E_BFF_MODE:-}"
 set -a; source e2e.env; set +a
-COMPOSE=(docker compose -p doro-e2e --env-file e2e.env -f compose.e2e.yml)
+[ -z "$MODE_OVERRIDE" ] || E2E_BFF_MODE="$MODE_OVERRIDE"
+case "$E2E_BFF_MODE" in gateway|embedded) ;; *) echo "E2E_BFF_MODE 는 gateway 또는 embedded 여야 한다: $E2E_BFF_MODE" >&2; exit 1;; esac
+export E2E_BFF_MODE
+# gateway 모드에서만 BFF 와 nginx 컨테이너를 쓴다(compose 프로필)
+COMPOSE=(docker compose -p doro-e2e --env-file e2e.env --profile gateway -f compose.e2e.yml)
 BLOG_DIR="${BLOG_DIR:-../../doro-blog}"
 STATE=.state
 
@@ -25,7 +31,7 @@ if [ "${1:-}" = "--down" ]; then down; log "내렸다"; exit 0; fi
 
 mkdir -p "$STATE"; chmod 700 "$STATE"
 [ -d "$BLOG_DIR" ] || die "$BLOG_DIR 가 없다(BLOG_DIR 로 경로 지정)"
-for p in "$E2E_AUTH_PORT" "$E2E_PORTAL_PORT" "$E2E_BLOG_PORT" "$E2E_PG_PORT"; do
+for p in "$E2E_AUTH_PORT" "$E2E_PORTAL_PORT" "$E2E_BLOG_PORT" "$E2E_PG_PORT" "$E2E_GATEWAY_PORT" "$E2E_BFF_PORT"; do
   ! lsof -ti ":$p" >/dev/null 2>&1 || die "포트 $p 가 이미 쓰이고 있다(e2e/e2e.env 에서 바꾼다)"
 done
 trap '[ "${KEEP:-0}" = 1 ] || { log "정리"; down; }' EXIT
@@ -35,10 +41,15 @@ wait_http() { # url, seconds, label
   until curl -fsS -o /dev/null "$1" 2>/dev/null; do [ $SECONDS -lt $deadline ] || die "$3 가 $2 초 안에 준비되지 않았다"; sleep 3; done
 }
 
-log "== 1/5 격리 스택 기동 (IAM · Guard · Postgres · Redis · S3) =="
-"${COMPOSE[@]}" up -d --build
+log "== 1/5 격리 스택 기동 (IAM · Guard · Postgres · Redis · S3, 모드: $E2E_BFF_MODE) =="
+if [ "$E2E_BFF_MODE" = gateway ]; then
+  "${COMPOSE[@]}" up -d --build
+else
+  "${COMPOSE[@]}" up -d --build postgres redis guard-api auth-api s3
+fi
 wait_http "http://localhost:${E2E_AUTH_PORT}/actuator/health" 300 "IAM(auth)"
 wait_http "http://localhost:${E2E_GUARD_HTTP_PORT}/actuator/health" 120 "Guard"
+[ "$E2E_BFF_MODE" != gateway ] || wait_http "http://localhost:${E2E_BFF_PORT}/actuator/health" 180 "BFF"
 
 log "== 2/5 포털 개발 서버 =="
 [ -d ../web/node_modules ] || (cd ../web && npm ci --no-audit --no-fund)
@@ -61,10 +72,13 @@ SESSION_KEY="$(openssl rand -base64 32)"
   BLOG_OAUTH_AUTHORIZE_URL="http://localhost:${E2E_PORTAL_PORT}/oauth2/authorize" \
   BLOG_OAUTH_REDIRECT_URI="http://localhost:${E2E_BLOG_PORT}/api/v1/bff/callback" \
   BLOG_COOKIE_SECURE=false BLOG_SESSION_KEY="$SESSION_KEY" BLOG_AUTH_REFRESH_MARGIN=PT5S \
-  BLOG_DELETED_SYNC_ENABLED=false \
+  BLOG_DELETED_SYNC_ENABLED=false BLOG_AUTH_MODE="$E2E_BFF_MODE" \
+  DORO_IAM_INTERNAL_TOKEN="$E2E_INTERNAL_TOKEN" \
+  BLOG_API_KEY_ACCOUNT_STATUS_ENABLED=true BLOG_API_KEY_ACCOUNT_STATUS_CACHE_TTL=PT2S BLOG_API_KEY_ACCOUNT_STATUS_INACTIVE_CACHE_TTL=PT1S \
   nohup ./gradlew bootRun --console=plain > "$OLDPWD/$STATE/blog.log" 2>&1 &)
 unset SESSION_KEY
 wait_http "http://localhost:${E2E_BLOG_PORT}/api/v1/bff/session" 300 "블로그 백엔드"
+[ "$E2E_BFF_MODE" != gateway ] || wait_http "http://localhost:${E2E_GATEWAY_PORT}/api/v1/bff/session" 60 "게이트웨이(nginx)"
 
 log "== 5/5 브라우저 시험 =="
 set +e

@@ -2,8 +2,8 @@
 # CI 에서 테스트를 Docker 컨테이너 안에서 실행한다. 러너(운영 서버)에는 Java 21 만 있고 Node 가 없어서,
 # 프로젝트가 요구하는 Java 25 / Node 24 를 컨테이너로 가져온다. 로컬에서도 같은 방식으로 실행할 수 있다.
 #
-#   scripts/ci-test.sh backend   # auth, guard, sdk 전체 테스트 (./gradlew test, H2)
-#   scripts/ci-test.sh pg        # guard, auth 전체 테스트를 실제 PostgreSQL 위에서 (Flyway + ddl-auto=validate)
+#   scripts/ci-test.sh backend   # auth, guard, sdk, bff 전체 테스트 (./gradlew test, H2)
+#   scripts/ci-test.sh pg        # guard, auth, bff 전체 테스트를 실제 PostgreSQL 위에서 (Flyway + ddl-auto=validate)
 #   scripts/ci-test.sh web       # 웹 의존성 설치 + vitest + 타입 검사 (npm ci / npm test / tsc -b)
 #   scripts/ci-test.sh mobile    # 포털 모바일 레이아웃 회귀 테스트(실제 Chromium, Playwright 공식 이미지). 폰 4가지 크기에서 가로 넘침·터치 영역·입력 글꼴 측정
 #
@@ -33,7 +33,7 @@ case "$TARGET" in
       # 읽기 전용 소스를 복사한 뒤 산출물/캐시 디렉터리를 지운다 .
       cp -R /src /tmp/work
       cd /tmp/work
-      rm -rf .git build auth/build guard/build sdk/build web/node_modules
+      rm -rf .git build auth/build guard/build sdk/build bff/build web/node_modules
       ./gradlew test --no-daemon --console=plain
     '
     ;;
@@ -47,7 +47,7 @@ case "$TARGET" in
     docker run -d --name "$PG_NAME" --network "$PG_NET" -e POSTGRES_PASSWORD="$PG_PASSWORD" postgres:16-alpine >/dev/null
     for _ in $(seq 1 30); do docker exec "$PG_NAME" pg_isready -U postgres >/dev/null 2>&1 && break; sleep 1; done
     docker exec "$PG_NAME" pg_isready -U postgres >/dev/null || { echo "PostgreSQL 이 기동되지 않았다" >&2; exit 1; }
-    for module in guard auth; do
+    for module in guard auth bff; do
       docker exec "$PG_NAME" psql -U postgres -qc "CREATE SCHEMA suite_$module;"
     done
     docker run "${COMMON[@]}" --network "$PG_NET" -e GRADLE_USER_HOME=/cache/gradle \
@@ -55,8 +55,8 @@ case "$TARGET" in
       -v "$ROOT:/src:ro" "$JAVA_IMAGE" sh -ec '
       cp -R /src /tmp/work
       cd /tmp/work
-      rm -rf .git build auth/build guard/build sdk/build web/node_modules
-      ./gradlew :guard:testOnPostgres :auth:testOnPostgres --no-daemon --console=plain
+      rm -rf .git build auth/build guard/build sdk/build bff/build web/node_modules
+      ./gradlew :guard:testOnPostgres :auth:testOnPostgres :bff:testOnPostgres --no-daemon --console=plain
     '
     ;;
   web)

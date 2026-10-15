@@ -187,6 +187,20 @@ class BffAuthServiceTest {
     }
 
     @Test
+    @DisplayName("authenticateWithToken 은 사용자와 함께 복호화한 액세스 토큰을 돌려준다(게이트웨이가 Bearer 로 붙일 값)")
+    void authenticateWithTokenReturnsAccessToken() {
+        String cookie = login();
+
+        Optional<BffAuthService.Authenticated> result = service.authenticateWithToken(cookie);
+
+        assertThat(result).isPresent();
+        assertThat(result.get().user().userId()).isEqualTo(USER);
+        assertThat(result.get().accessToken()).isEqualTo("access-1");
+        assertThat(service.authenticateWithToken("nope")).isEmpty();
+        assertThat(service.authenticateWithToken(null)).isEmpty();
+    }
+
+    @Test
     @DisplayName("알 수 없는 쿠키·빈 쿠키는 익명이다")
     void unknownCookieIsAnonymous() {
         assertThat(service.authenticate("nope")).isEmpty();

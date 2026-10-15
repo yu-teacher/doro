@@ -1,0 +1,17 @@
+# bff 이미지는 저장소 루트를 컨텍스트로 빌드한다(sdk 가 필요해서). gradlew, gradle, sdk, bff 만 쓰므로 나머지는 보내지 않는다.
+.git
+.private
+.github
+**/node_modules
+**/build
+**/.gradle
+auth
+guard
+web
+e2e
+loadtest
+monitoring
+docs
+gateway
+init-db
+scripts

@@ -3,10 +3,15 @@
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, writeFileSync, chmodSync, readFileSync } from 'node:fs';
 
-const env = Object.fromEntries(readFileSync(new URL('./e2e.env', import.meta.url), 'utf8')
+const fileEnv = Object.fromEntries(readFileSync(new URL('./e2e.env', import.meta.url), 'utf8')
   .split('\n').filter((l) => l && !l.startsWith('#')).map((l) => l.split('=')));
+// 실행할 때 준 E2E_* 환경변수가 파일 값보다 우선한다(예: E2E_BFF_MODE=embedded)
+const env = { ...fileEnv, ...Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith('E2E_'))) };
+const MODE = env.E2E_BFF_MODE ?? 'gateway';
 const IAM = `http://localhost:${env.E2E_AUTH_PORT}`;
-const BLOG = `http://localhost:${env.E2E_BLOG_PORT}`;
+const BLOG_DIRECT = `http://localhost:${env.E2E_BLOG_PORT}`;
+// 브라우저가 보는 블로그 주소: 게이트웨이 모드에서는 nginx, embedded 모드에서는 블로그 백엔드 자신
+const BLOG = MODE === 'gateway' ? `http://localhost:${env.E2E_GATEWAY_PORT}` : BLOG_DIRECT;
 
 const randomPassword = () => `${randomBytes(12).toString('base64url')}Aa1!`;
 const tag = randomBytes(4).toString('hex');
@@ -30,7 +35,7 @@ async function signupAndLogin(email, password, name) {
   return login.data.tokens.accessToken;
 }
 
-const state = { iam: IAM, blog: BLOG, portal: `http://localhost:${env.E2E_PORTAL_PORT}` };
+const state = { mode: MODE, iam: IAM, blog: BLOG, blogDirect: BLOG_DIRECT, bff: `http://localhost:${env.E2E_BFF_PORT}`, portal: `http://localhost:${env.E2E_PORTAL_PORT}` };
 
 // 1) 첫 최고 관리자: 가입 → 부트스트랩 토큰으로 승격(모든 세션이 끝나므로 다시 로그인)
 state.adminEmail = `e2e-admin-${tag}@doro.local`;
