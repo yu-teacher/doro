@@ -33,7 +33,7 @@ IAM ──(REST, 관리자 판정·역할 튜플 동기화)──▶ Guard
 |---|---|---|
 | IAM (`auth`) | 8080 | 가입/로그인/2FA/세션/토큰 발급, JWKS, OAuth 2.1/OIDC, 관리자 API |
 | Guard (`guard`) | 8081 REST, 9090 gRPC | Zanzibar 방식 ReBAC. 튜플 저장 + `Check`/`Expand` |
-| SDK (`sdk`) | (라이브러리) | JWT 로컬 검증 필터, `@DoroGuard`, `@CurrentDoroUser`, gRPC 클라이언트 |
+| SDK (`sdk`) | (라이브러리) | JWT 로컬 검증 필터, `@DoroGuard`, `@CurrentDoroUser`, gRPC 클라이언트, **BFF 로그인 모듈**(`bff`)과 **탈퇴 동기화 모듈**(`sync`) — 서비스는 설정·저장소·사용자 훅만 구현한다. 자세한 규칙과 서비스가 할 일은 [SDK_BFF.md](SDK_BFF.md) |
 | Portal (`web`) | 3000(→컨테이너 80) | 통합 계정 센터 UI (React). 로그인·계정·로그 뷰어·OAuth 동의 화면 |
 | Gateway | 80/443 | nginx 리버스 프록시. 모든 서비스를 **같은 origin** 으로 묶음. 규칙은 `docs/GATEWAY_ROUTING_RULES.md` |
 
