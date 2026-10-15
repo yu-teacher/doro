@@ -53,7 +53,7 @@ public class AccountDeletionService {
 
         Credential credential = credentialRepository.findByUserId(userId)
                 .orElseThrow(() -> new AuthException(ErrorCode.USER_NOT_FOUND));
-        if (credential.isLocked()) {
+        if (credentialService.isLocked(credential)) {
             throw new AuthException(ErrorCode.ACCOUNT_LOCKED);
         }
 

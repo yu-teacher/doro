@@ -149,14 +149,13 @@ public class AuthService {
         Credential credential = credentialRepository.findByUserId(user.getId())
                 .orElseThrow(() -> new AuthException(ErrorCode.INVALID_CREDENTIALS));
 
-        if (credential.isLocked()) {
+        if (credentialService.isLocked(credential)) {
             throw new AuthException(ErrorCode.ACCOUNT_LOCKED);
         }
 
         if (!passwordEncoder.matches(request.password(), credential.getPasswordHash())) {
             credentialService.recordFailedAttempt(user.getId());
-            log.warn("Invalid password attempt for user {}. Failed count: {}",
-                    LogMasking.maskEmail(user.getEmail()), credential.getFailedAttempts() + 1);
+            log.warn("Invalid password attempt for user {}", LogMasking.maskEmail(user.getEmail()));
             throw new AuthException(ErrorCode.INVALID_CREDENTIALS);
         }
 
@@ -206,7 +205,7 @@ public class AuthService {
         Credential credential = credentialRepository.findByUserId(session.userId())
                 .orElseThrow(() -> new AuthException(ErrorCode.INVALID_CREDENTIALS));
 
-        if (credential.isLocked()) {
+        if (credentialService.isLocked(credential)) {
             throw new AuthException(ErrorCode.ACCOUNT_LOCKED);
         }
 
@@ -237,7 +236,7 @@ public class AuthService {
                 .orElseThrow(() -> new AuthException(ErrorCode.INVALID_CREDENTIALS));
 
         // 액세스 토큰만으로는 2FA 기기를 등록할 수 없다: 현재 비밀번호로 다시 확인하고, 실패는 로그인과 같은 잠금 횟수에 합산한다.
-        if (credential.isLocked()) {
+        if (credentialService.isLocked(credential)) {
             throw new AuthException(ErrorCode.ACCOUNT_LOCKED);
         }
         if (!passwordEncoder.matches(currentPassword, credential.getPasswordHash())) {
@@ -250,6 +249,7 @@ public class AuthService {
             Credential fresh = credentialRepository.findByUserId(userId)
                     .orElseThrow(() -> new AuthException(ErrorCode.INVALID_CREDENTIALS));
             fresh.resetFailedAttempts();
+            credentialService.clearPairFailures(userId);
 
             if (fresh.hasActiveTotp()) {
                 throw new AuthException(ErrorCode.INVALID_INPUT, "이미 2단계 인증이 활성화되어 있습니다. 해제한 뒤 다시 설정해 주세요.");
@@ -271,7 +271,7 @@ public class AuthService {
         Credential credential = credentialRepository.findByUserId(userId)
                 .orElseThrow(() -> new AuthException(ErrorCode.INVALID_CREDENTIALS));
 
-        if (credential.isLocked()) {
+        if (credentialService.isLocked(credential)) {
             throw new AuthException(ErrorCode.ACCOUNT_LOCKED);
         }
 
@@ -298,7 +298,7 @@ public class AuthService {
         Credential credential = credentialRepository.findByUserId(userId)
                 .orElseThrow(() -> new AuthException(ErrorCode.INVALID_CREDENTIALS));
 
-        if (credential.isLocked()) {
+        if (credentialService.isLocked(credential)) {
             throw new AuthException(ErrorCode.ACCOUNT_LOCKED);
         }
 

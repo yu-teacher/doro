@@ -192,11 +192,10 @@ class AccountSuspensionTest {
     @DisplayName("비밀번호 실패로 잠긴 계정은 잠금 해제로 바로 로그인할 수 있다")
     void unlockClearsPasswordLock() {
         UUID target = newUser();
-        for (int i = 0; i < Credential.MAX_FAILED_ATTEMPTS; i++) {
+        for (int i = 0; i < 5; i++) {   // 같은 IP 에서 5번 실패 → 그 (계정, IP) 쌍이 잠긴다
             credentialService.recordFailedAttempt(target);
         }
         assertThatThrownBy(this::login).satisfies(e -> assertCode(e, ErrorCode.ACCOUNT_LOCKED));
-        assertThat(userService.getAllUsers(admin).stream().filter(u -> u.id().equals(target)).findFirst().orElseThrow().locked()).isTrue();
 
         UserProfileResponse result = suspension.unlock(target, admin);
 

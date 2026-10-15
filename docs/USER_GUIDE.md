@@ -194,7 +194,7 @@ curl -s -X POST $IAM/api/v1/auth/lookup -H 'Content-Type: application/json' -d '
 | 상황 | 응답 |
 |---|---|
 | 없는 이메일 / 틀린 비밀번호 | `401 INVALID_CREDENTIALS` (둘을 구분하지 않음) |
-| 비밀번호 5회 연속 실패 후 | `403 ACCOUNT_LOCKED` (15분, 올바른 비밀번호도 거부) |
+| 같은 IP 에서 비밀번호 5회 실패 후 | `403 ACCOUNT_LOCKED` (그 IP 만 15분, 올바른 비밀번호도 거부. 다른 IP 는 영향 없음) |
 | 이용 정지 계정 | `403 ACCOUNT_SUSPENDED` |
 | 요청 과다(IP 단위) | `429 TOO_MANY_REQUESTS` + `Retry-After` 헤더 |
 
@@ -253,7 +253,7 @@ curl -s -X POST $IAM/api/v1/auth/2fa/login -H 'Content-Type: application/json' \
 ```
 - 임시 티켓은 **5분** 유효하고, 코드를 5회 틀리면 폐기됩니다(처음부터 다시 로그인). 모르는/만료된 티켓은 `400 INVALID_TOKEN`.
 - 티켓은 IAM 프로세스 메모리에 있습니다(재시작하면 사라지고, 동시 보관 상한 `DORO_IAM_TWO_FACTOR_MAX_PENDING_TICKETS` 기본 10000을 넘으면 `429`).
-- OTP 실패도 비밀번호 실패와 같은 카운터에 합산되어 5회면 계정이 15분 잠깁니다.
+- OTP 실패도 비밀번호 실패와 같은 카운터에 합산되어, 같은 IP 에서 5회면 그 IP 가 15분 잠깁니다([1.8](#18-요청-제한과-계정-잠금)).
 - `code`는 정확히 6자리 숫자여야 합니다(아니면 `400 INVALID_INPUT_VALUE`).
 
 #### 4) 해제 `POST /api/v1/auth/2fa/disable` (Bearer)
@@ -350,7 +350,7 @@ curl -s -X PATCH $IAM/api/v1/users/me -H "Authorization: Bearer $TOKEN" -H 'Cont
 curl -s -X PUT $IAM/api/v1/users/me/password -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"currentPassword":"Password123!","newPassword":"NewPassword456!"}'
 ```
-비밀번호 변경은 현재 비밀번호를 다시 확인합니다. 틀리면 `401 INVALID_CREDENTIALS` 이고 **로그인과 같은 실패 횟수(5회 시 15분 잠금 `403 ACCOUNT_LOCKED`)에 합산**되며, IP 단위 요청 제한도 로그인과 같은 규칙이 적용됩니다. 성공하면 현재 세션을 제외한 모든 세션이 종료됩니다.
+비밀번호 변경은 현재 비밀번호를 다시 확인합니다. 틀리면 `401 INVALID_CREDENTIALS` 이고 **로그인과 같은 실패 횟수(같은 IP 에서 5회 시 그 IP 15분 잠금 `403 ACCOUNT_LOCKED`)에 합산**되며, IP 단위 요청 제한도 로그인과 같은 규칙이 적용됩니다. 성공하면 현재 세션을 제외한 모든 세션이 종료됩니다.
 
 `UserProfileResponse`:
 ```json
@@ -382,7 +382,7 @@ curl -s -X PUT $IAM/api/v1/users/me/password -H "Authorization: Bearer $TOKEN" -
 | `DELETE /api/v1/admin/users/{userId}/2fa` | `user:{대상}#can_reset_2fa` | 대상의 2FA(대기 시크릿 포함)와 실패 카운터를 지우고 대상의 모든 세션을 종료 |
 | `PUT /api/v1/admin/users/{userId}/suspension` | `system:doro#admin` (+ 관리자 대상은 `manage_roles`) | 본문 `{"reason":"..."}`(필수, 200자 이내). 계정을 정지(`SUSPENDED`)해 로그인·토큰 갱신·OAuth 발급을 막고 대상의 **모든 세션을 종료**합니다(이미 받은 액세스 토큰도 즉시 쓸 수 없음). 본인은 `400`, 최고 관리자는 `403`, 관리자(ADMIN) 계정은 최고 관리자만 가능, 탈퇴 유예 중·탈퇴 계정은 `409`. 이미 정지된 계정에 다시 보내도 처음 기록을 유지합니다. 사유·시각·정지한 관리자는 관리자 목록에만 보입니다(`suspensionReason`, `suspendedAt`) |
 | `DELETE /api/v1/admin/users/{userId}/suspension` | 같음 | 정지 해제. 다시 로그인할 수 있고 정지 기록과 실패 카운터가 지워집니다 |
-| `DELETE /api/v1/admin/users/{userId}/lock` | 같음 | 비밀번호·OTP 연속 실패로 잠긴 계정의 잠금(15분 자동 해제)을 바로 풉니다. 정지와는 별개이며 세션은 그대로 둡니다. 목록의 `locked` 로 잠금 여부를 볼 수 있습니다 |
+| `DELETE /api/v1/admin/users/{userId}/lock` | 같음 | 비밀번호·OTP 실패로 잠긴 계정의 잠금(계정 전체 1시간 자동 해제)과 IP 별 잠금을 함께 바로 풉니다. 정지와는 별개이며 세션은 그대로 둡니다. 목록의 `locked` 로 잠금 여부를 볼 수 있습니다 |
 | `GET /api/v1/admin/authz` | `system:doro#admin` | 성공하면 `204`. 게이트웨이가 `/loki/`를 보호할 때 `auth_request`로 호출 |
 | `POST/GET/DELETE /api/v1/admin/oauth/clients` | `system:doro#admin` | OAuth 클라이언트 관리 ([2.2](#22-클라이언트-등록)) |
 
@@ -483,7 +483,25 @@ docker compose restart auth-api
 
 #### 계정 잠금
 
-- 비밀번호 **5회 연속 실패 → 15분 잠금**(`403 ACCOUNT_LOCKED`). 잠금 중에는 올바른 비밀번호도 거부됩니다. 15분이 지나면 자동 해제됩니다.
+- **두 겹으로 잠급니다.** 이메일만 알아서는 남의 계정을 잠글 수 없도록, 잠금은 (계정, IP) 단위가 기본입니다(`403 ACCOUNT_LOCKED`, 잠금 중에는 올바른 비밀번호도 거부).
+
+  | 잠금 | 조건 | 효과 | 풀리는 때 |
+  |---|---|---|---|
+  | (계정, IP) 쌍 | 같은 IP 에서 **15분 안에 5회** 실패 | 그 IP 에서만 15분 거부. 다른 IP(예: 휴대폰 데이터)의 본인은 정상 | 15분 뒤 자동 |
+  | 계정 전체 | 여러 IP 의 실패 합계가 **1시간 안에 30회** | 모든 IP 에서 1시간 거부 | 1시간 뒤 자동, 또는 관리자 해제 |
+
+  쌍이 잠긴 동안의 시도는 합계에 넣지 않으므로 IP 하나로는 시간당 최대 20회라 계정 전체 잠금에 닿을 수 없습니다(2개 이상의 IP 가 필요). 성공하면 그 IP 의 실패만 0 으로 돌아가고 합계는 유지됩니다. 수치는 `doro.iam.lockout.*`(`pair-max-failures`, `pair-window-minutes`, `pair-lock-minutes`, `account-max-failures`, `account-window-minutes`, `account-lock-minutes`)로 바꿀 수 있습니다. 카운터는 auth 프로세스 메모리에 있어 재시작하면 초기화되고(계정 전체 잠금은 DB 에 남음), 다중 인스턴스로 늘릴 때 Redis 로 옮겨야 합니다.
+- 계정 전체 잠금은 DB(`credentials.locked_until`)에 기록되어 관리자 목록의 `locked` 에 보입니다.
+
+##### 잠겼을 때 푸는 방법
+1. **관리자가 풉니다(보통):** 다른 관리자가 `DELETE /api/v1/admin/users/{userId}/lock` 을 호출하면 계정 전체 잠금과 IP 별 잠금이 모두 풀립니다.
+2. **관리자가 모두 잠겼을 때(비상, 서버에서):** `scripts/unlock-account.sh` 를 운영 서버에서 실행합니다. 읽기 전용 확인 후 해제합니다.
+   ```bash
+   ssh mini 'bash -s -- --check user@example.com' < scripts/unlock-account.sh   # 현재 잠금 상태
+   ssh mini 'bash -s -- --apply user@example.com' < scripts/unlock-account.sh   # 계정 전체 잠금(DB) 해제
+   ```
+   (계정, IP) 쌍 잠금은 메모리에 있어 이 스크립트가 풀지 못합니다. 그 IP 에서 지금 로그인해야 하면 15분 기다리거나 끝에 `--restart-auth` 를 붙입니다(약 20초 로그인·API 중단, 모든 계정 카운터 초기화). 다른 IP 로 접속하면 바로 로그인됩니다.
+3. 정지(`SUSPENDED`)는 잠금과 별개이므로 위 방법으로 풀리지 않습니다(관리자 API 의 정지 해제).
 - 2FA 코드 실패와 `2fa/verify`·`2fa/disable` 실패도 같은 카운터에 합산됩니다.
 - 2FA 계정은 OTP까지 통과해야 카운터가 0으로 돌아갑니다(비밀번호만 맞췄을 때는 초기화되지 않음). 비밀번호 변경 성공, 관리자의 2FA 초기화도 카운터를 지웁니다.
 
@@ -1563,7 +1581,7 @@ public class GuardTuples {
 |---|---|---|
 | IAM API가 **본문 없는 `401`** | `Authorization` 헤더 없음, 만료/위조 토큰, 폐기된 세션의 토큰, OAuth 액세스 토큰/`id_token`으로 IAM 일반 API 호출 | 로그인 토큰을 `Bearer`로 보내고, 만료면 `POST /auth/token/refresh`. OAuth 토큰은 `userinfo`/`sessions/current`에서만 통함 |
 | `401 INVALID_CREDENTIALS` | 이메일/비밀번호 불일치(구분 안 함). 비밀번호 변경 API의 `currentPassword` 불일치도 같은 코드 | 입력 확인. 5회 연속 틀리면 잠김 |
-| `403 ACCOUNT_LOCKED` | 5회 연속 실패(비밀번호/OTP 합산) | 15분 대기. 관리자가 2FA 초기화(`DELETE /admin/users/{id}/2fa`)해도 카운터가 지워짐. (**423이 아닙니다**) |
+| `403 ACCOUNT_LOCKED` | 같은 IP 에서 5회 실패(비밀번호/OTP 합산) 또는 여러 IP 합계 30회 | 그 IP 는 15분 대기(다른 IP 는 바로 가능). 계정 전체 잠금은 1시간 또는 관리자 해제, 비상시 `scripts/unlock-account.sh`. 관리자가 2FA 초기화(`DELETE /admin/users/{id}/2fa`)해도 카운터가 지워짐. (**423이 아닙니다**) |
 | `429 TOO_MANY_REQUESTS` + `Retry-After` | IP 단위 요청 제한(로그인 20/10분, lookup 30/10분, 가입 10/시간, OAuth 토큰·인가 60/10분) 또는 2FA 티켓/인가 코드 저장 한도 | `Retry-After` 초 뒤 재시도. 프록시 뒤라면 `DORO_IAM_TRUSTED_PROXIES`에 프록시를 넣어야 사용자별 IP로 구분됩니다 |
 | 다시 로그인했더니 **이전 토큰이 `401`** | 같은 IP + 같은 `User-Agent`의 이전 활성 세션은 새 로그인 때 폐기됨. 또는 세션 상한(10) 초과로 가장 오래된 세션이 종료됨 | 기기별로 다른 `User-Agent`/세션을 쓰거나, 사용 중인 세션의 토큰만 쓰세요 |
 | 2FA 코드가 맞는데 `INVALID_2FA_CODE` | 방금 `verify`/`login`에 쓴 코드(같은 30초 스텝)는 재사용 거부. 시계 오차(허용 ±1스텝=±30초 초과) | 다음 코드가 나올 때까지 기다리기. 기기 시간 동기화 |

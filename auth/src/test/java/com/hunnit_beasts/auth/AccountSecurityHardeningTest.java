@@ -38,6 +38,8 @@ class AccountSecurityHardeningTest {
     private static final String PASSWORD = "Password123!";
 
     @Autowired
+    private com.hunnit_beasts.auth.domain.credential.service.LoginAttemptTracker tracker;
+    @Autowired
     private MockMvc mockMvc;
     @Autowired
     private JdbcTemplate jdbc;
@@ -76,8 +78,9 @@ class AccountSecurityHardeningTest {
                 .content("{\"email\":\"" + email + "\",\"password\":\"" + password + "\"}"));
     }
 
+    /** 이 테스트의 요청이 오는 IP(MockMvc 기본값)에서 센 실패 수. 실패 카운트는 (계정, IP) 쌍 단위로 메모리에 쌓인다. */
     private int failedAttempts(UUID userId) {
-        return jdbc.queryForObject("select failed_attempts from credentials where user_id = ?", Integer.class, userId);
+        return tracker.recentPairFailures(userId, "127.0.0.1");
     }
 
     private ResultActions changePassword(Account a, String current, String next) throws Exception {
@@ -124,6 +127,7 @@ class AccountSecurityHardeningTest {
                 .andExpect(jsonPath("$.code").value("ACCOUNT_LOCKED"));
         // 비밀번호는 바뀌지 않았다: 잠금이 풀린 것으로 가정하고 직접 풀어도 옛 비밀번호가 그대로 유효하다
         jdbc.update("update credentials set locked_until = null, failed_attempts = 0 where user_id = ?", me.id());
+        tracker.clearAccount(me.id());   // (계정, IP) 쌍 잠금은 메모리에 있다
         loginAttempt(me.email(), PASSWORD).andExpect(status().isOk());
     }
 

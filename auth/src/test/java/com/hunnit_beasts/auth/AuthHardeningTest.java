@@ -130,17 +130,34 @@ class AuthHardeningTest {
                         e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.TOKEN_REUSE_DETECTED));
     }
 
+    /** 지정한 IP 에서 온 요청인 것처럼 현재 스레드에 요청 컨텍스트를 둔다. */
+    private static void asRequestFrom(String ip) {
+        org.springframework.mock.web.MockHttpServletRequest request = new org.springframework.mock.web.MockHttpServletRequest();
+        request.setRemoteAddr("127.0.0.1");
+        request.addHeader("X-Real-IP", ip);
+        org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(
+                new org.springframework.web.context.request.ServletRequestAttributes(request));
+    }
+
     @Test
-    @DisplayName("N5: 동시 로그인 실패도 카운트가 유실되지 않고 임계치에서 잠긴다")
-    void concurrentFailedAttemptsAreAllCounted() throws Exception {
+    @DisplayName("N5: 여러 IP 에서 동시에 틀려도 실패가 유실되지 않고 계정 전체 한도(30)에서 잠긴다")
+    void concurrentFailedAttemptsFromManyIpsAreAllCounted() throws Exception {
         UUID userId = persistedUserId();
         credentialRepository.saveAndFlush(Credential.builder().userId(userId).passwordHash("x").build());
 
-        int attempts = 20;
+        int attempts = 40;   // IP 마다 1번씩: 쌍 잠금(5번)에는 닿지 않고 합계만 쌓인다
         ExecutorService pool = Executors.newFixedThreadPool(8);
         List<Future<?>> futures = new ArrayList<>();
         for (int i = 0; i < attempts; i++) {
-            futures.add(pool.submit(() -> credentialService.recordFailedAttempt(userId)));
+            String ip = "198.51.100." + (i + 1);
+            futures.add(pool.submit(() -> {
+                asRequestFrom(ip);
+                try {
+                    credentialService.recordFailedAttempt(userId);
+                } finally {
+                    org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
+                }
+            }));
         }
         for (Future<?> f : futures) {
             f.get();
@@ -148,8 +165,40 @@ class AuthHardeningTest {
         pool.shutdown();
 
         Credential credential = credentialRepository.findByUserId(userId).orElseThrow();
-        assertThat(credential.getFailedAttempts()).isEqualTo(attempts);
-        assertThat(credential.isLocked()).isTrue();
+        assertThat(credential.isLocked()).as("30번째 실패에서 계정 전체가 잠겼다").isTrue();
+    }
+
+    @Test
+    @DisplayName("N5: 한 IP 에서 동시에 틀리면 그 쌍만 잠기고 계정 전체 잠금은 걸리지 않는다")
+    void concurrentFailuresFromOneIpLockOnlyThePair() throws Exception {
+        UUID userId = persistedUserId();
+        credentialRepository.saveAndFlush(Credential.builder().userId(userId).passwordHash("x").build());
+
+        ExecutorService pool = Executors.newFixedThreadPool(8);
+        List<Future<?>> futures = new ArrayList<>();
+        for (int i = 0; i < 20; i++) {
+            futures.add(pool.submit(() -> {
+                asRequestFrom("203.0.113.55");
+                try {
+                    credentialService.recordFailedAttempt(userId);
+                } finally {
+                    org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
+                }
+            }));
+        }
+        for (Future<?> f : futures) {
+            f.get();
+        }
+        pool.shutdown();
+
+        asRequestFrom("203.0.113.55");
+        try {
+            Credential credential = credentialRepository.findByUserId(userId).orElseThrow();
+            assertThat(credentialService.isLocked(credential)).as("그 IP 는 잠겼다").isTrue();
+            assertThat(credential.getLockedUntil()).as("계정 전체 잠금은 아니다").isNull();
+        } finally {
+            org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
+        }
     }
 
     private String currentCode(String secret) {

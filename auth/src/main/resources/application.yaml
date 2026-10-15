@@ -66,6 +66,17 @@ doro:
     # 승격이 끝나면 반드시 지운다. scripts/bootstrap-first-admin.sh 가 켜고 끄는 일을 돕는다.
     bootstrap:
       token: ${DORO_IAM_BOOTSTRAP_TOKEN:}
+    # 로그인 실패 잠금. 이메일만 알아서는 남의 계정을 잠글 수 없도록 (계정, IP) 쌍 단위가 기본이다.
+    #   쌍: pair-window-minutes 안에 pair-max-failures 번 틀리면 그 IP 만 pair-lock-minutes 동안 거부
+    #   계정 전체: 여러 IP 의 실패 합계(쌍 잠금 중 시도는 제외)가 account-window-minutes 안에 account-max-failures 번이면 account-lock-minutes 동안 거부
+    # 카운터는 메모리에 있다(재시작하면 초기화, 계정 전체 잠금만 DB). 다중 인스턴스가 되면 Redis 로 옮긴다.
+    lockout:
+      pair-max-failures: 5
+      pair-window-minutes: 15
+      pair-lock-minutes: 15
+      account-max-failures: 30
+      account-window-minutes: 60
+      account-lock-minutes: 60
     # 서브 서비스 전용 내부 API(/internal/**) 호출자 인증. 호출자마다 이름과 토큰(최소 32자)을 '이름:토큰,이름:토큰' 으로 준다.
     # mode: OFF(검사 안 함) | WARN(실패를 경고만 하고 통과: 호출자에 토큰을 배포하는 동안 확인용) | ENFORCE(기본, 실패는 401)
     internal-auth:
