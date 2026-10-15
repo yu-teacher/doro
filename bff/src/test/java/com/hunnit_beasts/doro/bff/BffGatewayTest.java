@@ -308,6 +308,24 @@ class BffGatewayTest {
     }
 
     @Test
+    @DisplayName("블로그는 /blog 아래에 마운트된다: 로그인 시도 쿠키는 /blog/api/v1/bff, 세션 쿠키는 루트(/), 복귀 경로는 /blog 기준이다")
+    void blogMountedUnderBasePath() throws Exception {
+        MvcResult res = mvc.perform(get("/bff/blog/login")).andExpect(status().isFound()).andReturn();
+        var q = UriComponentsBuilder.fromUriString(res.getResponse().getHeader(HttpHeaders.LOCATION)).build().getQueryParams();
+        assertThat(q.getFirst("client_id")).isEqualTo("doro-blog");
+        assertThat(q.getFirst("redirect_uri")).contains("https://doro.example/blog/api/v1/bff/callback");
+        assertThat(String.join(";", res.getResponse().getHeaders(HttpHeaders.SET_COOKIE))).contains("doro_blog_login=").contains("Path=/blog/api/v1/bff");
+
+        String session = login("blog", "doro-blog");
+        MvcResult done = mvc.perform(get("/bff/blog/login")).andReturn();
+        assertThat(session).isNotBlank();
+        String state = UriComponentsBuilder.fromUriString(done.getResponse().getHeader(HttpHeaders.LOCATION)).build().getQueryParams().getFirst("state");
+        MvcResult cb = mvc.perform(get("/bff/blog/callback").param("code", "c").param("state", state).cookie(cookie(done, "blog_login"))).andReturn();
+        assertThat(String.join(";", cb.getResponse().getHeaders(HttpHeaders.SET_COOKIE))).contains("doro_blog_session=").contains("Path=/;");
+        assertThat(cb.getResponse().getHeader(HttpHeaders.LOCATION)).as("복귀 경로가 없으면 /blog/ 첫 화면").isEqualTo("/blog/");
+    }
+
+    @Test
     @DisplayName("계정이 영구 탈퇴하면 모든 서비스의 세션이 지워진다(탈퇴 동기화 핸들러)")
     void deletedUserSessionsAreRemovedFromAllServices() throws Exception {
         login("blog", "doro-blog");

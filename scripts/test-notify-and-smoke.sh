@@ -102,7 +102,7 @@ case "$method $path" in
   "GET /api/v1/admin/users"|PUT*suspension|"POST /blog/api/v1/posts"|"POST /blog/api/v1/series") printf 401 ;;
   "POST /api/v1/auth/token/refresh") printf 400 ;;
   "POST /api/v1/auth/lookup") printf 404 ;;
-  "GET /party/api/v1/bff/login") printf 302 ;;
+  "GET /party/api/v1/bff/login"|"GET /blog/api/v1/bff/login") printf 302 ;;
   *) printf 000 ;;
 esac
 SH
@@ -118,7 +118,7 @@ run_smoke() { set +e; smoke "$@" > "$WORK/out" 2>&1; echo $? > "$WORK/code"; set
 
 run_smoke
 expect "모두 정상이면 종료 코드 0" bash -c "[ \$(cat '$WORK/code') = 0 ]"
-expect "통과 요약이 나온다" has "$WORK/out" "18개 중 18개 통과"
+expect "통과 요약이 나온다" has "$WORK/out" "19개 중 19개 통과"
 expect "실패 줄이 없다" hasnt "$WORK/out" "❌"
 
 run_smoke STUB_BAD=/api/v1/admin/users
