@@ -3,6 +3,7 @@ package com.hunnit_beasts.auth.interfaces.api;
 import com.hunnit_beasts.auth.common.response.ApiResponse;
 import com.hunnit_beasts.auth.domain.user.dto.DeletedUserRef;
 import com.hunnit_beasts.auth.domain.user.dto.DeletedUsersResponse;
+import com.hunnit_beasts.auth.domain.user.dto.UserStatusResponse;
 import com.hunnit_beasts.auth.domain.user.entity.UserStatus;
 import com.hunnit_beasts.auth.domain.user.repository.UserRepository;
 import jakarta.servlet.http.HttpServletRequest;
@@ -12,12 +13,14 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * 서브 서비스(블로그 등) 전용 내부 API. 게이트웨이가 라우팅하지 않는 /internal 경로이며 Docker 내부 네트워크에서만
@@ -49,5 +52,20 @@ public class InternalUserController {
         List<DeletedUserRef> items = userRepository.findDeletedSince(UserStatus.DELETED, from, PageRequest.ofSize(size));
         Instant next = items.isEmpty() ? from : items.get(items.size() - 1).deletedAt();
         return ResponseEntity.ok(ApiResponse.success(new DeletedUsersResponse(items, next)));
+    }
+
+    /**
+     * 사용자의 계정 상태. 블로그 API 키처럼 IAM 세션 없이 오래 쓰는 자격 증명이, 계정이 정지되거나 탈퇴 유예에 들어간 동안
+     * 쓰이지 않게 하는 데 쓴다(정지가 풀리면 다시 ACTIVE 로 보인다). 없는 사용자는 404 이다.
+     */
+    @GetMapping("/users/{userId}/status")
+    @Transactional(readOnly = true)
+    public ResponseEntity<ApiResponse<UserStatusResponse>> userStatus(@PathVariable UUID userId, HttpServletRequest request) {
+        if (request.getHeader("X-Forwarded-For") != null || request.getHeader("X-Real-IP") != null) {
+            return ResponseEntity.notFound().build();
+        }
+        return userRepository.findById(userId)
+                .map(user -> ResponseEntity.ok(ApiResponse.success(new UserStatusResponse(user.getId(), user.getStatus().name()))))
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 }

@@ -72,7 +72,8 @@ services:
       # 한 번 암호화한 뒤에는 키를 지우면 2FA 가 모두 막히니 비밀번호 관리자에 따로 보관한다. 교체할 때는 이전 키를 PREVIOUS_KEYS 에 둔다.
       DORO_IAM_TOTP_ENCRYPTION_KEY: ${DORO_IAM_TOTP_ENCRYPTION_KEY:-}
       DORO_IAM_TOTP_PREVIOUS_KEYS: ${DORO_IAM_TOTP_PREVIOUS_KEYS:-}
-      DORO_IAM_SESSION_MAX_ACTIVE_PER_USER: ${DORO_IAM_SESSION_MAX_ACTIVE_PER_USER:-10}
+      DORO_IAM_SESSION_MAX_ACTIVE_PER_USER: ${DORO_IAM_SESSION_MAX_ACTIVE_PER_USER:-20}
+      DORO_IAM_SESSION_MAX_OAUTH_PER_CLIENT: ${DORO_IAM_SESSION_MAX_OAUTH_PER_CLIENT:-3}
       # 세션 절대 수명(초). 로그인 후 이 시간이 지나면 계속 써도 갱신되지 않고 다시 로그인해야 한다. 기본 90일, 0 이하면 끈다.
       DORO_IAM_SESSION_ABSOLUTE_LIFETIME_SECONDS: ${DORO_IAM_SESSION_ABSOLUTE_LIFETIME_SECONDS:-7776000}
       # 첫 관리자 부트스트랩 토큰(기본 비어 있음 = 꺼짐). 쓴 뒤에는 지운다. scripts/bootstrap-first-admin.sh

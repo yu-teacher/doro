@@ -181,8 +181,8 @@ class OAuthRefreshAndSessionTest extends OAuthTestSupport {
     }
 
     @Test
-    @DisplayName("세션 분리: 클라이언트 A 의 재교환은 A 의 이전 세션만 종료하고 B 의 세션/리프레시 토큰은 유지한다")
-    void exchangeReplacesOnlySameClientSession() throws Exception {
+    @DisplayName("세션 분리: 클라이언트 A 의 재교환은 A 의 다른 기기 세션도 B 의 세션도 종료하지 않는다(서비스별 기기 3개까지. 1개로 제한하면 대체: OAuthClientSingleDeviceTest)")
+    void exchangeKeepsOtherDevicesAndOtherClients() throws Exception {
         registerTwoClients();
         Login me = signupAndLogin();
 
@@ -197,10 +197,10 @@ class OAuthRefreshAndSessionTest extends OAuthTestSupport {
         JsonNode a2 = exchange(me, clientA, GOOD_REDIRECT, null, null);
         String sessionA2 = sessionIdOfAccessToken(a2.path("access_token").asText());
 
-        assertThat(sessionActive(sessionA1)).isFalse();
+        assertThat(sessionActive(sessionA1)).as("같은 서비스의 첫 기기도 유지(상한 3)").isTrue();
         assertThat(sessionActive(sessionB1)).isTrue();
         assertThat(sessionActive(sessionA2)).isTrue();
-        assertThat(refreshForm(clientA, a1.path("refresh_token").asText()).getResponse().getStatus()).isEqualTo(400);
+        assertThat(refreshForm(clientA, a1.path("refresh_token").asText()).getResponse().getStatus()).isEqualTo(200);
         assertThat(refreshForm(clientB, b1.path("refresh_token").asText()).getResponse().getStatus()).isEqualTo(200);
         // 일반 로그인 세션도 영향받지 않는다
         assertThat(sessionActive(me.sessionId())).isTrue();

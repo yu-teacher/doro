@@ -22,6 +22,9 @@ public interface UserSessionRepository extends JpaRepository<UserSession, UUID> 
     /** 같은 User-Agent 값을 가진 활성 세션 전체. OAuth 세션은 클라이언트별 마커를 User-Agent 에 넣어 만들므로 클라이언트 단위 조회에 쓴다. */
     List<UserSession> findByUserAgentAndIsActiveTrue(String userAgent);
 
+    /** 한 사용자의 한 클라이언트(OAuth 세션의 user agent 가 클라이언트마다 고정값) 활성 세션을 오래 쓰지 않은 순서로. */
+    List<UserSession> findByUserIdAndUserAgentAndIsActiveTrueOrderByLastActiveAtAsc(UUID userId, String userAgent);
+
     List<UserSession> findByUserIdAndIpAddressAndUserAgentAndIsActiveTrue(UUID userId, String ipAddress, String userAgent);
 
     /** 영구 탈퇴 시 IP·User-Agent 등 세션 흔적을 지운다. 리프레시 토큰은 FK ON DELETE CASCADE 로 함께 삭제된다. */

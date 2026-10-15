@@ -204,8 +204,9 @@ public class OAuth2Service {
             throw new AuthException(ErrorCode.ACCOUNT_SUSPENDED);
         }
 
-        // 클라이언트별 마커로 세션을 만든다: 같은 클라이언트의 이전 OAuth 세션만 교체되고 다른 클라이언트 세션은 유지된다.
-        UserSession session = sessionService.createSession(
+        // 클라이언트별 마커로 세션을 만든다: 서비스(클라이언트)마다 기기 수 상한(기본 3)이 따로 있고, 넘으면 그 서비스에서
+        // 가장 오래 쓰지 않은 세션만 종료된다. 다른 서비스의 세션과 포털 세션은 영향이 없다.
+        UserSession session = sessionService.createClientSession(
                 user.getId(),
                 OAuth2Constants.SESSION_DEVICE_PREFIX + client.clientId(),
                 OAuth2Constants.SESSION_IP_MARKER,

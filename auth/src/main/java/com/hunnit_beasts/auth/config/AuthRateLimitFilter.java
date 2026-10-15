@@ -80,7 +80,8 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         Bucket bucket = bucketOf(request);
         String ip = clientIpResolver.resolve(request);
-        long retryAfter = tryAcquire(bucket, ip, Instant.now().getEpochSecond());
+        // IPv6 는 /64 로 묶어 센다(주소만 바꿔 제한을 피하지 못하게). 로그에는 실제 주소를 남긴다.
+        long retryAfter = tryAcquire(bucket, com.hunnit_beasts.auth.common.web.IpPrefix.rateLimitKey(ip), Instant.now().getEpochSecond());
         if (retryAfter > 0) {
             log.warn("Rate limit exceeded: bucket={}, ip={}, retryAfterSeconds={}", bucket, ip, retryAfter);
             response.setStatus(429);

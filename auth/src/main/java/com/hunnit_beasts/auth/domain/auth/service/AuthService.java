@@ -128,13 +128,22 @@ public class AuthService {
         return savedUser.getId();
     }
 
+    /** lookup 응답에 실을 프로필 이미지(data URL)의 최대 길이(문자). 넘으면 이미지는 생략한다. 0 이하이면 이미지를 싣지 않는다. */
+    @org.springframework.beans.factory.annotation.Value("${doro.iam.lookup.max-image-length:50000}")
+    private int lookupMaxImageLength;
+
     @Transactional(readOnly = true)
     public AccountLookupResponse lookupAccount(String email) {
         User user = userRepository.findByEmailIgnoreCase(email)
                 .orElseThrow(() -> new AuthException(ErrorCode.USER_NOT_FOUND, "Doro 계정을 찾을 수 없습니다."));
 
         // 계정 상태(정지·탈퇴 유예)는 비밀번호를 확인하기 전에 드러내지 않는다. 정지 여부는 로그인에서 올바른 비밀번호를 낸 뒤에 알려 준다.
-        return new AccountLookupResponse(user.getEmail(), user.getName(), user.getProfileImageUrl());
+        // 인증 없이 누구나 부를 수 있는 API 라서, 큰 이미지(옛 256px 고화질 등)는 돌려주지 않는다. 화면은 이름 첫 글자로 대신한다.
+        String image = user.getProfileImageUrl();
+        if (image != null && (lookupMaxImageLength <= 0 || image.length() > lookupMaxImageLength)) {
+            image = null;
+        }
+        return new AccountLookupResponse(user.getEmail(), user.getName(), image);
     }
 
     /**

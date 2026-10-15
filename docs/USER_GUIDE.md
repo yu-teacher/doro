@@ -198,7 +198,7 @@ curl -s -X POST $IAM/api/v1/auth/lookup -H 'Content-Type: application/json' -d '
 | 이용 정지 계정 | `403 ACCOUNT_SUSPENDED` |
 | 요청 과다(IP 단위) | `429 TOO_MANY_REQUESTS` + `Retry-After` 헤더 |
 
-> **같은 기기에서 다시 로그인하면 이전 세션이 끝납니다.** 같은 IP + 같은 `User-Agent`의 이전 활성 세션은 새 로그인 때 폐기됩니다(리프레시 토큰 폐기 포함). `curl`로 두 번 로그인하면 첫 토큰이 죽습니다. 사용자당 활성 세션은 최대 10개(`DORO_IAM_SESSION_MAX_ACTIVE_PER_USER`, 0 이하는 무제한)이고, 넘으면 가장 오래된 세션부터 종료됩니다.
+> **같은 기기에서 다시 로그인하면 이전 세션이 끝납니다.** 같은 IP + 같은 `User-Agent`의 이전 활성 세션은 새 로그인 때 폐기됩니다(리프레시 토큰 폐기 포함). `curl`로 두 번 로그인하면 첫 토큰이 죽습니다. 사용자당 활성 세션은 최대 20개(`DORO_IAM_SESSION_MAX_ACTIVE_PER_USER`, 0 이하는 무제한)이고, 넘으면 가장 오래된 세션부터 종료됩니다. 위 규칙은 **IAM 에 직접 로그인한 세션(포털 등)** 에 해당합니다. OAuth 로 서비스(블로그 등)에 로그인한 세션은 "같은 기기" 를 알 수 없어서 **서비스별 기기 3개까지** 동시에 유지되고(`DORO_IAM_SESSION_MAX_OAUTH_PER_CLIENT`), 넘으면 그 서비스에서 가장 오래 쓰지 않은 세션만 종료됩니다.
 
 ---
 
@@ -334,7 +334,7 @@ curl -s -o /dev/null -w '%{http_code}\n' $IAM/api/v1/sessions/current -H "Author
 
 `GET /api/v1/sessions/current`는 **서브 서비스의 SDK가 세션 폐기를 확인할 때 호출하는 엔드포인트**입니다. OAuth 액세스 토큰으로도 호출할 수 있습니다([2.7](#27-보안-속성)).
 
-OAuth로 로그인한 세션도 이 목록에 나타나고(`deviceInfo` 가 `OAuth2 Client: <client_id>`, `ipAddress` 가 `OAuth2`) 세션 상한에도 포함됩니다.
+OAuth로 로그인한 세션도 이 목록에 나타나고(`deviceInfo` 가 `OAuth2 Client: <client_id>`, `ipAddress` 가 `OAuth2`) 세션 상한에도 포함됩니다. 한 서비스에는 기기 3개까지 동시에 로그인할 수 있습니다.
 
 ---
 
@@ -475,6 +475,8 @@ docker compose restart auth-api
 |---|---|---|
 | `POST /auth/login`, `POST /auth/2fa/login` (같은 버킷) | 10분에 **20회** | `DORO_IAM_RATE_LIMIT_LOGIN_MAX` |
 | `POST /auth/lookup` | 10분에 30회 | `doro.iam.rate-limit.lookup-max` |
+
+IP 단위 제한과 로그인 잠금은 **IPv4 는 주소 그대로, IPv6 는 앞 64비트(/64)로 묶어** 셉니다(IPv6 사용자는 /64 를 통째로 받아 주소를 마음대로 바꿀 수 있기 때문). 인증 없는 `lookup` 응답의 프로필 이미지는 `DORO_IAM_LOOKUP_MAX_IMAGE_LENGTH`(기본 50000자)를 넘으면 생략됩니다.
 | `POST /auth/signup` | 1시간에 10회 | `doro.iam.rate-limit.signup-max` |
 | `POST /oauth2/token`, **Bearer 없는** `GET /oauth2/authorize` (같은 버킷) | 10분에 60회 | `DORO_IAM_RATE_LIMIT_TOKEN_MAX` |
 
@@ -1583,7 +1585,7 @@ public class GuardTuples {
 | `401 INVALID_CREDENTIALS` | 이메일/비밀번호 불일치(구분 안 함). 비밀번호 변경 API의 `currentPassword` 불일치도 같은 코드 | 입력 확인. 5회 연속 틀리면 잠김 |
 | `403 ACCOUNT_LOCKED` | 같은 IP 에서 5회 실패(비밀번호/OTP 합산) 또는 여러 IP 합계 30회 | 그 IP 는 15분 대기(다른 IP 는 바로 가능). 계정 전체 잠금은 1시간 또는 관리자 해제, 비상시 `scripts/unlock-account.sh`. 관리자가 2FA 초기화(`DELETE /admin/users/{id}/2fa`)해도 카운터가 지워짐. (**423이 아닙니다**) |
 | `429 TOO_MANY_REQUESTS` + `Retry-After` | IP 단위 요청 제한(로그인 20/10분, lookup 30/10분, 가입 10/시간, OAuth 토큰·인가 60/10분) 또는 2FA 티켓/인가 코드 저장 한도 | `Retry-After` 초 뒤 재시도. 프록시 뒤라면 `DORO_IAM_TRUSTED_PROXIES`에 프록시를 넣어야 사용자별 IP로 구분됩니다 |
-| 다시 로그인했더니 **이전 토큰이 `401`** | 같은 IP + 같은 `User-Agent`의 이전 활성 세션은 새 로그인 때 폐기됨. 또는 세션 상한(10) 초과로 가장 오래된 세션이 종료됨 | 기기별로 다른 `User-Agent`/세션을 쓰거나, 사용 중인 세션의 토큰만 쓰세요 |
+| 다시 로그인했더니 **이전 토큰이 `401`** | 같은 IP + 같은 `User-Agent`의 이전 활성 세션은 새 로그인 때 폐기됨. 또는 세션 상한(전체 20, 서비스별 3기기) 초과로 가장 오래 쓰지 않은 세션이 종료됨 | 기기별로 다른 `User-Agent`/세션을 쓰거나, 사용 중인 세션의 토큰만 쓰세요 |
 | 2FA 코드가 맞는데 `INVALID_2FA_CODE` | 방금 `verify`/`login`에 쓴 코드(같은 30초 스텝)는 재사용 거부. 시계 오차(허용 ±1스텝=±30초 초과) | 다음 코드가 나올 때까지 기다리기. 기기 시간 동기화 |
 | 2FA 로그인에서 `400 INVALID_TOKEN` | `tempTicket` 만료(5분), 5회 실패로 폐기, IAM 재시작으로 소실 | 처음부터 다시 `login` |
 | `POST /auth/login` 응답에 토큰이 없음 | 2FA 계정: `data.requires2fa=true` + `tempTicket`. 응답은 `status:"SUCCESS"` 형태가 아님 | `/2fa/login`으로 이어서 진행. 토큰 위치는 `/login`이 `data.tokens.*`, `/2fa/login`이 `data.*` |
@@ -1653,7 +1655,9 @@ public class GuardTuples {
 |---|---|---|---|
 | `DORO_IAM_ISSUER` | `https://auth.doro.local` | IAM | JWT `iss`, discovery URL의 기준 |
 | `DORO_IAM_ACCESS_TOKEN_TTL_SECONDS` | `900` | IAM | 액세스 토큰 수명 |
-| `DORO_IAM_SESSION_MAX_ACTIVE_PER_USER` | `10` | IAM | 사용자당 활성 세션 상한(0 이하 무제한) |
+| `DORO_IAM_SESSION_MAX_ACTIVE_PER_USER` | `20` | IAM | 사용자당 활성 세션 총량 상한(0 이하 무제한) |
+| `DORO_IAM_SESSION_MAX_OAUTH_PER_CLIENT` | `3` | IAM | 한 서비스(OAuth 클라이언트)에 한 사용자가 동시에 로그인해 둘 수 있는 기기 수. 넘으면 그 서비스에서 가장 오래 쓰지 않은 세션 종료. 1 이면 서비스당 하나만(대체) |
+| `DORO_IAM_LOOKUP_MAX_IMAGE_LENGTH` | `50000` | IAM | 인증 없는 계정 조회(`lookup`)가 돌려주는 프로필 이미지(data URL)의 최대 길이(문자). 넘으면 이미지는 생략 |
 | `DORO_IAM_SESSION_ABSOLUTE_LIFETIME_SECONDS` | `7776000`(90일) | IAM | 세션 절대 수명(초). 로그인 후 이 시간이 지나면 갱신 거부, 0 이하 끔 |
 | `DORO_IAM_RATE_LIMIT_ENABLED` / `_LOGIN_MAX` / `_TOKEN_MAX` | `true` / `20` / `60` | IAM | 요청 제한 |
 | `DORO_IAM_TRUSTED_PROXIES` | `127.0.0.0/8,::1/128,172.16.0.0/12` | IAM | `X-Real-IP`를 믿을 프록시 |
