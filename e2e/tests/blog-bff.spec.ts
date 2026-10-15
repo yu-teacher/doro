@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
  * 가짜 IAM 을 쓰는 단위·통합 시험이 못 보는 것(클라이언트 등록, redirect_uri 정확 일치, PKCE, cid 클레임, 쿠키 Path, 토큰 갱신)을 본다.
  */
 const state = JSON.parse(readFileSync(new URL('../.state/e2e.json', import.meta.url), 'utf8')) as {
-  iam: string; blog: string; portal: string; userEmail: string; userPassword: string;
+  iam: string; blog: string; portal: string; userEmail: string; userPassword: string; adminEmail: string; adminPassword: string;
 };
 const BLOG = state.blog;
 const CSRF = { 'X-Blog-Csrf': '1' };
@@ -235,4 +235,45 @@ test('서비스별 기기 3개: 같은 사용자가 3개 기기로 로그인해 
   expect((await sessionOf(fourth)).authenticated, '새 기기는 로그인 상태').toBe(true);
 
   for (const ctx of [...devices, fourth]) await ctx.close();
+});
+
+/** 관리자로 IAM 에 로그인해 액세스 토큰을 얻는다(관리자 API 호출용). */
+async function adminToken(): Promise<string> {
+  const res = await fetch(`${state.iam}/api/v1/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: state.adminEmail, password: state.adminPassword, deviceInfo: 'e2e-admin' }),
+  });
+  expect(res.status, '관리자 로그인').toBe(200);
+  return ((await res.json()) as { data: { tokens: { accessToken: string } } }).data.tokens.accessToken;
+}
+
+async function setSuspension(userId: string, suspended: boolean) {
+  const res = await fetch(`${state.iam}/api/v1/admin/users/${userId}/suspension`, {
+    method: suspended ? 'PUT' : 'DELETE',
+    headers: { Authorization: `Bearer ${await adminToken()}`, 'Content-Type': 'application/json' },
+    body: suspended ? JSON.stringify({ reason: 'e2e' }) : undefined,
+  });
+  expect(res.status, suspended ? '정지' : '정지 해제').toBe(200);
+}
+
+test('API 키: 소유자 계정이 정지되면 키가 막히고, 정지가 풀리면 같은 키가 다시 통한다', async ({ browser, request }) => {
+  // 로그인한 사용자가 API 키를 발급한다(블로그가 IAM 내부 API 로 계정 상태를 확인한다)
+  const ctx = await newLoggedInContext(browser);
+  const created = await ctx.request.post(`${BLOG}/api/v1/api-keys`, { headers: CSRF, data: { name: 'e2e-key', expireDays: 1 } });
+  expect(created.status()).toBe(200);
+  const key = ((await created.json()) as { data: { apiKey: string } }).data.apiKey;
+  const userId = psql(`select id from users where email = '${state.userEmail}'`);
+  const callWithKey = async () => (await request.get(`${BLOG}/api/v1/posts/me`, { headers: { 'X-API-Key': key } })).status();
+
+  expect(await callWithKey(), '정상 계정의 키는 통한다').toBe(200);
+
+  await setSuspension(userId, true);
+  await new Promise((r) => setTimeout(r, 3_000));              // 정상 판정 캐시(2초)가 끝나기를 기다린다
+  expect(await callWithKey(), '정지된 계정의 키는 거부된다').toBe(403);
+
+  await setSuspension(userId, false);
+  await new Promise((r) => setTimeout(r, 2_000));              // 비정상 판정 캐시(1초)가 끝나기를 기다린다
+  expect(await callWithKey(), '정지가 풀리면 같은 키가 다시 통한다(키를 폐기하지 않았다)').toBe(200);
+  await ctx.close();
 });
