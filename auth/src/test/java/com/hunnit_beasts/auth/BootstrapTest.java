@@ -25,6 +25,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
@@ -66,6 +67,8 @@ class BootstrapTest {
                 .andReturn().getResponse().getContentAsString();
         JsonNode tokens = objectMapper.readTree(body).path("data").path("tokens");
         String id = jdbc.queryForObject("select id from users where email = ?", String.class, email);
+        // 가입 때 나간 Guard 호출은 각 테스트의 검증 대상이 아니다
+        clearInvocations(guardClient);
         return new Account(email, id, tokens.path("accessToken").asText());
     }
 

@@ -25,8 +25,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -43,7 +46,10 @@ class RoleChangeGuardSyncTest {
     @MockitoBean private GuardClient guardClient;
 
     private UUID newUser() {
-        return authService.signup(new SignUpRequest("rolesync-" + UUID.randomUUID() + "@doro.local", "Password123!", "Role Sync"));
+        UUID id = authService.signup(new SignUpRequest("rolesync-" + UUID.randomUUID() + "@doro.local", "Password123!", "Role Sync"));
+        // 가입 때 나간 Guard 호출은 각 테스트의 검증 대상이 아니다
+        clearInvocations(guardClient);
+        return id;
     }
 
     private String roleOf(UUID id) {
@@ -64,6 +70,8 @@ class RoleChangeGuardSyncTest {
         assertThatThrownBy(() -> userService.changeUserRole(target, UserRole.ADMIN, UUID.randomUUID()))
                 .isInstanceOfSatisfying(AuthException.class, e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.GUARD_UNAVAILABLE));
         assertThat(roleOf(target)).isEqualTo("USER");
+        // 보안: 승급 중 삭제가 실패해도 새 관리자 튜플은 쓰이지 않는다(DB 는 USER 로 롤백되는데 Guard 에 관리자 튜플만 남는 상태가 없다)
+        verify(guardClient, never()).writeTuplesOrThrow(any());
     }
 
     @Test
@@ -79,7 +87,7 @@ class RoleChangeGuardSyncTest {
     }
 
     @Test
-    @DisplayName("성공하면 잃는 권한의 튜플을 먼저 지우고 새 역할의 튜플을 쓰며, DB 역할이 바뀐다")
+    @DisplayName("성공하면 잃는 권한의 튜플만 먼저 지우고 새 역할의 튜플을 쓰며, DB 역할이 바뀐다")
     @SuppressWarnings("unchecked")
     void successDeletesLostTuplesThenWritesNewOnes() {
         UUID target = newUser();

@@ -121,9 +121,10 @@ public class AuthService {
                 .build();
         credentialRepository.save(credential);
 
-        userRelationSyncService.syncUserTuples(savedUser, savedUser.getRole() != null ? savedUser.getRole() : UserRole.USER);
+        // 계정은 이미 만들어졌다. Guard 장애로 가입을 실패시키지 않고(튜플은 기동 시 동기화가 복구) ERROR 로그만 남긴다.
+        userRelationSyncService.syncUserTuplesBestEffort(savedUser, savedUser.getRole() != null ? savedUser.getRole() : UserRole.USER);
 
-        log.info("User registered successfully and synced to Zanzibar ReBAC: userId={}, email={}",
+        log.info("User registered successfully: userId={}, email={}",
                 savedUser.getId(), LogMasking.maskEmail(savedUser.getEmail()));
         return savedUser.getId();
     }
@@ -390,7 +391,8 @@ public class AuthService {
                 throw new AuthException(ErrorCode.ACCOUNT_SUSPENDED);
             }
             // 영구 처리가 Guard 튜플을 먼저 지웠을 수 있으므로 되살린다. (멱등)
-            userRelationSyncService.syncUserTuples(user, user.getRole() != null ? user.getRole() : UserRole.USER);
+            // 복구는 이미 확정됐으므로 Guard 장애로 로그인을 막지 않는다(실패는 ERROR 로그, 튜플은 기동 시 동기화가 복구).
+            userRelationSyncService.syncUserTuplesBestEffort(user, user.getRole() != null ? user.getRole() : UserRole.USER);
             log.info("Account deletion cancelled by login during the grace period: userId={}", user.getId());
         }
 

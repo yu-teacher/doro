@@ -96,7 +96,10 @@ class AccountDeletionTest {
                         .content("{\"email\":\"" + email + "\",\"password\":\"" + PASSWORD + "\",\"name\":\"Leaver\"}"))
                 .andExpect(status().isCreated());
         UUID id = jdbc.queryForObject("select id from users where email = ?", UUID.class, email);
-        return new Account(email, id, login(email));
+        Account account = new Account(email, id, login(email));
+        // 가입 때 나간 Guard 호출은 각 테스트의 검증 대상이 아니다
+        clearInvocations(guardClient);
+        return account;
     }
 
     private String login(String email) throws Exception {
@@ -269,7 +272,7 @@ class AccountDeletionTest {
         assertThat(statusOf(account.id())).isEqualTo("ACTIVE");
         assertThat(jdbc.queryForObject("select deletion_requested_at from users where id = ?",
                 java.sql.Timestamp.class, account.id())).isNull();
-        verify(guardClient, atLeastOnce()).writeTuples(anyList());
+        verify(guardClient, atLeastOnce()).writeTuplesOrThrow(anyList());
         mockMvc.perform(get("/api/v1/users/me").header("Authorization", "Bearer " + newToken))
                 .andExpect(status().isOk());
     }
@@ -403,7 +406,7 @@ class AccountDeletionTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<TupleDto>> written = ArgumentCaptor.forClass(List.class);
-        verify(guardClient, atLeastOnce()).writeTuples(written.capture());
+        verify(guardClient, atLeastOnce()).writeTuplesOrThrow(written.capture());
         assertThat(written.getAllValues().toString()).doesNotContain(account.id().toString());
     }
 
