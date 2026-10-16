@@ -39,3 +39,18 @@ KEEP=1 e2e/run.sh     # 시험 후에도 스택을 남긴다(디버깅). 내릴 
 - 로컬 개발 환경 전용이다. 운영 서버에는 접속하지 않는다.
 - 포털 개발 서버의 프록시는 `/oauth2/consent` 를 IAM 이 아니라 포털 화면으로 처리한다(`web/vite.config.ts`, 운영 게이트웨이와 같은 규칙).
 - CI 에 넣지는 않았다(이미지 빌드와 여러 프로세스가 필요해 느리다). 서비스 SDK 변경 전후에 손으로 돌린다.
+
+## 영구 탈퇴 동기화 시험 (`run-deleted-sync.sh`)
+"IAM 에서 영구 탈퇴 → 서비스가 자기 데이터를 정리" 를 **진짜 IAM·Guard·Postgres·S3 목과 진짜 도로 파티·도로 게임 백엔드**로 끝까지 확인한다. 브라우저는 쓰지 않는다(Playwright 불필요).
+
+```bash
+e2e/run-deleted-sync.sh          # 격리 스택 + 두 서비스를 띄워 시험하고 모두 내린다. 처음엔 이미지 빌드·bootRun 으로 10분 안팎
+KEEP=1 e2e/run-deleted-sync.sh   # 시험 후에도 남긴다(디버깅). 내릴 때: E2E_DS_WORK=<출력된 임시 폴더> e2e/run-deleted-sync.sh --down
+```
+
+- 필요: Docker, Java 25, Node 24, 형제 저장소 `../../doro-party`·`../../doro-games`(`PARTY_DIR`·`GAMES_DIR` 로 변경). 두 서비스는 각 저장소의 **로컬 `origin/main`**(미리 `git fetch`)을 임시 git worktree 로 받아 `gradlew bootRun` 으로 띄우고, 끝나면 worktree 를 지운다. 원본 작업 디렉터리·브랜치는 건드리지 않는다. 서비스 빌드는 이 저장소의 SDK(`includeBuild('../Doro')`)를 쓴다.
+- 로컬 전용이다(원격·운영 접속 없음). CI 에는 넣지 않았다(이미지 빌드와 여러 프로세스가 필요해 느리다). 포트: 파티 18086, 게임 18087(`E2E_PARTY_PORT`·`E2E_GAMES_PORT`).
+- 시험용으로 IAM 의 탈퇴 유예를 1일·익명화 주기를 3초로, 서비스의 동기화 주기를 3초로 줄인다. 유예 경과는 **로컬 e2e Postgres 컨테이너**의 `users.deletion_requested_at` 을 직접 당겨서 만든다.
+- 시나리오: 사용자 2명(탈퇴할 사람·남을 친구)이 OAuth(인가 코드+PKCE, 브라우저 없이 API 로) 토큰으로 파티에 지도·핀·사적 메모·사진·친구·공유·댓글을, 게임에 프로필·점수를 만든다 → IAM 탈퇴 요청(비밀번호 재입력; 기존 토큰 거부 확인) → 유예 앞당기기 → IAM 익명화 → 서비스 동기화를 기다려 확인한다.
+- 확인하는 것: 파티/게임 사용자 행 익명화(`deleted-…`, "탈퇴한 사용자", `deleted_at`), 사적 메모·친구 관계·초대 링크·올린 사진(DB 행과 S3 파일) 삭제, 혼자 쓰던 지도 삭제와 공유·타인 기록이 있는 지도 유지(친구 공개는 꺼짐), 남은 친구의 API 접근 유지, Guard 튜플 정리, `iam_sync_state` 커서 전진, 로그에 ERROR 없음, 이후 주기가 아무것도 바꾸지 않음(멱등), 친구 데이터는 그대로(음성 대조).
+- 비밀번호는 실행마다 무작위이며 `.state/deleted-sync.json`(권한 600)에만 있다. 서비스 로그는 `.state/party.log`·`.state/games.log`.

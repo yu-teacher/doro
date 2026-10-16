@@ -11,7 +11,7 @@ services:
       POSTGRES_DB: doro_iam
       POSTGRES_USER: doro_admin
       POSTGRES_PASSWORD: ${E2E_DB_PASSWORD}
-      POSTGRES_MULTIPLE_DATABASES: doro_auth,doro_guard,service_blog,doro_bff
+      POSTGRES_MULTIPLE_DATABASES: doro_auth,doro_guard,service_blog,doro_bff,service_party,service_games
     volumes:
       - ../init-db:/docker-entrypoint-initdb.d:ro
     ports:
@@ -71,7 +71,11 @@ services:
       DORO_IAM_ACCESS_TOKEN_TTL_SECONDS: ${E2E_ACCESS_TOKEN_TTL_SECONDS}
       DORO_IAM_RATE_LIMIT_ENABLED: "false"
       DORO_IAM_BOOTSTRAP_TOKEN: ${E2E_BOOTSTRAP_TOKEN}
-      DORO_IAM_INTERNAL_TOKENS: blog:${E2E_INTERNAL_TOKEN}
+      DORO_IAM_INTERNAL_TOKENS: blog:${E2E_INTERNAL_TOKEN},party:${E2E_PARTY_INTERNAL_TOKEN},games:${E2E_GAMES_INTERNAL_TOKEN}
+      # 영구 탈퇴 시험(run-deleted-sync.sh)이 유예·주기를 줄일 수 있게 한다. 기본값은 운영과 같다(유예 30일, 1시간 주기).
+      DORO_IAM_ACCOUNT_DELETION_GRACE_DAYS: ${E2E_ACCOUNT_DELETION_GRACE_DAYS:-30}
+      DORO_IAM_ACCOUNT_DELETION_PURGE_INTERVAL_MS: ${E2E_ACCOUNT_PURGE_INTERVAL_MS:-3600000}
+      DORO_IAM_ACCOUNT_DELETION_PURGE_INITIAL_DELAY_MS: ${E2E_ACCOUNT_PURGE_INITIAL_DELAY_MS:-120000}
       DORO_IAM_REFRESH_COOKIE_SECURE: "false"
       DORO_OAUTH_CLIENT_REGISTRY_MODE: ENFORCE
       DORO_OAUTH_CODE_STORE: auto
@@ -136,6 +140,6 @@ services:
     image: adobe/s3mock:latest
     container_name: e2e-s3
     environment:
-      initialBuckets: doro-blog-media
+      initialBuckets: doro-blog-media,doro-party-media
     ports:
       - "127.0.0.1:${E2E_S3_PORT}:9090"
