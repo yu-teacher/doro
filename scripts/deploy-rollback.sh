@@ -5,10 +5,12 @@
 #   scripts/deploy-rollback.sh restore    # 배포 실패 후: 이번 배포로 이미지가 바뀐 서비스만 이전 이미지로 다시 띄운다
 #
 # 동작 원리
-#  - snapshot: `docker compose ps` 로 서비스별 실행 중인 컨테이너를 찾아 (서비스, 이미지 이름, 이미지 ID)를 상태 파일에 적고,
-#    이미지에 doro-rollback/<서비스>:prev 태그를 붙인다. 태그가 붙어 있으면 새 빌드가 같은 이름을 가져가도 옛 이미지가 dangling 이 되지 않아
-#    `docker image prune -f` 로 지워지지 않는다.
-#  - restore: 지금 컨테이너의 이미지 ID 가 스냅샷과 다른 서비스만 골라 이미지 이름(compose 가 쓰는 이름)을 이전 이미지로 되돌리고
+#  - snapshot(배포 빌드 **전에** 실행): `docker compose ps` 로 서비스별 실행 중인 컨테이너를 찾아 compose 가 쓰는 이미지 이름(예: doro-auth-api)을 읽고,
+#    그 이름이 지금 가리키는 이미지에 doro-rollback/<서비스>:prev 태그를 붙여 (서비스, 이미지 이름, 이미지 ID)를 상태 파일에 적는다.
+#    태그가 붙어 있으면 새 빌드가 같은 이름을 가져가도 옛 이미지가 dangling 이 되지 않아 `docker image prune -f` 로 지워지지 않는다.
+#    이미지는 컨테이너가 아니라 **이름**으로 읽는다: 일부 Docker(containerd 이미지 저장소)에서는 컨테이너의 .Image 값으로 이미지를 조회하지 못한다.
+#    서비스 하나의 스냅샷이 실패해도 나머지는 계속하고(그 서비스는 롤백 대상에서 빠진다) 스크립트는 실패로 끝내지 않는다 — 안전장치가 배포를 막으면 안 된다.
+#  - restore: 지금 이름이 가리키는 이미지가 스냅샷과 다른 서비스(= 이번 배포가 새로 빌드한 서비스)만 골라, 이름을 보존한 이전 이미지로 되돌리고
 #    `docker compose up -d --no-build --no-deps` 로 그 서비스만 다시 만든다. DB·Redis 처럼 이미지가 안 바뀐 서비스는 건드리지 않는다.
 #  - 한계: Flyway 마이그레이션은 되돌리지 않는다(앞으로만 간다). 새 마이그레이션이 이전 코드와 호환되지 않는 파괴적 변경이면 복원한 서비스가
 #    기동하지 못할 수 있다 — 마이그레이션은 추가 위주(컬럼·테이블 추가)로 작성한다.
@@ -27,15 +29,21 @@ log() { printf '[rollback %s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 container_of() { docker compose ps -q "$1" 2>/dev/null | head -1 || true; }
 image_id_of() { docker inspect -f '{{.Image}}' "$1" 2>/dev/null || true; }
 
+image_id_of_name() { docker image inspect -f '{{.Id}}' "$1" 2>/dev/null || true; }
+
 snapshot() {
   : > "$STATE"
   local svc cid name id
   for svc in $(docker compose config --services); do
     cid="$(container_of "$svc")"
     if [ -z "$cid" ]; then log "$svc: 실행 중인 컨테이너가 없어 건너뜀"; continue; fi
-    name="$(docker inspect -f '{{.Config.Image}}' "$cid")"
-    id="$(image_id_of "$cid")"
-    docker tag "$id" "$PREFIX/$svc:prev"
+    name="$(docker inspect -f '{{.Config.Image}}' "$cid" 2>/dev/null || true)"
+    id="$(image_id_of_name "$name")"
+    if [ -z "$name" ] || [ -z "$id" ]; then log "$svc: 이미지($name)를 이름으로 찾지 못해 롤백 대상에서 뺀다"; continue; fi
+    # 이름이 가리키는 이미지가 실행 중인 컨테이너의 이미지와 같을 때만 믿는다. 다르면(예: 빌드만 되고 배포는 실패해 이름이 새 이미지로 옮겨 갔다)
+    # 그 이미지는 "이전에 실행하던 버전"이 아니므로 스냅샷으로 삼지 않는다.
+    if [ "$(image_id_of "$cid")" != "$id" ]; then log "$svc: 이름($name)이 가리키는 이미지가 실행 중인 이미지와 달라 롤백 대상에서 뺀다"; continue; fi
+    if ! docker tag "$id" "$PREFIX/$svc:prev" 2>/dev/null; then log "$svc: 보존 태그를 붙이지 못해 롤백 대상에서 뺀다"; continue; fi
     printf '%s\t%s\t%s\n' "$svc" "$name" "$id" >> "$STATE"
     log "$svc: ${id:7:12} ($name) 보존"
   done
@@ -53,18 +61,17 @@ wait_healthy() { # 컨테이너 이름 또는 ID. healthcheck 가 없으면 runn
 
 restore() {
   if [ ! -s "$STATE" ]; then log "스냅샷이 없어 복원할 것이 없다"; return 0; fi
-  local changed=() svc name id cid cur
+  local changed=() svc name id cur
   while IFS=$'\t' read -r svc name id; do
-    cid="$(container_of "$svc")"
-    cur="none"; [ -z "$cid" ] || cur="$(image_id_of "$cid")"
+    cur="$(image_id_of_name "$name")"
     if [ "$cur" = "$id" ]; then log "$svc: 이전 이미지 그대로라 건드리지 않음"; continue; fi
-    docker tag "$id" "$name"
+    if ! docker tag "$PREFIX/$svc:prev" "$name" 2>/dev/null; then log "$svc: 보존한 이전 이미지가 없어 복원하지 못한다"; continue; fi
     changed+=("$svc")
     log "$svc: 이미지를 ${id:7:12} 로 되돌린다(지금 ${cur:7:12})"
   done < "$STATE"
   if [ "${#changed[@]}" -eq 0 ]; then log "되돌릴 서비스가 없다"; return 0; fi
   docker compose up -d --no-build --no-deps "${changed[@]}"
-  local bad=0
+  local bad=0 cid
   for svc in "${changed[@]}"; do
     cid="$(container_of "$svc")"
     if [ -n "$cid" ] && wait_healthy "$cid"; then log "$svc: 복원됨(healthy)"; else log "$svc: 복원했지만 healthy 로 돌아오지 않았다 — docker logs 로 확인한다"; bad=1; fi

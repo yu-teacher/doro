@@ -80,4 +80,26 @@ docker image prune -f >/dev/null 2>&1
 "$HERE/deploy-rollback.sh" restore >/dev/null
 expect "prune 뒤에도 v1 로 복원된다" test "$(version_of a)" = 1
 
+log "== 7) 서비스 하나의 스냅샷이 실패해도 나머지는 계속하고 스크립트는 성공으로 끝난다(안전장치가 배포를 막으면 안 된다) =="
+# docker 를 감싸는 가짜 실행 파일: b 의 보존 태그를 붙일 때만 실패시킨다(실제 서버에서 이미지를 못 찾아 스냅샷이 실패했던 상황을 흉내)
+REAL_DOCKER="$(command -v docker)"
+mkdir -p "$WORK/shim"
+cat > "$WORK/shim/docker" <<SH
+#!/usr/bin/env bash
+if [ "\$1" = "tag" ] && [[ "\$3" == */b:prev ]]; then echo "simulated tag failure" >&2; exit 1; fi
+exec "$REAL_DOCKER" "\$@"
+SH
+chmod +x "$WORK/shim/docker"
+PATH="$WORK/shim:$PATH" "$HERE/deploy-rollback.sh" snapshot >/dev/null 2>&1; RC=$?
+expect "스냅샷은 실패 코드로 끝나지 않는다" test "$RC" = 0
+expect "실패한 b 는 상태 파일에서 빠지고" test "$(grep -c '^b	' "$ROLLBACK_STATE")" = 0
+expect "나머지(a, c)는 기록된다" test "$(wc -l < "$ROLLBACK_STATE" | tr -d ' ')" = 2
+
+log "== 8) 이름이 실행 중인 이미지와 다른 서비스(빌드만 되고 배포가 실패한 상태)는 스냅샷 대상에서 뺀다 =="
+"$HERE/deploy-rollback.sh" snapshot >/dev/null 2>&1        # 기준: 지금 a 는 v3 로 실행 중이고 이름도 v3
+VA=9 docker compose build a >/dev/null 2>&1              # 이름만 새 이미지(v9)로 옮겨 간다. 컨테이너는 그대로.
+"$HERE/deploy-rollback.sh" snapshot >/dev/null 2>&1
+expect "이름이 앞서간 a 는 상태 파일에서 빠진다" test "$(grep -c '^a	' "$ROLLBACK_STATE")" = 0
+expect "나머지(b, c)는 기록된다" test "$(wc -l < "$ROLLBACK_STATE" | tr -d ' ')" = 2
+
 if [ "$FAILURES" -eq 0 ]; then log "모두 통과"; else log "$FAILURES 건 실패"; exit 1; fi
