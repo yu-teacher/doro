@@ -3,7 +3,7 @@
 # 각 업스트림 이름(web, auth-api, doro-blog-web ...)을 가진 작은 nginx 를 띄워 자기 이름과 받은 경로를 돌려주게 하고,
 # 시험 대상 설정으로 만든 게이트웨이에 요청을 보내 "어느 업스트림이 어떤 경로로 받았는지"를 확인한다.
 #
-#   scripts/test-gateway-routing.sh <nginx.conf> <expectations-file>   (기대 파일 예: scripts/gateway-routing/expect-stage1.txt)
+#   scripts/test-gateway-routing.sh <nginx.conf> <expectations-file>   (현재 기대 파일: scripts/gateway-routing/expect-current.txt, 옛 단계 파일은 마이그레이션 기록이다)
 #
 # 기대 파일(탭 구분 없이 공백): <메서드> <경로> <기대 상태> <기대 업스트림 또는 'redirect:<Location>'> [<기대 업스트림이 받은 경로>]
 set -Eeuo pipefail

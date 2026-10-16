@@ -1,3 +1,11 @@
+# 컨테이너 로그가 디스크를 채우지 않게 서비스별로 크기를 제한한다(json-file 기본은 무제한). 애플리케이션 서비스에만 적용한다:
+# DB·Redis 는 설정이 바뀌면 다시 만들어져 재시작되므로 건드리지 않는다(필요하면 서버의 /etc/docker/daemon.json 의 log-opts 로 한다).
+x-logging: &app-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -48,6 +56,7 @@ services:
       dockerfile: Dockerfile
     container_name: doro-auth-api
     restart: unless-stopped
+    logging: *app-logging
     ports:
       - "${AUTH_BIND:-127.0.0.1}:${AUTH_PORT:-8080}:8080"
     environment:
@@ -106,6 +115,7 @@ services:
       dockerfile: Dockerfile
     container_name: doro-guard-api
     restart: unless-stopped
+    logging: *app-logging
     ports:
       - "${GUARD_BIND:-127.0.0.1}:${GUARD_PORT:-8081}:8081"
       - "${GUARD_BIND:-127.0.0.1}:${GUARD_GRPC_PORT:-9090}:9090"
@@ -140,6 +150,7 @@ services:
       dockerfile: bff/Dockerfile
     container_name: doro-bff-api
     restart: unless-stopped
+    logging: *app-logging
     ports:
       - "127.0.0.1:${BFF_PORT:-8085}:8085"
     environment:
@@ -175,6 +186,7 @@ services:
       dockerfile: Dockerfile
     container_name: doro-web-portal
     restart: unless-stopped
+    logging: *app-logging
     ports:
       - "${WEB_BIND:-0.0.0.0}:${WEB_PORT:-3000}:80"
     depends_on:

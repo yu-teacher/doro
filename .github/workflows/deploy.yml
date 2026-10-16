@@ -55,6 +55,15 @@ jobs:
       - name: 🧪 Deploy notification and smoke test script tests
         run: scripts/test-notify-and-smoke.sh
 
+      # 게이트웨이 설정(nginx)의 라우팅 결과를 가짜 업스트림으로 시험한다: 설정이 시작되는지(nginx -t 포함), 각 경로가 기대한 업스트림·경로·상태로 가는지.
+      # 기대 파일은 scripts/gateway-routing/expect-current.txt(게이트웨이를 바꿀 때 함께 고친다). 배포 때 서버에 반영하는 파일이 아니라 저장소 사본을 검증한다.
+      - name: 🧪 Gateway routing tests
+        run: scripts/test-gateway-routing.sh gateway/nginx.conf scripts/gateway-routing/expect-current.txt
+
+      # 배포 롤백 스크립트(이미지 스냅샷·복원)를 임시 compose 프로젝트로 시험한다.
+      - name: 🧪 Deploy rollback script tests
+        run: scripts/test-deploy-rollback.sh
+
       - name: 🧪 Auto reboot scripts tests
         run: |
           scripts/test-auto-reboot.sh
@@ -107,6 +116,11 @@ jobs:
           docker compose exec -T postgres psql -U "${POSTGRES_USER:-doro_admin}" -d postgres -c "CREATE DATABASE ${AUTH_DB:-doro_auth};" 2>/dev/null || true
           docker compose exec -T postgres psql -U "${POSTGRES_USER:-doro_admin}" -d postgres -c "CREATE DATABASE ${GUARD_DB:-doro_guard};" 2>/dev/null || true
           docker compose exec -T postgres psql -U "${POSTGRES_USER:-doro_admin}" -d postgres -c "CREATE DATABASE ${BFF_DB:-doro_bff};" 2>/dev/null || true
+
+      # 배포 전에 실행 중인 서비스 이미지를 보존한다. 이후 단계(배포·헬스 체크·스모크)가 실패하면 아래 롤백 단계가 이전 이미지로 되돌린다.
+      - name: 📸 Snapshot running images (for rollback)
+        id: snapshot
+        run: scripts/deploy-rollback.sh snapshot
 
       # 서비스 워커는 설치할 때 미리 캐시 목록(sw.js)의 주소를 모두 받아 저장한다. 게이트웨이가 그중 하나라도 다른 곳으로 이동시키면
       # 엉뚱한 화면이 저장돼 설치된 기기에서 되돌리기 어렵다(허브 빈 화면 사고). 컨테이너를 바꾸기 전에 새 이미지의 목록으로 점검한다.
@@ -176,6 +190,14 @@ jobs:
           code="${PIPESTATUS[0]}"
           { echo 'summary<<SMOKE_EOF'; tail -c 1500 smoke.txt; echo 'SMOKE_EOF'; } >> "$GITHUB_OUTPUT"
           exit "$code"
+
+      # 배포가 실패했으면(헬스 체크·스모크 포함) 이번 배포로 이미지가 바뀐 서비스만 이전 이미지로 되돌린다. DB 마이그레이션은 되돌리지 않는다(추가 위주여야 한다).
+      # 되돌린 뒤에도 게이트웨이가 옛 컨테이너 주소를 쥐고 있지 않게 reload 한다. 이 단계의 성공 여부와 상관없이 작업은 실패로 남는다(알림이 간다).
+      - name: ⏪ Roll back to the previous images (deploy failed)
+        if: ${{ failure() && steps.snapshot.conclusion == 'success' }}
+        run: |
+          scripts/deploy-rollback.sh restore || echo "::warning::롤백한 서비스 중 healthy 로 돌아오지 않은 것이 있다. docker logs 로 확인한다."
+          docker exec doro-gateway nginx -s reload 2>/dev/null || true
 
       - name: 🧹 Clean unused images
         if: always()
