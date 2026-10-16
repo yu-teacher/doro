@@ -73,3 +73,11 @@
 
 5. **CI/CD 자동 배포 검증**:
    - 신규 서비스를 추가한 뒤 커밋 & 푸시하여, GitHub Actions Self-Hosted Runner가 미니 서버에 신규 서비스 컨테이너를 자동으로 빌드 및 무중단 배포하고 정상 가동(`healthy`)함을 확인할 것.
+
+---
+
+### 6. 문서·도구 안내
+- 설정과 환경변수: `.env.example`(전체 목록), [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) §7.3, [`docs/DORO_AGENT_GUIDE.md`](docs/DORO_AGENT_GUIDE.md) §9.
+- 게이트웨이: [`docs/GATEWAY_ROUTING_RULES.md`](docs/GATEWAY_ROUTING_RULES.md). location 을 바꾸면 `scripts/gateway-routing/expect-current.txt` 를 함께 고치고 `scripts/test-gateway-routing.sh gateway/nginx.conf scripts/gateway-routing/expect-current.txt` 로 확인한다(CI 에서도 실행).
+- BFF: [`docs/BFF.md`](docs/BFF.md)(독립 서비스), [`docs/SDK_BFF.md`](docs/SDK_BFF.md)(서비스 내장·SDK 부품). 통합 시험: [`e2e/README.md`](e2e/README.md).
+- 운영 도구(`scripts/`): `deploy-rollback.sh`(배포 실패 시 이전 이미지 복원), `enable-bff.sh`·`set-bff-mode.sh`(BFF 준비와 서비스별 전환), `enable-deleted-sync.sh`(탈퇴 동기화 준비).

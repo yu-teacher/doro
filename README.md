@@ -125,3 +125,9 @@ Java 25 · Spring Boot 4.1 · PostgreSQL 16 · Redis 7 · gRPC/Protobuf · Flywa
 | [사용자 가이드](docs/USER_GUIDE.md) | 가입부터 OAuth, Guard 스키마, SDK까지 따라 하기 |
 | [연동 가이드](docs/DORO_AGENT_GUIDE.md) | 실제 동작, 보안 구성, 검증 명령 |
 | [게이트웨이 규칙](docs/GATEWAY_ROUTING_RULES.md) | 라우팅 규칙과 새 서비스 추가 |
+| [BFF](docs/BFF.md) | 브라우저 로그인·세션을 서비스 밖에서 맡는 `doro-bff` 구조와 전환 |
+| [SDK BFF](docs/SDK_BFF.md) | 서비스 내장 BFF 로그인과 탈퇴 동기화(SDK 모듈) |
+| [통합(E2E) 시험](e2e/README.md) | 진짜 IAM·Guard·브라우저로 로그인 흐름을 확인하는 격리 스택 |
+| [부하 테스트](loadtest/README.md) | k6 로 인증·인가 성능과 정확성 확인 |
+
+운영 보조 스크립트(`scripts/`): 배포 실패 시 이전 이미지로 복원하는 `deploy-rollback.sh`, BFF 준비·전환의 `enable-bff.sh`·`set-bff-mode.sh`, 탈퇴 동기화 준비의 `enable-deleted-sync.sh`, 게이트웨이 라우팅 회귀 시험 `test-gateway-routing.sh`(CI 에서 실행).

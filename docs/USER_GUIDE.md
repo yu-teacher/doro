@@ -368,6 +368,17 @@ curl -s -X PUT $IAM/api/v1/users/me/password -H "Authorization: Bearer $TOKEN" -
 - `name`은 2~50자(공백만이면 무시). `profileImageUrl`은 `data:` URL 포함 최대 1,048,576자(`DORO_IAM_PROFILE_IMAGE_MAX_LENGTH`)이고 `https://` 주소 또는 이미지 `data:` URL(png·jpeg·gif·webp·svg+xml)만 허용합니다. 넘거나 허용되지 않는 형식이면 `400 INVALID_INPUT_VALUE`.
 - 비밀번호 변경: `newPassword` 8~64자. 현재 비밀번호가 틀리면 `401 INVALID_CREDENTIALS`(잠금 카운터에는 합산되지 않음). 성공하면 **현재 세션을 제외한 내 모든 세션이 종료**됩니다.
 
+#### 회원탈퇴 `POST /api/v1/users/me/deletion` (Bearer)
+
+```bash
+curl -s -X POST $IAM/api/v1/users/me/deletion -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"password":"Password123!","totpCode":"123456"}'   # totpCode 는 2FA 를 쓰는 계정만
+```
+- 액세스 토큰만으로는 탈퇴할 수 없습니다. **비밀번호를 다시 입력**하고(2FA 사용 계정은 OTP 코드도), 비밀번호가 틀리면 `401 INVALID_CREDENTIALS`, 2FA 코드가 틀리면 `INVALID_2FA_CODE` 입니다.
+- 요청하면 계정이 `PENDING_DELETION` 이 되고 **모든 세션이 즉시 종료**됩니다. 응답은 `{"scheduledPurgeAt": "..."}`(영구 처리 예정 시각)입니다.
+- **유예 기간(기본 30일, `DORO_IAM_ACCOUNT_DELETION_GRACE_DAYS`) 안에 다시 로그인하면 탈퇴가 취소**되고 계정이 복구됩니다. 지나면 주기 작업(`DORO_IAM_ACCOUNT_DELETION_PURGE_INTERVAL_MS`, 기본 1시간)이 개인정보를 **익명화**하고 상태를 `DELETED` 로 바꿉니다.
+- 서브 서비스는 IAM 의 내부 API 로 영구 탈퇴한 사용자 ID 를 받아 자기 데이터를 정리합니다: `GET /internal/v1/deleted-users?since=&limit=`(SDK 의 탈퇴 동기화 모듈이 사용, [`SDK_BFF.md`](SDK_BFF.md)). 계정 상태만 필요하면 `GET /internal/v1/users/{userId}/status`(`ACTIVE`/`SUSPENDED`/`PENDING_DELETION`/`DELETED`, 개인정보 없음)를 씁니다. 두 API 는 서비스 토큰(`X-Doro-Service-Token`, `DORO_IAM_INTERNAL_TOKENS`)을 쓰는 **내부 전용**이며 게이트웨이로는 노출되지 않습니다.
+
 ---
 
 ### 1.6 관리자 API
@@ -591,13 +602,13 @@ curl -s -X DELETE $IAM/api/v1/admin/oauth/clients/$CLIENT_ID -H "Authorization: 
 ```
 삭제는 **소프트 삭제**(`active=false`)입니다. 이후 그 `client_id`의 인가/토큰 요청은 **모든 레지스트리 모드에서** 거부됩니다. 없는 `client_id`는 `404 OAUTH_CLIENT_NOT_FOUND`.
 
-#### 레지스트리 모드 `DORO_OAUTH_CLIENT_REGISTRY_MODE` (기본 `WARN`)
+#### 레지스트리 모드 `DORO_OAUTH_CLIENT_REGISTRY_MODE` (기본 `ENFORCE`)
 
 | 모드 | 등록된 활성 클라이언트 | 등록되지 않은 `client_id` |
 |---|---|---|
 | `OFF` | 레지스트리를 아예 쓰지 않음(등록돼 있어도 무시) | 환경변수 허용 목록으로만 판정 |
-| `WARN` (기본) | **자기 `redirect_uri`와 정확히 일치**해야 하고, 스코프는 자기 허용 스코프의 부분집합이어야 함 | 환경변수 허용 목록(`DORO_OAUTH_ALLOWED_REDIRECT_URIS`)으로 폴백 + 경고 로그 |
-| `ENFORCE` | 위와 같음 | `invalid_client`로 거부 |
+| `WARN` | **자기 `redirect_uri`와 정확히 일치**해야 하고, 스코프는 자기 허용 스코프의 부분집합이어야 함 | 환경변수 허용 목록(`DORO_OAUTH_ALLOWED_REDIRECT_URIS`)으로 폴백 + 경고 로그 |
+| `ENFORCE` (기본) | 위와 같음 | `invalid_client`로 거부 |
 
 - `DORO_OAUTH_ALLOWED_REDIRECT_URIS`는 쉼표 구분, **문자열 정확 일치**, 비어 있으면(기본) 미등록 클라이언트는 전부 거부됩니다. 등록된 클라이언트에는 적용되지 않습니다.
 - `redirect_uri`는 어느 모드에서도 **정규화/부분 일치/와일드카드 없이 문자열이 완전히 같아야** 합니다(끝 슬래시, 대소문자, 포트, 스킴이 다르면 거부).
@@ -862,7 +873,7 @@ curl -s -o /dev/null -w 'sessions/current  -> %{http_code}\n' $IAM/api/v1/sessio
 
 | 환경변수 | 기본 | 설명 |
 |---|---|---|
-| `DORO_OAUTH_CLIENT_REGISTRY_MODE` | `WARN` | `OFF` / `WARN` / `ENFORCE` |
+| `DORO_OAUTH_CLIENT_REGISTRY_MODE` | `ENFORCE` | `OFF` / `WARN` / `ENFORCE` |
 | `DORO_OAUTH_ALLOWED_REDIRECT_URIS` | 비어 있음 | 미등록 클라이언트용 `redirect_uri` 정확 일치 허용 목록(쉼표 구분) |
 | `DORO_OAUTH_CONSENT_URL` | `/oauth2/consent` | Bearer 없는 인가 요청을 보낼 동의 페이지(원래 쿼리가 그대로 붙음) |
 | `DORO_OAUTH_CODE_STORE` | `auto` | 인가 코드 저장소: `auto`(Redis에 닿으면 Redis, 아니면 메모리) / `redis` / `memory` |
@@ -1662,6 +1673,14 @@ public class GuardTuples {
 | `DORO_IAM_TOKEN_PURGE_ENABLED` | `true` | IAM | 만료·폐기된 리프레시 토큰과 비활성 세션의 주기 삭제(1시간마다, 배치 1000건) |
 | `DORO_IAM_TOKEN_PURGE_RETENTION_DAYS` | `90` | IAM | 위 삭제의 보존 기간(일). 리프레시 토큰 유효기간(30일)보다 길게 둔다 |
 | `DORO_IAM_RATE_LIMIT_ENABLED` / `_LOGIN_MAX` / `_TOKEN_MAX` | `true` / `20` / `60` | IAM | 요청 제한 |
+| `DORO_IAM_INTERNAL_TOKENS` | 비어 있음 | IAM | 내부 API(`/internal/**`) 호출자 토큰 `이름:토큰[,이름:토큰…]`(토큰 32자 이상). 서비스는 헤더 `X-Doro-Service-Token` 으로 보낸다 |
+| `DORO_IAM_INTERNAL_AUTH_MODE` | `ENFORCE` | IAM | 내부 API 호출자 인증 `OFF`/`WARN`/`ENFORCE` |
+| `DORO_IAM_BOOTSTRAP_TOKEN` | 비어 있음(꺼짐) | IAM | 첫 관리자 부트스트랩 토큰([1.6](#16-관리자-api)). 승격 후 지운다 |
+| `DORO_IAM_REFRESH_COOKIE_SECURE` | `true` | IAM | 포털 리프레시 쿠키의 `Secure` 속성. http 로컬 개발에서만 `false` |
+| `DORO_IAM_ACCOUNT_DELETION_GRACE_DAYS` | `30` | IAM | 탈퇴 유예 기간(일). 안에 로그인하면 복구, 지나면 익명화 |
+| `DORO_IAM_ACCOUNT_DELETION_PURGE_INTERVAL_MS` | `3600000` | IAM | 유예 만료 계정 처리 주기(밀리초) |
+| `DORO_LOG_LEVEL` | `INFO` | IAM·Guard | 애플리케이션 로그 레벨 |
+| `DORO_GUARD_AUTH_TOKEN` | 비어 있음 | compose | 설정하면 compose 가 IAM 의 `DORO_GUARD_SERVICE_TOKEN` 보다 이 값을 우선해 넣는다 |
 | `DORO_IAM_TRUSTED_PROXIES` | `127.0.0.0/8,::1/128,172.16.0.0/12` | IAM | `X-Real-IP`를 믿을 프록시 |
 | `DORO_IAM_TWO_FACTOR_MAX_PENDING_TICKETS` | `10000` | IAM | 2FA 임시 티켓 상한 |
 | `DORO_IAM_PROFILE_IMAGE_MAX_LENGTH` | `1048576` | IAM | 프로필 이미지 최대 길이 |
@@ -1677,3 +1696,12 @@ public class GuardTuples {
 | `DORO_GUARD_SCHEMA_REFRESH_SECONDS` | `30` | Guard | DB 활성 스키마 확인 주기(0이면 끔) |
 | `DORO_GUARD_CACHE_TTL_SECONDS` / `_CACHE_MAX_SIZE` | `60` / `50000` | Guard | 인가 캐시 |
 | `DORO_GUARD_EXPAND_MAX_NODES` | `5000` | Guard | Expand 노드 상한 |
+
+BFF(브라우저 로그인·세션을 서비스 밖에서 처리, [`BFF.md`](BFF.md))를 compose 로 함께 띄울 때의 환경변수:
+
+| 환경변수 | 기본 | 설명 |
+|---|---|---|
+| `BFF_SESSION_KEY` | (필수) | 토큰·PKCE verifier 를 DB 에 암호화하는 키(`openssl rand -base64 32`). 바꾸면 모든 BFF 세션이 무효가 된다 |
+| `BFF_IAM_INTERNAL_TOKEN` | 비어 있음 | 탈퇴 동기화용 IAM 내부 API 토큰(`DORO_IAM_INTERNAL_TOKENS` 에 `bff:<토큰>` 으로 등록) |
+| `BFF_PUBLIC_ORIGIN` | `DORO_IAM_ISSUER` | 브라우저가 보는 공개 주소(OAuth 인가·redirect_uri 의 기준) |
+| `BFF_DB` / `BFF_PORT` | `doro_bff` / `8085` | BFF 데이터베이스 이름 / 호스트 포트(127.0.0.1 바인딩) |
