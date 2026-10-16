@@ -1,5 +1,6 @@
 package com.hunnit_beasts.auth.config;
 
+import com.hunnit_beasts.auth.common.log.RateLimitedLogGate;
 import com.hunnit_beasts.auth.common.web.ClientIpResolver;
 import com.hunnit_beasts.auth.common.web.RequestPaths;
 import jakarta.servlet.FilterChain;
@@ -46,9 +47,11 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     private final long tokenWindowSeconds;
 
     private final ClientIpResolver clientIpResolver;
+    private final RateLimitedLogGate logGate;
 
     public AuthRateLimitFilter(
             ClientIpResolver clientIpResolver,
+            RateLimitedLogGate logGate,
             @Value("${doro.iam.rate-limit.enabled:true}") boolean enabled,
             @Value("${doro.iam.rate-limit.login-max:20}") int loginMax,
             @Value("${doro.iam.rate-limit.login-window-seconds:600}") long loginWindowSeconds,
@@ -59,6 +62,7 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             @Value("${doro.iam.rate-limit.token-max:60}") int tokenMax,
             @Value("${doro.iam.rate-limit.token-window-seconds:600}") long tokenWindowSeconds) {
         this.clientIpResolver = clientIpResolver;
+        this.logGate = logGate;
         this.enabled = enabled;
         this.loginMax = loginMax;
         this.loginWindowSeconds = loginWindowSeconds;
@@ -83,7 +87,11 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
         // IPv6 는 /64 로 묶어 센다(주소만 바꿔 제한을 피하지 못하게). 로그에는 실제 주소를 남긴다.
         long retryAfter = tryAcquire(bucket, com.hunnit_beasts.auth.common.web.IpPrefix.rateLimitKey(ip), Instant.now().getEpochSecond());
         if (retryAfter > 0) {
-            log.warn("Rate limit exceeded: bucket={}, ip={}, retryAfterSeconds={}", bucket, ip, retryAfter);
+// 429 가 폭주해도 로그가 같이 폭주하지 않도록 버킷별로 일정 간격에 한 번만 남긴다(응답은 매번 429).
+            if (logGate.tryAcquire("rate-limit:" + bucket)) {
+                log.warn("Rate limit exceeded: bucket={}, ip={}, retryAfterSeconds={} (같은 버킷의 로그는 일정 간격에 한 번만 남깁니다)",
+                        bucket, ip, retryAfter);
+            }
             response.setStatus(429);
             response.setHeader("Retry-After", String.valueOf(retryAfter));
             response.setContentType("application/json;charset=UTF-8");

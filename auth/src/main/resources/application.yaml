@@ -94,6 +94,13 @@ doro:
       grace-days: ${DORO_IAM_ACCOUNT_DELETION_GRACE_DAYS:30} # 탈퇴 요청 후 이 기간 안에 로그인하면 복구, 지나면 개인정보 익명화
       purge-interval-ms: ${DORO_IAM_ACCOUNT_DELETION_PURGE_INTERVAL_MS:3600000}
       purge-batch-size: 100
+    # 만료·폐기된 리프레시 토큰과 비활성 세션을 보존 기간(retention-days) 뒤에 배치(batch-size)로 삭제한다.
+    # 보존 기간은 리프레시 토큰 유효기간(30일)보다 길어야 재사용 탐지가 유지된다.
+    token-purge:
+      enabled: ${DORO_IAM_TOKEN_PURGE_ENABLED:true}
+      retention-days: ${DORO_IAM_TOKEN_PURGE_RETENTION_DAYS:90}
+      interval-ms: 3600000
+      batch-size: 1000
     jwt:
       access-token-validity-seconds: ${DORO_IAM_ACCESS_TOKEN_TTL_SECONDS:900} # 기본 15분. 로그인 유지는 30일 리프레시 토큰(회전)이 담당한다
       refresh-token-validity-seconds: 2592000 # 30일 (1달)

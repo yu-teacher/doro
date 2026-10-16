@@ -89,6 +89,12 @@ public class RefreshTokenService {
 
         // 1. 재사용 공격 탐지 (이미 회전/폐기된 토큰이 다시 인입된 경우)
         if (existingToken.isRevoked()) {
+            // 로그아웃·비밀번호 변경·관리자 폐기 등으로 세션이 이미 끝났다면 정상 사용자의 낡은 토큰일 뿐 공격 신호가 아니다.
+            // 회전으로 폐기된 토큰이 '아직 살아 있는 세션'에서 다시 오는 경우만 재사용으로 본다.
+            boolean sessionActive = userSessionRepository.findByIdAndIsActiveTrue(existingToken.getSessionId()).isPresent();
+            if (!sessionActive) {
+                throw new AuthException(ErrorCode.SESSION_EXPIRED);
+            }
             if (isConcurrentRotationRace(existingToken)) {
                 log.warn("Refresh token presented right after rotation (treated as concurrent request): sessionId={}",
                         existingToken.getSessionId());

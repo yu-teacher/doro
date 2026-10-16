@@ -1,5 +1,8 @@
 package com.hunnit_beasts.auth.core.token;
 
+import com.hunnit_beasts.auth.common.exception.AuthException;
+import com.hunnit_beasts.auth.common.exception.ErrorCode;
+import com.hunnit_beasts.auth.common.log.RateLimitedLogGate;
 import com.hunnit_beasts.auth.core.redis.KillSwitchPublisher;
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
@@ -33,6 +36,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtTokenProvider jwtTokenProvider;
     private final KillSwitchPublisher killSwitchPublisher;
+    private final RateLimitedLogGate logGate;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -71,10 +75,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     SecurityContextHolder.getContext().setAuthentication(authentication);
                     org.slf4j.MDC.put("userId", userId.toString());
                 } else {
-                    log.warn("Rejected request with blacklisted session: {}", sessionId);
+                    if (logGate.tryAcquire("jwt-blacklisted-session")) {
+                        log.warn("Rejected request with blacklisted session: {}", sessionId);
+                    }
+                }
+            } catch (AuthException e) {
+                // 만료는 정상 흐름이라 남기지 않는다. 서명/형식 오류는 스캔·공격 신호일 수 있어 스택트레이스 없이 간격당 한 번만 남긴다.
+                if (e.getErrorCode() != ErrorCode.TOKEN_EXPIRED && logGate.tryAcquire("jwt-invalid")) {
+                    log.warn("JWT authentication failed: code={}, path={} (같은 로그는 일정 간격에 한 번만 남깁니다)",
+                            e.getErrorCode(), request.getRequestURI());
                 }
             } catch (Exception e) {
-                log.warn("JWT authentication failed: {}", e.getMessage(), e);
+                if (logGate.tryAcquire("jwt-auth-error")) {
+                    log.warn("JWT authentication failed unexpectedly: {}", e.getMessage(), e);
+                }
             }
         }
 

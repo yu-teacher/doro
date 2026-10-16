@@ -1659,6 +1659,8 @@ public class GuardTuples {
 | `DORO_IAM_SESSION_MAX_OAUTH_PER_CLIENT` | `3` | IAM | 한 서비스(OAuth 클라이언트)에 한 사용자가 동시에 로그인해 둘 수 있는 기기 수. 넘으면 그 서비스에서 가장 오래 쓰지 않은 세션 종료. 1 이면 서비스당 하나만(대체) |
 | `DORO_IAM_LOOKUP_MAX_IMAGE_LENGTH` | `50000` | IAM | 인증 없는 계정 조회(`lookup`)가 돌려주는 프로필 이미지(data URL)의 최대 길이(문자). 넘으면 이미지는 생략 |
 | `DORO_IAM_SESSION_ABSOLUTE_LIFETIME_SECONDS` | `7776000`(90일) | IAM | 세션 절대 수명(초). 로그인 후 이 시간이 지나면 갱신 거부, 0 이하 끔 |
+| `DORO_IAM_TOKEN_PURGE_ENABLED` | `true` | IAM | 만료·폐기된 리프레시 토큰과 비활성 세션의 주기 삭제(1시간마다, 배치 1000건) |
+| `DORO_IAM_TOKEN_PURGE_RETENTION_DAYS` | `90` | IAM | 위 삭제의 보존 기간(일). 리프레시 토큰 유효기간(30일)보다 길게 둔다 |
 | `DORO_IAM_RATE_LIMIT_ENABLED` / `_LOGIN_MAX` / `_TOKEN_MAX` | `true` / `20` / `60` | IAM | 요청 제한 |
 | `DORO_IAM_TRUSTED_PROXIES` | `127.0.0.0/8,::1/128,172.16.0.0/12` | IAM | `X-Real-IP`를 믿을 프록시 |
 | `DORO_IAM_TWO_FACTOR_MAX_PENDING_TICKETS` | `10000` | IAM | 2FA 임시 티켓 상한 |
