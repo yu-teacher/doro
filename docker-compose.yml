@@ -76,6 +76,9 @@ services:
       DORO_IAM_SESSION_MAX_OAUTH_PER_CLIENT: ${DORO_IAM_SESSION_MAX_OAUTH_PER_CLIENT:-3}
       # 세션 절대 수명(초). 로그인 후 이 시간이 지나면 계속 써도 갱신되지 않고 다시 로그인해야 한다. 기본 90일, 0 이하면 끈다.
       DORO_IAM_SESSION_ABSOLUTE_LIFETIME_SECONDS: ${DORO_IAM_SESSION_ABSOLUTE_LIFETIME_SECONDS:-7776000}
+      # 만료·폐기된 리프레시 토큰과 비활성 세션 정리. 보존 기간(일)은 리프레시 토큰 유효기간(30일)보다 길게 둔다.
+      DORO_IAM_TOKEN_PURGE_ENABLED: ${DORO_IAM_TOKEN_PURGE_ENABLED:-true}
+      DORO_IAM_TOKEN_PURGE_RETENTION_DAYS: ${DORO_IAM_TOKEN_PURGE_RETENTION_DAYS:-90}
       # 첫 관리자 부트스트랩 토큰(기본 비어 있음 = 꺼짐). 쓴 뒤에는 지운다. scripts/bootstrap-first-admin.sh
       DORO_IAM_BOOTSTRAP_TOKEN: ${DORO_IAM_BOOTSTRAP_TOKEN:-}
       DORO_LOG_LEVEL: ${DORO_LOG_LEVEL:-INFO}

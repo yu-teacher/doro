@@ -145,10 +145,11 @@ public class JwtTokenProvider {
                     .parseSignedClaims(token)
                     .getPayload();
         } catch (ExpiredJwtException e) {
-            log.warn("JWT token expired: {}", e.getMessage());
+            // 만료는 정상 흐름(액세스 토큰 15분)이라 요청마다 WARN 으로 남기지 않는다. 호출 쪽(필터)이 필요하면 집계해서 남긴다.
+            log.debug("JWT token expired: {}", e.getMessage());
             throw new AuthException(ErrorCode.TOKEN_EXPIRED);
         } catch (JwtException | IllegalArgumentException e) {
-            log.warn("Invalid JWT token: {}", e.getMessage());
+            log.debug("Invalid JWT token: {}", e.getMessage());
             throw new AuthException(ErrorCode.INVALID_TOKEN);
         }
     }

@@ -88,7 +88,7 @@ public class AuthController {
     @PostMapping("/2fa/setup")
     public ResponseEntity<ApiResponse<TotpSetupResponse>> setupTotp(
             @AuthenticationPrincipal UUID userId,
-            @RequestBody(required = false) TotpSetupRequest request) {
+            @jakarta.validation.Valid @RequestBody(required = false) TotpSetupRequest request) {
         // 인증 여부를 본문 검증보다 먼저 판단한다(인증 없는 요청이 본문 오류 400 으로 보이지 않게).
         if (userId == null) {
             throw new AuthException(ErrorCode.UNAUTHORIZED, "로그인이 필요한 요청입니다.");

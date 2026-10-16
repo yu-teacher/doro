@@ -97,4 +97,53 @@ class RefreshTokenServiceTest {
         UserSession deactivatedSession = userSessionRepository.findById(session.getId()).orElseThrow();
         assertThat(deactivatedSession.isActive()).isFalse();
     }
+
+    private static ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> captureLogs(Class<?> type) {
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(type);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        return appender;
+    }
+
+    private UserSession newActiveSession() {
+        return userSessionRepository.save(UserSession.builder()
+                .userId(persistedUserId()).userIndex(0)
+                .expiresAt(Instant.now().plus(7, ChronoUnit.DAYS)).build());
+    }
+
+    @Test
+    @DisplayName("세션이 이미 비활성(로그아웃·비밀번호 변경 등)이면 폐기된 토큰 재제시는 SESSION_EXPIRED 이고 재사용 경보를 내지 않는다")
+    void revokedTokenOnInactiveSessionIsNotReuseAttack() {
+        UserSession session = newActiveSession();
+        String token = refreshTokenService.createRefreshToken(session.getId());
+
+        // 정상 로그아웃: 토큰 폐기 + 세션 비활성화
+        refreshTokenService.revokeAllForSession(session.getId());
+        UserSession loaded = userSessionRepository.findById(session.getId()).orElseThrow();
+        loaded.deactivate();
+        userSessionRepository.saveAndFlush(loaded);
+
+        var logs = captureLogs(RefreshTokenService.class);
+        assertThatThrownBy(() -> refreshTokenService.rotateRefreshToken(token))
+                .isInstanceOf(AuthException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.SESSION_EXPIRED);
+        assertThat(logs.list).noneMatch(e -> e.getFormattedMessage().contains("SECURITY ALERT"));
+    }
+
+    @Test
+    @DisplayName("회전으로 폐기된 토큰이 활성 세션에서 재제시되면 재사용 공격으로 판정해 세션을 끝낸다")
+    void rotatedTokenOnActiveSessionIsReuseAttack() {
+        UserSession session = newActiveSession();
+        String first = refreshTokenService.createRefreshToken(session.getId());
+        refreshTokenService.rotateRefreshToken(first);
+
+        var logs = captureLogs(RefreshTokenService.class);
+        assertThatThrownBy(() -> refreshTokenService.rotateRefreshToken(first))
+                .isInstanceOf(AuthException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.TOKEN_REUSE_DETECTED);
+        assertThat(logs.list).anyMatch(e -> e.getFormattedMessage().contains("SECURITY ALERT"));
+        assertThat(userSessionRepository.findById(session.getId()).orElseThrow().isActive()).isFalse();
+    }
 }

@@ -2,6 +2,7 @@ package com.hunnit_beasts.auth.domain.session.repository;
 
 import com.hunnit_beasts.auth.domain.session.dto.SessionLiveness;
 import com.hunnit_beasts.auth.domain.session.entity.UserSession;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -43,6 +44,14 @@ public interface UserSessionRepository extends JpaRepository<UserSession, UUID> 
     @Modifying
     @Query("UPDATE UserSession s SET s.isActive = false WHERE s.expiresAt < :now AND s.isActive = true")
     int deactivateExpiredSessions(@Param("now") Instant now);
+
+    /** 비활성이면서 마지막 활동이 cutoff 이전인 세션 id(정리 대상). */
+    @Query("SELECT s.id FROM UserSession s WHERE s.isActive = false AND s.lastActiveAt < :cutoff")
+    List<UUID> findInactiveIdsLastActiveBefore(@Param("cutoff") Instant cutoff, Pageable pageable);
+
+    @Modifying
+    @Query("DELETE FROM UserSession s WHERE s.id IN :ids")
+    int deleteAllByIdIn(@Param("ids") List<UUID> ids);
 
     /**
      * 세션 생존 여부 판정에 필요한 컬럼만 단일 쿼리(세션 + 소유 사용자 조인)로 읽는다.
