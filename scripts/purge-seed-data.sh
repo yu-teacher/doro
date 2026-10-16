@@ -58,7 +58,7 @@ union all select '  댓글', count(*) from comments where user_id in (select id 
 union all select '  좋아요', count(*) from post_likes where user_id in (select id from seed)
 union all select '  시리즈', count(*) from series where user_id in (select id from seed)
 union all select '  팔로우(양방향)', count(*) from user_follows where follower_id in (select id from seed) or following_id in (select id from seed)
-union all select '  알림', count(*) from notifications where user_id in (select id from seed)
+union all select '  알림', count(*) from notifications where recipient_id in (select id from seed) or sender_id in (select id from seed)
 union all select '  API 키', count(*) from api_keys where user_id in (select id from seed)
 union all select '시드가 아닌 계정', count(*) from blog_users where id not in (select id from seed)
 union all select '! 시드 글에 달린 비시드 댓글(같이 사라짐)', count(*) from comments c join posts p on p.id=c.post_id where p.user_id in (select id from seed) and c.user_id not in (select id from seed)
