@@ -112,7 +112,7 @@ public class AccountPurgeService {
         // 튜플을 지우는 사이 사용자가 복구했다면 복구 쪽이 이미 튜플을 다시 만들었을 수 있다. 어느 쪽이든 되살려 둔다.
         userRepository.findById(userId)
                 .filter(u -> u.getStatus() == UserStatus.ACTIVE)
-                .ifPresent(u -> userRelationSyncService.syncUserTuples(
+                .ifPresent(u -> userRelationSyncService.syncUserTuplesBestEffort(
                         u, u.getRole() != null ? u.getRole() : UserRole.USER));
         log.info("Account purge skipped because the account was restored: userId={}", userId);
         return false;
