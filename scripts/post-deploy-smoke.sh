@@ -68,6 +68,7 @@ probe "비로그인 블로그 시리즈 작성"     401 POST /blog/api/v1/series
 # 로그인 시작은 서비스 안의 BFF 든 별도 BFF(doro-bff)든 IAM 으로 302 이동시킨다(어느 쪽이 처리하는지는 모드에 따라 다르다).
 probe "파티 로그인 시작(BFF)"          302 GET  /party/api/v1/bff/login
 probe "블로그 로그인 시작(BFF)"        302 GET  /blog/api/v1/bff/login
+probe "게임 로그인 시작(BFF)"          302 GET  /games/api/v1/bff/login
 
 echo "---"
 echo "점검 $((PASS + FAIL))개 중 $PASS개 통과"

@@ -326,6 +326,23 @@ class BffGatewayTest {
     }
 
     @Test
+    @DisplayName("파티·게임 웹은 라우터 기준 경로를 보낸다: 서버가 웹 기준 경로(/party, /games)를 붙여 이동시키고, 세션 쿠키 Path 도 그 경로다")
+    void partyAndGamesReturnPathsAreRelativeToWebBase() throws Exception {
+        for (String[] c : new String[][] {{"games", "doro-games", "/g/2048", "/games/g/2048", "/games"},
+                                          {"party", "doro-party", "/maps/42", "/party/maps/42", "/party"}}) {
+            iam.tokenBody = FakeIam.tokenJson(token(c[1], ""), "r", 900);
+            MvcResult started = mvc.perform(get("/bff/" + c[0] + "/login").param("return", c[2])).andExpect(status().isFound()).andReturn();
+            String state = UriComponentsBuilder.fromUriString(started.getResponse().getHeader(HttpHeaders.LOCATION))
+                    .build().getQueryParams().getFirst("state");
+            MvcResult done = mvc.perform(get("/bff/" + c[0] + "/callback").param("code", "c").param("state", state)
+                    .cookie(cookie(started, c[0] + "_login"))).andReturn();
+            assertThat(done.getResponse().getHeader(HttpHeaders.LOCATION)).as(c[0] + " 복귀 경로").isEqualTo(c[3]);
+            assertThat(String.join(";", done.getResponse().getHeaders(HttpHeaders.SET_COOKIE)))
+                    .as(c[0] + " 세션 쿠키 Path").contains("doro_" + c[0] + "_session=").contains("Path=" + c[4] + ";");
+        }
+    }
+
+    @Test
     @DisplayName("계정이 영구 탈퇴하면 모든 서비스의 세션이 지워진다(탈퇴 동기화 핸들러)")
     void deletedUserSessionsAreRemovedFromAllServices() throws Exception {
         login("blog", "doro-blog");

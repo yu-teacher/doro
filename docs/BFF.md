@@ -74,6 +74,6 @@
 ## 시험
 
 - 단위·웹: `bff/src/test` — 로그인·콜백·로그아웃·`auth_request`(토큰·익명·CSRF·설정 오류·갱신·IAM 장애), 서비스 격리, 설정 검증, 마이그레이션 스키마 검증. PostgreSQL 에서도 같은 시험을 돌린다(`scripts/ci-test.sh pg`).
-- 게이트웨이 라우팅: `scripts/test-gateway-routing.sh gateway/nginx.conf scripts/gateway-routing/expect-stage7.txt`.
+- 게이트웨이 라우팅: `scripts/test-gateway-routing.sh gateway/nginx.conf scripts/gateway-routing/expect-stage8.txt`.
 - 통합: `e2e/run.sh` (진짜 nginx·BFF·IAM·서비스·Chromium 으로 로그인·토큰 만료 갱신·IAM 장애·BFF 장애·CSRF·위조 헤더·3기기 등 13개 시나리오). `E2E_BFF_MODE=embedded e2e/run.sh` 로 이전 방식도 같은 시험으로 확인한다.
 - 시험이 실제로 회귀를 잡는지 게이트웨이 설정을 일부러 망가뜨려 확인했다: 클라이언트 `Authorization` 덮어쓰기 제거 → 위조 헤더 시나리오 실패, 서비스 API 의 `auth_request` 제거 → 로그인 상태 시나리오 실패, 쿠키 없는 요청의 BFF 우회 분기 제거 → BFF 장애 시나리오 실패, CSRF 403 처리 제거 → CSRF 시나리오 실패. 원복하면 모두 통과한다.
