@@ -10,7 +10,7 @@
 |---|---|
 | 검증일 | 2026-10-02 |
 | 검증 대상 | `Doro` 저장소 커밋 **`12d6582`** (`git -C Doro rev-parse --short HEAD`). 검증 시점에 코드 쪽 working tree 변경은 없었다(문서와 `.claude/` 제외). |
-| 참조 구현 | `/Users/yusm/Documents/workspace/doro-blog` (SDK 를 실제로 쓰는 서브 서비스). 이번 검증에서 **다시 읽은 것은 파일 존재, SDK 의존성 방식, 스키마 병합 초기화의 호출 순서, 서비스 토큰 헤더뿐**이다. 그 외 doro-blog 동작은 `[미검증]` |
+| 참조 구현 | `<워크스페이스>/doro-blog` (SDK 를 실제로 쓰는 서브 서비스). 이번 검증에서 **다시 읽은 것은 파일 존재, SDK 의존성 방식, 스키마 병합 초기화의 호출 순서, 서비스 토큰 헤더뿐**이다. 그 외 doro-blog 동작은 `[미검증]` |
 | 표기 | **[코드]** 소스에서 직접 확인 / **[미검증]** 추론이거나 실행해 보지 않음 |
 | 미조사 | `doro-menu`, `server-secret`(시크릿이라 열지 않음), 배포 서버의 실제 상태, 런타임 실행(전부 코드 읽기로만 검증했다. 테스트·기동은 하지 않음) |
 
@@ -87,6 +87,7 @@ IAM ──(REST, 관리자 판정·역할 튜플 동기화)──▶ Guard
 | `GET /api/v1/users/me` | (Bearer) | `{id,email,name,profileImageUrl,status,role,hasTotp,createdAt}` | |
 | `PATCH /api/v1/users/me` | (Bearer) `{name?, profileImageUrl?}` | 프로필 | 이미지 길이 상한 `doro.iam.profile.image-max-length`(기본 1048576자). 값은 `https://` 주소나 이미지 `data:` URL(png·jpeg·gif·webp·svg+xml)만 허용, 빈 문자열은 이미지 제거 |
 | `PUT /api/v1/users/me/password` | (Bearer) `{currentPassword, newPassword(8~64자)}` | 없음 | 성공하면 **현재 세션을 제외한 모든 세션 종료** |
+| `POST /api/v1/users/me/deletion` | (Bearer) `{password, totpCode?}` | `{scheduledPurgeAt}` | 회원탈퇴 요청. 비밀번호(2FA 계정은 OTP 코드)로 재확인 → `PENDING_DELETION` + 모든 세션 종료. 유예(`DORO_IAM_ACCOUNT_DELETION_GRACE_DAYS`, 기본 30일) 안에 로그인하면 복구, 지나면 개인정보 익명화(`DELETED`). 서비스는 내부 API `GET /internal/v1/deleted-users` 로 동기화. [코드: `AccountDeletionService`] |
 | `GET /api/v1/sessions` | (Bearer) | 활성 세션 목록 | |
 | `GET /api/v1/sessions/current` | (Bearer) | 204 | 현재 토큰의 세션이 DB 기준 유효한지. 무효면 401 `SESSION_EXPIRED`, 계정 정지면 403. SDK 의 폐기 확인이 사용(§4.1) |
 | `DELETE /api/v1/sessions/{id}` | (Bearer) | 없음 | **소유자 검사**(타인 세션은 404) + 리프레시 토큰 폐기 + 킬스위치 |
@@ -106,7 +107,7 @@ IAM ──(REST, 관리자 판정·역할 튜플 동기화)──▶ Guard
 
 `TokenResponse` = `{accessToken, refreshToken, tokenType:"Bearer", expiresIn, sessionId, userIndex}` (+ OAuth 교환 응답에서만 `idToken`, `scope`). [코드]
 
-**존재하지 않는 것**: `/api/v1/auth/accounts/add`, `/accounts/switch/{uidx}`, `/2fa/enable`, `/login/2fa`. 다중 계정 "Google 스타일 전환"은 **서버가 아니라 포털 프론트엔드**(여러 계정 토큰을 localStorage 에 보관)가 한다. 서버의 `uidx` 는 사용자별 활성 세션 순번(max+1)일 뿐이다. 사용자 상태(`LOCKED`/`SUSPENDED`)를 바꾸는 API 와 첫 관리자 부트스트랩 API 도 없다. [코드]
+**존재하지 않는 것**: `/api/v1/auth/accounts/add`, `/accounts/switch/{uidx}`, `/2fa/enable`, `/login/2fa`. 다중 계정 "Google 스타일 전환"은 **서버가 아니라 포털 프론트엔드**(여러 계정 토큰을 localStorage 에 보관)가 한다. 서버의 `uidx` 는 사용자별 활성 세션 순번(max+1)일 뿐이다. 사용자 상태 중 `LOCKED` 를 직접 바꾸는 API 는 없다(잠금은 로그인 실패로 걸리고, 관리자 `DELETE /api/v1/admin/users/{id}/lock` 으로 푼다). 정지는 `PUT/DELETE /api/v1/admin/users/{id}/suspension`, 첫 관리자는 `POST /api/v1/auth/bootstrap` 으로 한다. [코드]
 
 ### 2.3 로그인 보안 동작 [코드]
 
@@ -438,7 +439,9 @@ Doro 의 보안 기능은 **단계적으로 켤 수 있게** 설계돼 있다. �
 | **OAuth 클라이언트 등록 강제** | `DORO_OAUTH_CLIENT_REGISTRY_MODE=ENFORCE` | 등록된 `client_id` 와 `redirect_uri` 정확 일치만 허용 |
 | **audience / issuer 검증** | SDK `doro.iam.audience`, `doro.iam.issuer-validation: ENFORCE` | 토큰 대상·발급자 확인 |
 | **OIDC 공개 URL** | `DORO_IAM_ISSUER` 를 공개 URL 로 | 외부 OIDC 클라이언트의 discovery 가 올바른 주소를 가리킴 |
-| **세션/요청 제한** | `DORO_IAM_SESSION_MAX_ACTIVE_PER_USER`, `DORO_IAM_SESSION_ABSOLUTE_LIFETIME_SECONDS`, `DORO_IAM_RATE_LIMIT_*` | 사용자당 활성 세션 상한, IP 단위 요청 제한 |
+| **세션/요청 제한** | `DORO_IAM_SESSION_MAX_ACTIVE_PER_USER`, `DORO_IAM_SESSION_MAX_OAUTH_PER_CLIENT`(기본 3), `DORO_IAM_SESSION_ABSOLUTE_LIFETIME_SECONDS`, `DORO_IAM_RATE_LIMIT_*` | 사용자당 활성 세션 상한, 서비스(OAuth 클라이언트)당 기기 수, IP 단위 요청 제한 |
+| **탈퇴 유예·토큰 정리** | `DORO_IAM_ACCOUNT_DELETION_GRACE_DAYS`(30), `DORO_IAM_ACCOUNT_DELETION_PURGE_INTERVAL_MS`(3600000), `DORO_IAM_TOKEN_PURGE_ENABLED`(true), `DORO_IAM_TOKEN_PURGE_RETENTION_DAYS`(90, 리프레시 토큰 유효기간 30일보다 길게) | 탈퇴 유예 후 익명화, 만료·폐기 토큰과 비활성 세션의 주기 삭제 |
+| **BFF**(브라우저 로그인을 서비스 밖에서) | `BFF_SESSION_KEY`(필수), `BFF_IAM_INTERNAL_TOKEN`, `BFF_PUBLIC_ORIGIN`, `BFF_DB`, `BFF_PORT` — [`BFF.md`](BFF.md) | 쿠키 세션을 게이트웨이가 Bearer 로 바꿔 서비스에 전달 |
 
 연동 코드를 쓸 때의 동작 방식(필터는 요청을 막지 않는다, `@CurrentDoroUser UUID` 는 비로그인 시 `null`, `writeTuple` 은 실패 시 `0`, `@DoroGuard` 의 Guard 장애는 거부로 처리 등)은 §4·§6·§10 에 있다. 이 가이드와 코드가 다르면 **코드가 맞다.**
 
@@ -507,7 +510,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST localhost:8081/api/v1/guard/che
 #    로그인 → 토큰 저장 → logout → 같은 토큰으로 서브서비스 호출이 익명 처리(보호 API 401/403)되는지.
 #    (OFF 이면 만료 전까지 계속 통과하는 것이 정상)
 
-# 7) OAuth: 미등록 client/redirect 거부 확인 (등록 없이 WARN 모드 + 허용 목록 비어 있음 → 400)
+# 7) OAuth: 미등록 client/redirect 거부 확인 (등록 없이 + 허용 목록 비어 있음 → 400; 기본 ENFORCE 이며 WARN 도 허용 목록이 비면 거부)
 curl -s -o /dev/null -w '%{http_code}\n' \
   'localhost:8080/oauth2/authorize?response_type=code&client_id=probe&redirect_uri=https://example.test/cb&code_challenge=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&code_challenge_method=S256'
 ```

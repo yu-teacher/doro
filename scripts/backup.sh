@@ -5,7 +5,7 @@
 #   backup.sh verify-restore  가장 최근 백업을 임시 PostgreSQL/Redis 에 실제로 복원해 본다 (주 1회 권장)
 #   backup.sh status          마지막 성공/복원 테스트 시각과 경고를 출력한다 (읽기 전용)
 #
-# 서버에 설치: scripts/install-backup.sh 참고. cron 이 backup(매일)과 verify-restore(주 1회)를 실행한다.
+# 서버에서는 cron 이 backup(매일)과 verify-restore(주 1회)를 실행한다.
 # 비밀번호를 읽거나 출력하지 않는다. (설정 파일 tar 에는 .env 가 들어가므로 백업 디렉터리 권한은 700/600 이다.)
 set -Eeuo pipefail
 umask 077

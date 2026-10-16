@@ -5,13 +5,13 @@
 # 반영 전에 컨테이너 안에서 새 설정을 먼저 검증하고(nginx -t), 실패하면 아무것도 바꾸지 않는다. reload 뒤 확인이 실패하면 백업으로 되돌린다.
 # nginx 는 시작·reload 때 업스트림 호스트 이름을 해석하므로, 이름이 사라질(loki 컨테이너 삭제) 상태로 두면 게이트웨이가 못 뜬다. 그래서 IP 로 가리킨다.
 #
-#   ssh mini 'LOKI_UPSTREAM=192.168.0.4:3100 bash -s -- --dry-run' < scripts/apply-gateway-loki.sh   # 바뀔 내용과 검증만
-#   ssh mini 'LOKI_UPSTREAM=192.168.0.4:3100 bash -s -- --apply'   < scripts/apply-gateway-loki.sh   # 반영
+#   ssh mini 'LOKI_UPSTREAM=<LAN IP>:3100 bash -s -- --dry-run' < scripts/apply-gateway-loki.sh   # 바뀔 내용과 검증만
+#   ssh mini 'LOKI_UPSTREAM=<LAN IP>:3100 bash -s -- --apply'   < scripts/apply-gateway-loki.sh   # 반영
 set -Eeuo pipefail
 
 CONF="${GATEWAY_CONF:-$HOME/doro/gateway/nginx.conf}"
 CONTAINER="${GATEWAY_CONTAINER:-doro-gateway}"
-TARGET="${LOKI_UPSTREAM:?LOKI_UPSTREAM 가 필요하다 (예: 192.168.0.4:3100)}"
+TARGET="${LOKI_UPSTREAM:?LOKI_UPSTREAM 가 필요하다 (예: <LAN IP>:3100)}"
 APPLY=false
 for a in "$@"; do
   case "$a" in

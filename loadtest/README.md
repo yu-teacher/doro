@@ -25,13 +25,15 @@ k6 run -e SCENARIO=login-fail -e VUS=50 -e DURATION=15s loadtest/auth-suite.js
 ./loadtest/run-auth-matrix.sh      # 약 15분
 ./loadtest/run-guard-matrix.sh     # 약 10분
 ```
-포트는 `.env` 기준(auth 28080, guard 28081, gRPC 9090)이다. 다르면 `-e AUTH=... -e GUARD=... -e GRPC=...`.
+스위트의 기본 대상은 auth `http://localhost:28080`, guard `http://localhost:28081`, gRPC `localhost:9090` 이다. compose 의 호스트 포트 기본값은 auth 8080, guard 8081 이므로, 둘 중 하나를 맞춘다.
+- `.env` 에 `AUTH_PORT=28080`, `GUARD_PORT=28081` 을 두고 compose 를 올리거나,
+- 기본 포트 그대로 올렸다면 `-e AUTH=http://localhost:8080 -e GUARD=http://localhost:8081` (gRPC 는 `-e GRPC=localhost:9090`)을 붙인다. 매트릭스 스크립트는 환경변수 `AUTH`, `GUARD` 를 같은 이름으로 넘기면 된다.
 
 ## 운영 서버 스모크 (`prod-smoke.js`)
 운영에서 토큰 갱신·내 정보 조회가 동시 접속에서도 정상인지 **낮은 부하로** 확인한다. 위의 매트릭스는 운영에 쓰지 않는다.
 
 **준비 (사람이 한다)**
-1. 운영 포털에서 **전용 테스트 계정**을 하나 만든다(2FA 끄고, 개인 계정 금지). 활성 세션 상한이 사용자당 10개라서 개인 계정으로 돌리면 본인 기기가 로그아웃된다.
+1. 운영 포털에서 **전용 테스트 계정**을 하나 만든다(2FA 끄고, 개인 계정 금지). 활성 세션 상한이 사용자당 20개(`DORO_IAM_SESSION_MAX_ACTIVE_PER_USER`)라서 개인 계정으로 돌리면 본인 기기가 로그아웃된다.
 2. 비밀번호는 환경변수로만 준다(파일·채팅·로그에 남기지 않는다).
 
 ```bash

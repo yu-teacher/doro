@@ -4,7 +4,8 @@
 
 - 검증 기준 커밋: `12d6582` (2026-10-02), 설정 파일을 전부 읽고 작성. 실제 서버에 배포된 설정과의 일치 여부는 `[미검증]`(§8 참고).
 - **2026-10-09 주소 개편**: 메인(`/`)은 허브, 블로그는 `/blog/`. 서버 설정과 `gateway/nginx.conf` 를 맞췄다(서버 값이 기준). 반영 절차와 라우팅 시험은 `scripts/apply-gateway-blog.sh`, `scripts/gateway_blog_switch.py`, `scripts/test-gateway-routing.sh`(기대 목록 `scripts/gateway-routing/`)에 있다.
-- 인증·인가 연동 사실은 `docs/DORO_AGENT_GUIDE.md` 를 본다.
+- 인증·인가 연동 사실은 `docs/DORO_AGENT_GUIDE.md` 를, 브라우저 로그인(BFF) 구조는 `docs/BFF.md` 를 본다.
+- **라우팅 회귀 시험**: `scripts/test-gateway-routing.sh gateway/nginx.conf scripts/gateway-routing/expect-current.txt` 가 설정의 location 매칭을 기대 목록(경로 → 업스트림)과 비교한다. CI(`deploy.yml`)가 배포 전에 실행하므로 location 을 바꾸면 `expect-current.txt` 도 함께 고친다.
 
 ---
 
@@ -27,6 +28,9 @@
 | `minio_upstream` | `doro-minio:9000` | 업로드 미디어(MinIO) |
 | `loki_upstream` | 중앙 Loki(노트북, IP 로 지정) | 로그 조회(Loki). 미니의 loki 컨테이너는 없앴다(`scripts/apply-gateway-loki.sh`). nginx 는 시작 때 이름을 해석하므로 컨테이너 이름이 아니라 IP 로 가리킨다 |
 | `menu_upstream` | `doro-menu:80` | 도로메뉴 서브 서비스 |
+| `party_web_upstream` / `party_api_upstream` | `doro-party-web:80` / `doro-party-api:8086` | 도로 파티(`/party/`) 프런트엔드 / 백엔드 |
+| `games_web_upstream` / `games_api_upstream` | `doro-games-web:80` / `doro-games-api:8087` | 도로 게임 천국(`/games/`) 프런트엔드 / 백엔드 |
+| `bff_upstream` | `doro-bff-api:8085` | 브라우저 로그인·세션을 서비스 밖에서 맡는 BFF([`BFF.md`](BFF.md), §2.4) |
 
 **Guard(`guard-api`)는 업스트림에 없다. Guard 는 게이트웨이로 프록시하지 않는다**(8081/9090 은 내부 전용, §5).
 
@@ -41,7 +45,7 @@ nginx 의 평가 순서(이 순서를 모르고 location 을 추가하면 반드
 3. 없으면 **가장 긴 프리픽스** 를 기억해 두고(`^~` 가 아니면),
 4. **정규식 location 을 설정 파일 순서대로** 검사해 **처음 맞는 것이 프리픽스를 이긴다.** 맞는 정규식이 없으면 기억해 둔 가장 긴 프리픽스를 쓴다.
 
-즉 정규식 location(현재 1개)은 **프리픽스보다 우선**한다. 같은 종류끼리는 프리픽스는 길이, 정규식은 파일 순서가 결정한다.
+즉 정규식 location(`sessions`, `admin/users`, 포털 라우트, PWA·로고 파일)은 **프리픽스보다 우선**한다. 같은 종류끼리는 프리픽스는 길이, 정규식은 파일 순서가 결정한다.
 
 ### 2.1 정확 일치 (`=`)
 
@@ -50,6 +54,7 @@ nginx 의 평가 순서(이 순서를 모르고 location 을 추가하면 반드
 | `= /csp-report` | **POST 만 허용**(`limit_except`), 속도 제한 30회/분(burst 20), 본문 4KB 제한, 본문을 `CSP-REPORT` 접두어 로그로 stdout 에 기록 → `127.0.0.1:8099`(204). Loki 로 수집됨 |
 | `= /_auth_admin` | **`internal`**(외부 접근 불가). `/loki/` 의 `auth_request` 전용. IAM `GET /api/v1/admin/authz` 로 보내되 본문을 전달하지 않고 `Authorization` 헤더와 `X-Real-IP` 만 넘긴다 |
 | `= /api/v1/users/me/password` | → `iam_upstream` (비밀번호 변경) |
+| `= /api/v1/users/me/deletion` | → `iam_upstream` (회원탈퇴 요청). 없으면 `/api/v1/` 로 흘러 블로그가 받는다 |
 | `= /api/v1/users/me` | → **`$users_me_upstream`**(referer/메서드 맵, §3) |
 | `= /oauth2/consent` | → **`portal_upstream`**. OAuth 동의 화면은 포털 SPA 가 렌더링한다. 정확 일치라 아래 `/oauth2/` 프리픽스(IAM)보다 우선한다. 브라우저 흐름: IAM `/oauth2/authorize` → 302 `/oauth2/consent?...` → 포털 |
 | `= /shield.svg` | → `portal_upstream/shield.svg` (포털 아이콘) |
@@ -61,14 +66,15 @@ nginx 의 평가 순서(이 순서를 모르고 location 을 추가하면 반드
 |---|---|---|
 | `/media/` | `minio_upstream/doro-blog-media/` | 업로드 미디어. **sandbox CSP** 별도 적용(§4.3) |
 | `/loki/` | `loki_upstream/loki/` | **관리자 전용**: `auth_request /_auth_admin`, **GET/HEAD 만 허용**(`limit_except`, 나머지 메서드는 거부). 쓰기(push)는 서버별 수집기(Alloy)가 중앙 Loki(노트북)에 직접 수행(이 경로로는 쓰지 않는다). 이 location 이 없으면 중앙 관제 로그 화면이 비게 된다 |
-| `/api/v1/auth` | `iam_upstream` | 로그인/가입/2FA/로그아웃/토큰 갱신 등. **끝 슬래시 없는 프리픽스**라 `/api/v1/auth` 로 *시작하는* 모든 경로가 걸린다 |
-| `/api/v1/sessions` | `iam_upstream` | 세션 관리, `sessions/current`(SDK 폐기 확인). 끝 슬래시 없음 |
-| `/api/v1/admin/users` | `iam_upstream` | 사용자 관리(목록, 역할 변경, 2FA 초기화, 정지·해제, 잠금 해제). 끝 슬래시 없음 |
-| `/api/v1/` | `blog_api_upstream/api/v1/` | **블로그 백엔드(나머지 전부)**. 위의 IAM 전용 경로보다 짧아서 IAM 쪽이 이기고, 그 외는 여기로 온다 |
+| `/api/v1/auth/` | `iam_upstream` | 로그인/가입/2FA/로그아웃/토큰 갱신 등. **끝 슬래시까지 포함한 프리픽스**라 `/api/v1/authors` 처럼 이름만 비슷한 경로는 걸리지 않는다 |
+| `/api/v1/admin/oauth/` | `iam_upstream` | OAuth 클라이언트 관리 API(등록·조회·비활성화). 슬래시까지 포함해 이 경로만 IAM 으로 보낸다 |
+| `/api/v1/` | `blog_api_upstream/api/v1/` | **블로그 백엔드(나머지 전부)**. 위의 IAM 전용 경로보다 짧아서 IAM 쪽이 이기고, 그 외는 여기로 온다. BFF 모드의 `auth_request` 가 붙는다(§2.4) |
 | `/iam/` | `iam_upstream/` | `/iam` 접두어를 떼고 IAM 으로 전달(IAM 직접 접근용) |
 | `/oauth2/` | `iam_upstream/oauth2/` | OAuth/OIDC(`authorize`, `token`, `userinfo`). `= /oauth2/consent` 만 예외(포털) |
 | `/.well-known/` | `iam_upstream/.well-known/` | JWKS, OIDC discovery |
-| `/blog/api/` | `blog_api_upstream/api/` | 블로그 API(새 주소). `/blog` 접두어를 떼고 전달. 쓰기 제한(`blog_writes`) 적용 |
+| `/blog/api/` | `blog_api_upstream/api/` | 블로그 API(새 주소). `/blog` 접두어를 떼고 전달. 쓰기 제한(`blog_writes`) 적용, BFF `auth_request` 가 붙는다(§2.4). 업로드(`/blog/api/v1/uploads`)는 별도 location 에서 더 엄격한 제한 |
+| `/party/api/`, `/party/` | `party_api_upstream/api/`, `party_web_upstream` | 도로 파티. API 는 BFF `auth_request`(§2.4), 웹은 서비스 전용 CSP. `= /party` 는 `/party/` 로 301 |
+| `/games/api/`, `/games/` | `games_api_upstream/api/`, `games_web_upstream` | 도로 게임 천국. 구성은 파티와 같다. `= /games` 는 `/games/` 로 301 |
 | `/blog/` | `blog_web_upstream/` | 블로그 웹. `/blog` 를 떼고 전달(웹은 `VITE_BASE_PATH=/blog` 로 빌드돼 에셋이 `/blog/assets/`). `= /blog` 는 `/blog/` 로 302 |
 | `/assets/` | **`$assets_upstream`**(기본 포털, §3) | 포털 빌드 산출물(블로그 에셋은 `/blog/assets/` 로 와서 이 규칙을 타지 않는다) |
 | `/menu/` | `menu_upstream/` | 도로메뉴(`/menu` 접두어 제거) |
@@ -83,9 +89,23 @@ nginx 의 평가 순서(이 순서를 모르고 location 을 추가하면 반드
 
 | location | 대상 | 비고 |
 |---|---|---|
+| `~ ^/api/v1/sessions(/\|$)` | `iam_upstream` | 세션 관리, `sessions/current`(SDK 폐기 확인). 경계(`/` 또는 끝)까지 맞춰 `/api/v1/sessionsX` 같은 경로는 걸리지 않는다 |
+| `~ ^/api/v1/admin/users(/\|$)` | `iam_upstream` | 사용자 관리(목록, 역할 변경, 2FA 초기화, 정지·해제, 잠금 해제). 같은 경계 규칙 |
 | `~ ^/(logs\|login\|signup\|account\|portal)(/.*)?$` | `portal_upstream` | 포털 SPA 라우트. 포털 SPA 의 실제 라우트는 `/login`, `/signup`, `/account`, `/logs`(+ 정확 일치 `/oauth2/consent`)이다. `/portal` 도 이 정규식에 걸려 포털로 가며 허브(`/`)와 같은 화면이다 |
 
 위 목록에 없는 경로(예: `/swagger-ui.html`, `/v3/api-docs`, `/actuator/**`, `/health`)는 **IAM 으로 가지 않고** `/` 로 떨어져 `/blog` 아래로 301 이동한다(블로그 프런트엔드가 받는다). 의도된 것이다 — 이 경로들을 게이트웨이로 노출하려면 별도 검토(인증/보안)가 필요하다.
+
+---
+
+### 2.4 BFF 라우팅 (`doro-bff`, [`BFF.md`](BFF.md))
+
+블로그(`/blog/api/…`, 옛 주소 `/api/v1/…`), 도로 파티(`/party/api/…`), 도로 게임 천국(`/games/api/…`)에 같은 규칙이 적용된다.
+
+- **로그인·콜백·로그아웃**: `/{서비스}/api/v1/bff/login|callback|logout` 는 정확 일치 location 이 `bff_upstream` 의 `/bff/{서비스}/login|callback|logout` 으로 보낸다. 블로그는 옛 루트 주소(`/api/v1/bff/…`)도 같은 곳으로 이어 준다. 로그인 시작은 IP 당 속도 제한(`blog_login`)이 있다.
+- **`auth_request` 내부 location**: `/_bff_auth_blog`, `/_bff_auth_party`, `/_bff_auth_games`(모두 `internal`, 밖에서 부르면 404). 서비스 쿠키가 있을 때만 `bff_upstream` 의 `/internal/auth` 를 부르고, 쿠키가 없으면 BFF 에 닿지 않고 `204` 로 통과한다(공개 요청·API 키 요청은 BFF 가 내려가 있어도 영향이 없다).
+- **`$bff_authorization` 규칙**: 서비스 API location 은 `auth_request_set $bff_token $upstream_http_x_doro_access_token` 으로 BFF 가 돌려준 토큰을 받아 `Authorization` 을 정한다. 쿠키가 있어 토큰이 오면 `Bearer <토큰>` 으로 **덮어쓰고**(클라이언트가 보낸 값은 버린다), 토큰이 없으면(쿠키 없음·익명) 클라이언트가 보낸 `Authorization`/`X-API-Key` 를 그대로 통과시킨다.
+- **JSON 오류 응답**: 쿠키로 상태를 바꾸는 요청에 CSRF 증명이 없어 BFF 가 403 을 주면 `@bff_forbidden` 이 서비스에 닿기 전에 JSON `403`(`AUTH-403-03`)으로 끝낸다. 쿠키가 있는데 BFF 에 닿지 못하면 `@bff_unavailable` 이 익명으로 넘기지 않고 JSON `503`(`AUTH-503-02`, `Retry-After: 5`)을 준다.
+- 새 서비스를 BFF 에 붙일 때는 같은 구성(로그인·콜백·로그아웃 location + `/_bff_auth_<서비스>` + 서비스 API location)을 추가하고 `scripts/gateway-routing/expect-current.txt` 에 기대 라우팅을 더한다. 서비스별 전환 스위치는 `scripts/enable-bff.sh`, `scripts/set-bff-mode.sh` 와 `docs/BFF.md` 를 본다.
 
 ---
 
@@ -133,7 +153,7 @@ default                                              → iam_upstream
 ## 5. 게이트웨이로 노출되지 않는 것 (의도된 것)
 
 - **Guard**(REST 8081, gRPC 9090): 프록시하지 않는다. 서비스 인증 기본이 `OFF` 이고 TLS 가 없으므로 외부에 노출하면 안 된다. `/api/v1/guard/**` 는 게이트웨이에 location 이 없어 **블로그 API(`/api/v1/`)로 흘러가므로**, Guard API 가 게이트웨이로 열린다고 오해하지 말 것.
-- **IAM 관리자 OAuth 클라이언트 API `/api/v1/admin/oauth/clients`**: 현재 location 이 없고(`/api/v1/admin/users` 만 IAM) `/api/v1/` 에 걸려 **블로그 API 로 간다.** 게이트웨이 경유로 클라이언트를 등록하려면 location(§6 규칙에 따라 `/api/v1/admin/oauth` 추가)이 필요하다. `[코드: gateway/nginx.conf — 의도인지 누락인지 확인 필요]`
+- **IAM 내부 API `/internal/**`**: 게이트웨이에 location 이 없고 IAM 도 게이트웨이를 거친 요청(`X-Forwarded-For`/`X-Real-IP` 가 붙은 요청)에는 404 로 답한다. 서비스는 Docker 내부 네트워크에서 직접 부른다.
 - IAM 의 `/swagger-ui.html`, `/v3/api-docs`, `/actuator/**`, `/health`, IAM `GET /api/v1/admin/authz`(내부 `auth_request` 전용).
 - 데이터 저장소(PostgreSQL, Redis, Guard)는 compose 에서 기본 `127.0.0.1` 바인딩이다. 포털(3000)과 auth(8080)의 호스트 포트는 compose 기본이 `0.0.0.0` 이므로(`WEB_BIND`/`AUTH_BIND`) 운영에서는 `.env` 로 `127.0.0.1` 로 제한하고 외부에는 80/443 만 연다(서버 실제 값은 `[미검증]`).
 
@@ -145,7 +165,7 @@ default                                              → iam_upstream
 2. **location 추가**(443 서버 블록): 서비스 전용 경로 접두사를 정해 `proxy_pass` 하고 **§4.1 의 헤더 4개**(`Host $host`, `X-Real-IP $remote_addr`, `X-Forwarded-For $remote_addr`, `X-Forwarded-Proto $scheme`)를 넣는다. 서비스를 하위 경로(`/menu/` 처럼)에 올리면 `proxy_pass http://upstream/;`(끝 슬래시)로 접두어를 떼는지 유지하는지 의도를 분명히 한다.
 3. **우선순위 함정**
    - **광범위한 프리픽스(`/api/v1/`, `/`) 보다 구체적인 경로를 쓰라.** 새 API 가 `/api/v1/` 아래에 있으면 기본으로 블로그 백엔드에 걸린다. IAM 계열처럼 다른 서비스로 보내려면 `/api/v1/<새경로>` 프리픽스(또는 정확 일치)를 **추가**해야 한다(파일 내 위치는 상관없다 — 프리픽스는 길이로 결정).
-   - **끝 슬래시 없는 프리픽스는 넓게 걸린다**: `/api/v1/auth`, `/api/v1/sessions`, `/api/v1/admin/users` 는 `...` 로 시작하는 모든 경로를 잡는다. 블로그 API 에 이 이름으로 *시작하는* 경로(`/api/v1/authors` 처럼)를 만들면 IAM 으로 가 버린다.
+   - **IAM 경로는 경계까지 맞춘다**: `/api/v1/auth/`(끝 슬래시 포함)와 `^/api/v1/sessions(/|$)`, `^/api/v1/admin/users(/|$)` 정규식은 이름이 같은 경로만 잡고 `/api/v1/authors` 같은 비슷한 이름은 `/api/v1/` 로 간다. 새 IAM 경로를 추가할 때도 같은 방식으로 경계를 포함한다(예: `/api/v1/admin/oauth/`).
    - **정규식 location 은 프리픽스보다 우선**한다. 포털 정규식이 `/logs`, `/login`, `/signup`, `/account`, `/portal` 로 시작하는 **모든** 경로를 가져가므로, 새 서비스 경로가 이 이름으로 시작하면 의도와 상관없이 포털로 간다. 새 정규식을 추가하면 파일 순서가 결정하므로 기존 규칙과 겹치지 않는지 확인한다.
    - **정확 일치(`=`)는 항상 최우선**이다. 한 경로만 다른 곳으로 보내야 하면 `= /경로` 로 선언한다(`= /oauth2/consent` 가 그 예).
    - **referer 맵은 새 화면에서 깨지기 쉽다**(§3). 가능하면 referer 에 의존하지 말고 경로를 분리한다. 새 포털 화면 이름을 맵의 정규식에 추가해야 하는 경우도 있다(`/assets/` 맵은 단어가 referer 어디든 있으면 맞고, `users/me` 맵은 referer 끝에서만 맞는다).
