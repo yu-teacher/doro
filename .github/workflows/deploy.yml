@@ -68,6 +68,8 @@ jobs:
     if: ${{ !cancelled() && (needs.test.result == 'success' || needs.test.result == 'skipped') }}
     # 운영 서버(mini)에서만 배포한다. 다른 셀프호스티드 러너(노트북 등)가 이 작업을 가져가지 않도록 mini 라벨을 명시한다.
     runs-on: [self-hosted, mini]
+    # 멈춘 배포가 기본 한도(360분) 동안 뒤의 모든 배포를 막지 않게 한다(2026-10-08 사고). 정상 배포는 이미지 빌드 포함 10분 안팎이다.
+    timeout-minutes: 45
     # 배포 후 점검 결과(마지막 부분)를 notify 작업이 텔레그램 메시지에 쓴다.
     outputs:
       smoke: ${{ steps.smoke.outputs.summary }}

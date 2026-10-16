@@ -43,7 +43,7 @@ import { UserRole } from '../types/auth';
 export const MyAccountPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { accounts, activeAccountIndex, updateActiveProfile, removeAccountByEmail } = useAuthStore();
+  const { accounts, activeAccountIndex, updateActiveProfile, updateProfileByEmail, removeAccountByEmail } = useAuthStore();
   const activeAccount = accounts[activeAccountIndex] || accounts[0];
 
   const [activeTab, setActiveTab] = useState<'home' | 'info' | 'security' | 'sessions' | 'apps' | 'admin'>('home');
@@ -307,17 +307,32 @@ export const MyAccountPage: React.FC = () => {
     }
   }, [activeTab, adminPage, debouncedQuery, selectedRoleFilter]);
 
+  /** 가장 최근에 보낸 프로필 조회의 번호. 계정을 빠르게 바꾸면 이전 요청의 응답이 나중에 와도 화면에 반영하지 않는다. */
+  const profileRequestSeq = useRef(0);
+
   const fetchProfile = async () => {
+    const requestedEmail = useAuthStore.getState().getActiveAccount()?.email;
+    const seq = ++profileRequestSeq.current;
     setLoadingProfile(true);
     try {
       const data = await authApi.getProfile();
-      setProfile(data);
-      setNameInput(data.name || activeAccount?.fullName || '');
-      updateActiveProfile(data.name, data.profileImageUrl, data.role as any);
+      // 응답은 요청을 보낸 계정의 것이다: 그 계정의 저장된 프로필만 갱신한다(그사이 활성 계정이 바뀌었어도 다른 계정에 덮어쓰지 않는다).
+      if (requestedEmail) {
+        updateProfileByEmail(requestedEmail, { fullName: data.name, profileImageUrl: data.profileImageUrl, role: data.role as any });
+      }
+      // 화면 상태는 아직 그 계정을 보고 있고 더 새로운 요청이 없을 때만 바꾼다.
+      if (seq === profileRequestSeq.current && useAuthStore.getState().getActiveAccount()?.email === requestedEmail) {
+        setProfile(data);
+        setNameInput(data.name || activeAccount?.fullName || '');
+      }
     } catch {
-      setNameInput(activeAccount?.fullName || '');
+      if (seq === profileRequestSeq.current) {
+        setNameInput(activeAccount?.fullName || '');
+      }
     } finally {
-      setLoadingProfile(false);
+      if (seq === profileRequestSeq.current) {
+        setLoadingProfile(false);
+      }
     }
   };
 
