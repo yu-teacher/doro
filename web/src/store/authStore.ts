@@ -18,6 +18,8 @@ interface AuthState {
   /** 다른 탭이 localStorage 에 기록한 계정 목록을 다시 읽는다(이 탭 메모리의 액세스 토큰은 유지한다). */
   syncFromStorage: () => void;
   updateActiveProfile: (fullName?: string, profileImageUrl?: string | null, role?: UserRole) => void;
+  /** 이메일로 지정한 계정의 프로필만 바꾼다. 응답이 늦게 도착하는 사이 활성 계정이 바뀌어도 다른 계정을 건드리지 않는다. */
+  updateProfileByEmail: (email: string, profile: { fullName?: string; profileImageUrl?: string | null; role?: UserRole }) => void;
   removeAccount: (index: number) => void;
   logoutAll: () => void;
 }
@@ -198,6 +200,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return acc;
       });
 
+      persist(updatedAccounts);
+      return { accounts: updatedAccounts };
+    });
+  },
+
+  updateProfileByEmail: (email, profile) => {
+    set((state) => {
+      if (!state.accounts.some((acc) => acc.email === email)) return state;
+      const updatedAccounts = state.accounts.map((acc) =>
+        acc.email === email
+          ? {
+              ...acc,
+              fullName: profile.fullName !== undefined ? profile.fullName : acc.fullName,
+              profileImageUrl: profile.profileImageUrl !== undefined ? profile.profileImageUrl : acc.profileImageUrl,
+              role: profile.role !== undefined ? profile.role : acc.role,
+            }
+          : acc,
+      );
       persist(updatedAccounts);
       return { accounts: updatedAccounts };
     });

@@ -73,3 +73,49 @@ describe('계정 저장소: 토큰은 localStorage 에 쓰지 않는다', () => 
     expect(accounts.every((a) => a.accessToken === '')).toBe(true);
   });
 });
+
+describe('계정 전환 경합: 응답은 요청한 계정에만 적용된다', () => {
+  beforeEach(() => clearAccounts());
+  afterEach(() => clearAccounts());
+
+  it('이메일로 지정한 계정의 프로필만 바뀌고, 활성 계정이 다른 계정이어도 그 계정은 그대로다', () => {
+    seedAccounts([account('a@doro.test', 0), account('b@doro.test', 1)]);
+    useAuthStore.getState().switchAccount(1); // 요청을 보낸 뒤 B 로 전환한 상황
+
+    // A 로 보낸 프로필 조회의 응답이 B 가 활성일 때 도착한다
+    useAuthStore.getState().updateProfileByEmail('a@doro.test', { fullName: 'A 이름', profileImageUrl: 'https://img.example/a.png', role: 'ADMIN' });
+
+    const [a, b] = useAuthStore.getState().accounts;
+    expect(a).toMatchObject({ email: 'a@doro.test', fullName: 'A 이름', profileImageUrl: 'https://img.example/a.png', role: 'ADMIN' });
+    expect(b).toMatchObject({ email: 'b@doro.test', fullName: 'b@doro.test' });
+    expect(b.profileImageUrl).toBeUndefined();
+    expect(b.role).toBeUndefined();
+  });
+
+  it('없는 계정(그사이 로그아웃·삭제됨)이면 아무것도 바꾸지 않는다', () => {
+    seedAccounts([account('a@doro.test', 0)]);
+    const before = JSON.stringify(useAuthStore.getState().accounts);
+
+    useAuthStore.getState().updateProfileByEmail('gone@doro.test', { fullName: '유령', role: 'ADMIN' });
+
+    expect(JSON.stringify(useAuthStore.getState().accounts)).toBe(before);
+  });
+
+  it('값이 undefined 인 항목은 기존 값을 유지하고, 토큰은 저장소에 쓰지 않는다', () => {
+    seedAccounts([account('a@doro.test', 0)]);
+    useAuthStore.getState().updateProfileByEmail('a@doro.test', { fullName: '이름', profileImageUrl: 'https://img.example/a.png' });
+    useAuthStore.getState().updateProfileByEmail('a@doro.test', { role: 'ADMIN' });
+
+    expect(useAuthStore.getState().accounts[0]).toMatchObject({ fullName: '이름', profileImageUrl: 'https://img.example/a.png', role: 'ADMIN' });
+    expect(localStorage.getItem(STORAGE_KEY)).not.toMatch(/secret|accessToken|refreshToken/);
+  });
+
+  it('활성 계정을 기준으로 바꾸던 updateActiveProfile 은 그대로 동작한다(아바타 모달이 쓴다)', () => {
+    seedAccounts([account('a@doro.test', 0), account('b@doro.test', 1)]);
+    useAuthStore.getState().switchAccount(1);
+    useAuthStore.getState().updateActiveProfile('B 이름');
+
+    expect(useAuthStore.getState().accounts[1].fullName).toBe('B 이름');
+    expect(useAuthStore.getState().accounts[0].fullName).toBe('a@doro.test');
+  });
+});
