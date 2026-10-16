@@ -14,7 +14,19 @@ public final class FieldLimits {
     /** object_id, subject_id 컬럼 길이 */
     public static final int ID_MAX = 128;
 
+    /** 튜플 쓰기/삭제 한 번에 받는 최대 개수. 실제 호출자(auth 의 계정 동기화 등)는 한 자릿수 개를 보내므로 충분히 넉넉하다. */
+    public static final int TUPLE_BATCH_MAX = 1000;
+    /** 스키마 DSL 텍스트 최대 길이(문자). 현재 서비스별 스키마는 1KB 안팎이다. */
+    public static final int DSL_MAX = 100_000;
+
     private FieldLimits() {
+    }
+
+    /** gRPC 등 Bean Validation 을 거치지 않는 경로의 배치 크기 검사. 위반 시 INVALID_INPUT(400) 으로 던진다. */
+    public static void requireBatchSize(int size) {
+        if (size > TUPLE_BATCH_MAX) {
+            throw new GuardException(ErrorCode.INVALID_INPUT, "튜플은 한 번에 " + TUPLE_BATCH_MAX + "개까지 처리할 수 있습니다.");
+        }
     }
 
     /** gRPC 등 Bean Validation 을 거치지 않는 경로용. 위반 시 INVALID_INPUT(400) 으로 던진다. */

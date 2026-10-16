@@ -69,4 +69,42 @@ class GuardInputValidationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_INPUT_VALUE"));
     }
+
+    private static String tuplesJson(int count) {
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < count; i++) {
+            if (i > 0) {
+                sb.append(',');
+            }
+            sb.append("{\"namespace\":\"document\",\"objectId\":\"cap-").append(i)
+                    .append("\",\"relation\":\"owner\",\"subjectNamespace\":\"user\",\"subjectId\":\"u1\"}");
+        }
+        return sb.append(']').toString();
+    }
+
+    @Test
+    @DisplayName("튜플 배치 상한: 1000개는 통과, 1001개는 400 INVALID_INPUT_VALUE (쓰기/삭제 모두)")
+    void tupleBatchCapBoundary() throws Exception {
+        mockMvc.perform(delete("/api/v1/guard/tuples").contentType(MediaType.APPLICATION_JSON)
+                        .content(tuplesJson(1000)))
+                .andExpect(status().isOk());
+        mockMvc.perform(delete("/api/v1/guard/tuples").contentType(MediaType.APPLICATION_JSON)
+                        .content(tuplesJson(1001)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_INPUT_VALUE"));
+        mockMvc.perform(post("/api/v1/guard/tuples").contentType(MediaType.APPLICATION_JSON)
+                        .content(tuplesJson(1001)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_INPUT_VALUE"));
+    }
+
+    @Test
+    @DisplayName("스키마 DSL 상한: 100,000자를 넘으면 400 INVALID_INPUT_VALUE")
+    void dslLengthCap() throws Exception {
+        String tooLong = "#".repeat(100_001);
+        mockMvc.perform(post("/api/v1/guard/schema").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"dsl\":\"" + tooLong + "\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_INPUT_VALUE"));
+    }
 }

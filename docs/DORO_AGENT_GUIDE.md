@@ -247,6 +247,8 @@ doro:
 `@RestControllerAdvice(@Order LOWEST)`. 응답은 `{success:false, code, message, status}`:
 - `DoroAccessDeniedException` → 비로그인 **401** `UNAUTHORIZED` / 로그인 **403** `ACCESS_DENIED`(사용자·객체 ID 는 응답에 싣지 않음)
 - `DoroGuardUnavailableException` → **503** `GUARD_UNAVAILABLE`
+  - `checkOrThrow`/`expandOrThrow` 는 gRPC 상태로 구분한다: `UNAVAILABLE`·`DEADLINE_EXCEEDED`·`RESOURCE_EXHAUSTED`·연결 실패는 위 503. `INVALID_ARGUMENT` → `DoroGuardInvalidRequestException`(장애 예외와 무관) → **500** `GUARD_INVALID_REQUEST`(호출 코드의 입력 버그). `UNAUTHENTICATED`/`PERMISSION_DENIED`(서비스 토큰 오설정) → `DoroGuardMisconfiguredException`(`DoroGuardUnavailableException` 의 하위 타입이라 기존 503 핸들러도 그대로 잡음) → 기본 어드바이스 **500** `GUARD_MISCONFIGURED` + ERROR 로그.
+  - 기동 시 약한 기본 설정(issuer 검증 OFF, 폐기 확인 OFF/fail-open, 평문 HTTP JWKS)이 켜져 있으면 WARN 한 줄로 요약한다(기본값은 바꾸지 않음).
 
 ---
 
@@ -311,6 +313,7 @@ doro:
 | `GET /api/v1/guard/schema` | 없음 | **DSL 문자열** (`data` 가 곧 텍스트) |
 | `POST /api/v1/guard/schema` | **JSON** `{"dsl": "..."}` | `{version, dsl, active}` |
 
+- 입력 상한: 튜플 쓰기/삭제는 요청당 **1000개**(REST·gRPC 공통, 초과 시 400 / `INVALID_ARGUMENT`), 스키마 DSL 은 **100,000자**. [코드: `FieldLimits`]
 - 튜플 쓰기는 **멱등**이고 같은 배치 안 중복은 합쳐진다(이미 있으면 건너뜀, `writtenCount` 에 안 잡힘). 직접 튜플은 DB 부분 유니크 인덱스(Flyway `db/vendor/postgresql/V3`)가 중복을 막는다.
 - gRPC `doro.guard.v1.GuardService`: `Check`, `WriteTuples`, `DeleteTuples`, `Expand`. 오류는 4xx 성격이면 `INVALID_ARGUMENT`, 그 외 `INTERNAL`. [코드: `doro_guard.proto`, `GuardGrpcService`]
 - 헬스: `/health`, `/actuator/health`.

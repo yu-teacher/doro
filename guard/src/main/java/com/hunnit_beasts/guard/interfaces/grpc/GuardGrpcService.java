@@ -119,6 +119,7 @@ public class GuardGrpcService extends GuardServiceGrpc.GuardServiceImplBase {
 
     /** REST 의 @Valid 와 같은 기준(비어 있음/컬럼 길이)으로 검증한 뒤 DTO 로 변환한다. */
     private static List<TupleDto> toValidatedDtos(List<RelationTupleProto> tuples) {
+        FieldLimits.requireBatchSize(tuples.size());
         return tuples.stream()
                 .map(p -> {
                     FieldLimits.requireTuple(p.getNamespace(), p.getObjectId(), p.getRelation(),

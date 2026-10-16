@@ -205,6 +205,60 @@ class JwksKeyProviderHttpTest {
     }
 
     @Test
+    @DisplayName("임의 kid 동시 조회 폭주: 락 안에서 쿨다운을 재확인해 JWKS 조회는 쿨다운 구간당 1회")
+    void concurrentUnknownKidsFetchOnlyOncePerCooldown() throws Exception {
+        body.set(jwks("k1", keyA, null, null));
+        delayMillis = 300L;
+        JwksKeyProvider provider = new JwksKeyProvider(jwksUri, LONG_MILLIS, LONG_MILLIS);
+
+        int threads = 20;
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(threads);
+        var start = new java.util.concurrent.CountDownLatch(1);
+        List<java.util.concurrent.Future<PublicKey>> results = new java.util.ArrayList<>();
+        for (int i = 0; i < threads; i++) {
+            String kid = "random-" + i;
+            results.add(pool.submit(() -> {
+                start.await();
+                return provider.getPublicKey(kid);
+            }));
+        }
+        start.countDown();
+        for (var f : results) {
+            assertThat(f.get(10, java.util.concurrent.TimeUnit.SECONDS)).isNull();
+        }
+        pool.shutdownNow();
+
+        assertThat(hits.get()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("동시에 같은 새 kid 를 찾는 스레드는 앞선 조회 결과를 재사용한다")
+    void concurrentSameNewKidSharesOneFetch() throws Exception {
+        body.set(jwks("k1", keyA, null, null));
+        delayMillis = 300L;
+        JwksKeyProvider provider = new JwksKeyProvider(jwksUri, 0L, LONG_MILLIS);
+
+        int threads = 10;
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(threads);
+        var start = new java.util.concurrent.CountDownLatch(1);
+        List<java.util.concurrent.Future<PublicKey>> results = new java.util.ArrayList<>();
+        for (int i = 0; i < threads; i++) {
+            results.add(pool.submit(() -> {
+                start.await();
+                return provider.getPublicKey("k1");
+            }));
+        }
+        start.countDown();
+        for (var f : results) {
+            assertThat(f.get(10, java.util.concurrent.TimeUnit.SECONDS)).isEqualTo(keyA);
+        }
+        pool.shutdownNow();
+
+        // 쿨다운 0 이어도 kid 가 이미 캐시에 들어왔으면 락 안에서 재조회하지 않는다
+        assertThat(hits.get()).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("prefetchAsync 는 호출을 막지 않고 백그라운드에서 키를 적재하며, 실패해도 예외가 없다")
     void prefetchIsBackgroundAndBestEffort() {
         delayMillis = 500L;

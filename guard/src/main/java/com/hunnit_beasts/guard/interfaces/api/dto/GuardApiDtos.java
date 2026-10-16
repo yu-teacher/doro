@@ -22,7 +22,7 @@ public class GuardApiDtos {
     ) {}
 
     public record SchemaRegisterRequest(
-            @NotBlank String dsl
+            @NotBlank @Size(max = FieldLimits.DSL_MAX) String dsl
     ) {}
 
     public record SchemaResponse(

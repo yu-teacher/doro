@@ -69,9 +69,20 @@ public class JwksKeyProvider {
 
         // 알 수 없는 kid 는 새 키일 수 있으므로 동기 조회한다 (쿨다운으로 증폭 방지)
         if (cooldownElapsed(now)) {
-            refreshKeys();
+            refreshKeysForUnknownKid(kid);
         }
         return keyCache.get(kid);
+    }
+
+    /**
+     * 미지 kid 동기 조회. 락을 기다리는 동안 앞선 스레드가 이미 조회했을 수 있으므로 락 안에서
+     * kid 존재 여부와 쿨다운을 다시 확인한다 (임의 kid 토큰이 몰려도 쿨다운 구간당 JWKS 조회는 최대 1회).
+     */
+    private synchronized void refreshKeysForUnknownKid(String kid) {
+        if (keyCache.containsKey(kid) || !cooldownElapsed(System.currentTimeMillis())) {
+            return;
+        }
+        fetchAndApply();
     }
 
     private boolean cooldownElapsed(long now) {

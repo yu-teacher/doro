@@ -136,6 +136,19 @@ class GuardGrpcServiceTest {
     }
 
     @Test
+    @DisplayName("gRPC WriteTuples/DeleteTuples: 배치 1001개는 INVALID_ARGUMENT")
+    void batchOverCapIsInvalidArgument() {
+        WriteTuplesRequest.Builder write = WriteTuplesRequest.newBuilder();
+        DeleteTuplesRequest.Builder delete = DeleteTuplesRequest.newBuilder();
+        for (int i = 0; i < 1001; i++) {
+            write.addTuples(validTuple().setObjectId("cap-" + i));
+            delete.addTuples(validTuple().setObjectId("cap-" + i));
+        }
+        assertInvalidArgument(() -> blockingStub.writeTuples(write.build()));
+        assertInvalidArgument(() -> blockingStub.deleteTuples(delete.build()));
+    }
+
+    @Test
     @DisplayName("gRPC WriteTuples/DeleteTuples: 빈 값/길이 초과는 INVALID_ARGUMENT 이고 아무것도 쓰지 않는다")
     void writeAndDeleteRejectBlankAndOverlong() {
         assertInvalidArgument(() -> blockingStub.writeTuples(WriteTuplesRequest.newBuilder()
