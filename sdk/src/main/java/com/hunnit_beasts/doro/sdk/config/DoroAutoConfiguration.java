@@ -40,6 +40,24 @@ public class DoroAutoConfiguration implements WebMvcConfigurer {
         return provider;
     }
 
+    /** 보안상 약한 쪽 설정(기본값)이 켜져 있는지 요약한다. 기동 시 WARN 한 번으로 알리기 위한 것이며 동작은 바꾸지 않는다. */
+    static List<String> weakSettings(DoroProperties.IamProperties iam, DoroProperties.RevocationCheck revocationMode) {
+        List<String> weak = new java.util.ArrayList<>();
+        if (iam.getIssuerValidation() != DoroProperties.IssuerValidation.ENFORCE) {
+            weak.add("issuer-validation=" + iam.getIssuerValidation() + " (iss claim not enforced)");
+        }
+        if (revocationMode != DoroProperties.RevocationCheck.ENFORCE) {
+            weak.add("revocation-check=" + revocationMode + " (revoked sessions are still accepted)");
+        } else if (iam.isRevocationFailOpen()) {
+            weak.add("revocation-fail-open=true (revoked sessions pass while IAM is unreachable)");
+        }
+        String jwksUri = iam.getJwksUri();
+        if (jwksUri != null && jwksUri.regionMatches(true, 0, "http://", 0, 7)) {
+            weak.add("jwks-uri uses plain HTTP (signing keys fetched without TLS)");
+        }
+        return weak;
+    }
+
     /** 액세스 토큰 검증기. 서블릿 필터가 쓰고, 토큰을 다른 경로(예: BFF 세션)로 받는 서비스도 주입받아 같은 규칙으로 검증한다. */
     @Bean
     @ConditionalOnMissingBean
@@ -66,6 +84,10 @@ public class DoroAutoConfiguration implements WebMvcConfigurer {
                 iam.getCookieName() != null && !iam.getCookieName().isBlank(),
                 revocationMode,
                 acceptedClients.isEmpty() ? "none (OAuth client tokens rejected)" : acceptedClients);
+        List<String> weak = weakSettings(iam, revocationMode);
+        if (!weak.isEmpty()) {
+            log.warn("Doro JWT validation is running with weak settings (defaults kept for compatibility): {}", String.join("; ", weak));
+        }
         return new DoroTokenVerifier(
                 jwksKeyProvider,
                 iam.getIssuer(),

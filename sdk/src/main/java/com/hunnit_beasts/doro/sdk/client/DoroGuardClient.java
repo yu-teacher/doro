@@ -3,6 +3,9 @@ package com.hunnit_beasts.doro.sdk.client;
 import com.hunnit_beasts.guard.interfaces.grpc.*;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
+import io.grpc.Status;
+import com.hunnit_beasts.doro.sdk.exception.DoroGuardInvalidRequestException;
+import com.hunnit_beasts.doro.sdk.exception.DoroGuardMisconfiguredException;
 import com.hunnit_beasts.doro.sdk.exception.DoroGuardUnavailableException;
 import com.hunnit_beasts.doro.sdk.exception.DoroGuardWriteFailedException;
 import lombok.extern.slf4j.Slf4j;
@@ -172,8 +175,7 @@ public class DoroGuardClient {
                     .build();
             return getStub().check(request).getAllowed();
         } catch (Exception e) {
-            log.error("DoroGuardClient checkOrThrow failed: {}", e.getMessage());
-            throw new DoroGuardUnavailableException("Doro Guard 를 사용할 수 없습니다.", e);
+            throw classify("checkOrThrow", e);
         }
     }
 
@@ -197,7 +199,7 @@ public class DoroGuardClient {
                     .build();
             return getStub().writeTuples(request).getWrittenCount();
         } catch (Exception e) {
-            log.error("DoroGuardClient writeTupleOrThrow failed: {}", e.getMessage());
+            logWriteFailure("writeTupleOrThrow", e);
             throw new DoroGuardWriteFailedException("Doro Guard 튜플 쓰기에 실패했습니다.", e);
         }
     }
@@ -218,7 +220,7 @@ public class DoroGuardClient {
                     .build();
             return getStub().deleteTuples(request).getDeletedCount();
         } catch (Exception e) {
-            log.error("DoroGuardClient deleteTupleOrThrow failed: {}", e.getMessage());
+            logWriteFailure("deleteTupleOrThrow", e);
             throw new DoroGuardWriteFailedException("Doro Guard 튜플 삭제에 실패했습니다.", e);
         }
     }
@@ -240,9 +242,48 @@ public class DoroGuardClient {
         try {
             return expandInternal(namespace, objectId, relation);
         } catch (Exception e) {
-            log.error("DoroGuardClient expandOrThrow failed: {}", e.getMessage());
-            throw new DoroGuardUnavailableException("Doro Guard 를 사용할 수 없습니다.", e);
+            throw classify("expandOrThrow", e);
         }
+    }
+
+    /**
+     * gRPC 실패를 상태 코드로 구분한다. INVALID_ARGUMENT 는 호출 코드의 입력 오류, UNAUTHENTICATED/PERMISSION_DENIED 는
+     * 서비스 토큰 설정 오류로 장애와 분리하고, 그 외(UNAVAILABLE/DEADLINE_EXCEEDED/RESOURCE_EXHAUSTED/연결 실패 등)는 기존대로 장애로 본다.
+     */
+    private static RuntimeException classify(String operation, Exception e) {
+        Status.Code code = statusCode(e);
+        if (code == Status.Code.INVALID_ARGUMENT) {
+            log.error("DoroGuardClient {} rejected as INVALID_ARGUMENT (caller bug, not an outage): {}", operation, e.getMessage());
+            return new DoroGuardInvalidRequestException("Doro Guard 가 요청을 잘못된 입력으로 거부했습니다.", e);
+        }
+        if (isCredentialFailure(code)) {
+            logMisconfigured(operation, code, e);
+            return new DoroGuardMisconfiguredException("Doro Guard 서비스 토큰이 거부되었습니다. 서비스 설정을 확인하세요.", e);
+        }
+        log.error("DoroGuardClient {} failed: {}", operation, e.getMessage());
+        return new DoroGuardUnavailableException("Doro Guard 를 사용할 수 없습니다.", e);
+    }
+
+    private static void logWriteFailure(String operation, Exception e) {
+        Status.Code code = statusCode(e);
+        if (isCredentialFailure(code)) {
+            logMisconfigured(operation, code, e);
+        } else {
+            log.error("DoroGuardClient {} failed: {}", operation, e.getMessage());
+        }
+    }
+
+    private static void logMisconfigured(String operation, Status.Code code, Exception e) {
+        log.error("DoroGuardClient {} was rejected by Guard with {}: the service token is missing, wrong or lacks permission. "
+                + "Check the Guard service token setting (operator configuration error, not an outage): {}", operation, code, e.getMessage());
+    }
+
+    private static boolean isCredentialFailure(Status.Code code) {
+        return code == Status.Code.UNAUTHENTICATED || code == Status.Code.PERMISSION_DENIED;
+    }
+
+    private static Status.Code statusCode(Throwable e) {
+        return Status.fromThrowable(e).getCode();
     }
 
     private String expandInternal(String namespace, String objectId, String relation) {
