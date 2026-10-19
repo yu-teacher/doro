@@ -32,13 +32,24 @@ import {
   Utensils,
   Ban,
   LockOpen,
+  MapPin,
+  Gamepad2,
 } from 'lucide-react';
 import { getErrorMessage } from '../utils/errorUtils';
 import { loginStateFrom } from '../utils/afterLogin';
 import { moderationFor, validateSuspensionReason } from '../utils/adminModeration';
 import { clampPage, pageRangeLabel, totalPages } from '../utils/adminUserList';
-import { getBlogUrl, getMenuUrl } from '../utils/urlUtils';
+import { buildServiceCards, type ServiceIcon } from '../utils/serviceCatalog';
 import { UserRole } from '../types/auth';
+
+/** 연동 서비스 목록의 아이콘·색. 서비스 목록 자체(이름·주소·설명)는 허브와 같은 카탈로그(serviceCatalog)에서 온다. */
+const SERVICE_STYLE: Partial<Record<ServiceIcon, { Icon: React.ComponentType<{ className?: string }>; color: string }>> = {
+  blog: { Icon: BookOpen, color: 'text-emerald-500 bg-emerald-50 border-emerald-100' },
+  party: { Icon: MapPin, color: 'text-sky-500 bg-sky-50 border-sky-100' },
+  games: { Icon: Gamepad2, color: 'text-amber-500 bg-amber-50 border-amber-100' },
+  menu: { Icon: Utensils, color: 'text-pink-500 bg-pink-50 border-pink-100' },
+  logs: { Icon: Terminal, color: 'text-indigo-500 bg-indigo-50 border-indigo-100' },
+};
 
 export const MyAccountPage: React.FC = () => {
   const navigate = useNavigate();
@@ -641,39 +652,18 @@ export const MyAccountPage: React.FC = () => {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {[
-                    {
-                      name: 'DORO.log',
-                      icon: BookOpen,
-                      color: 'text-emerald-500 bg-emerald-50 border-emerald-100',
-                      desc: '개발자를 위한 오픈 기술 블로그 & 엔지니어링 지식 공유',
-                      link: getBlogUrl(),
-                      badge: '공식 서브 서비스',
-                      isExternal: true,
-                    },
-                    {
-                      name: '도로메뉴 (Doro Menu)',
-                      icon: Utensils,
-                      color: 'text-pink-500 bg-pink-50 border-pink-100',
-                      desc: '오늘 뭐 먹지? 위치 기반 메뉴 추천 & 도로롱 뽑기',
-                      link: getMenuUrl(),
-                      badge: '공식 서브 서비스',
-                      isExternal: true,
-                    },
-                    ...(isAdmin
-                      ? [
-                          {
-                            name: 'Doro Ops Logs',
-                            icon: Terminal,
-                            color: 'text-indigo-500 bg-indigo-50 border-indigo-100',
-                            desc: '전체 마이크로서비스 실시간 분산 추적 및 관제 로그',
-                            link: '/logs',
-                            badge: '실시간 관제',
-                            isExternal: false,
-                          },
-                        ]
-                      : []),
-                  ].map((s) => {
+                  {buildServiceCards({ isLoggedIn: true, isAdmin })
+                    .filter((c) => c.group === 'service' || c.id === 'logs')
+                    .map((c) => ({
+                      name: c.name,
+                      icon: SERVICE_STYLE[c.icon]!.Icon,
+                      color: SERVICE_STYLE[c.icon]!.color,
+                      desc: c.desc,
+                      link: c.href,
+                      badge: c.id === 'logs' ? '실시간 관제' : '공식 서브 서비스',
+                      isExternal: !c.internal,
+                    }))
+                    .map((s) => {
                     const Icon = s.icon;
                     return (
                       <div
@@ -1228,24 +1218,17 @@ export const MyAccountPage: React.FC = () => {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {[
-                  {
-                    name: 'DORO.log',
-                    desc: '개발자를 위한 오픈 기술 블로그 & 엔지니어링 아티클',
-                    icon: BookOpen,
-                    color: 'text-emerald-500 bg-emerald-50 border-emerald-100',
-                    link: getBlogUrl(),
-                    badge: 'SSO 연동 완료',
-                  },
-                  {
-                    name: '도로메뉴 (Doro Menu)',
-                    desc: '오늘 뭐 먹지 고민 해결! 위치 기반 추천 & 메뉴 정해주는 도로롱',
-                    icon: Utensils,
-                    color: 'text-pink-500 bg-pink-50 border-pink-100',
-                    link: getMenuUrl(),
+                {buildServiceCards({ isLoggedIn: true, isAdmin })
+                  .filter((c) => c.group === 'service')
+                  .map((c) => ({
+                    name: c.name,
+                    desc: c.desc,
+                    icon: SERVICE_STYLE[c.icon]!.Icon,
+                    color: SERVICE_STYLE[c.icon]!.color,
+                    link: c.href,
                     badge: '공식 서브 서비스',
-                  },
-                ].map((app) => {
+                  }))
+                  .map((app) => {
                   const Icon = app.icon;
                   return (
                     <div key={app.name} className="p-5 bg-white border border-slate-200/80 rounded-2xl flex items-center justify-between hover:border-emerald-300 hover:shadow-xs transition-all">
