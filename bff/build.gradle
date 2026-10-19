@@ -44,6 +44,18 @@ tasks.named('test') {
 	maxHeapSize = '1024m'
 }
 
+// H2 에서만 의미 있는 시험(BffMigrationSchemaValidationTest: 접속 주소가 H2 로 고정이라 PostgreSQL 단계가 제외한다)만 실행한다.
+// CI 는 나머지 H2 시험을 되풀이하지 않는다(testOnPostgres 가 같은 시험을 실제 DB 로 수행). H2 에서만 도는 시험을 새로 만들면 여기에도 넣는다.
+tasks.register('testH2Only', Test) {
+	description = 'H2 에서만 의미 있는 시험만 실행한다(CI 의 H2 단계)'
+	group = 'verification'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform()
+	maxHeapSize = '1024m'
+	filter { includeTestsMatching '*MigrationSchemaValidationTest' }
+}
+
 // auth/guard 와 같은 방식: 같은 테스트를 실제 PostgreSQL(Flyway + ddl-auto=validate)로 다시 실행한다. scripts/ci-test.sh pg 가 호출한다.
 tasks.register('testOnPostgres', Test) {
 	description = 'Runs the whole test suite against a real PostgreSQL (Flyway + ddl-auto=validate)'

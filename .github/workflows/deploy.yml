@@ -35,11 +35,10 @@ jobs:
       - name: 📥 Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
-      - name: 🧪 Backend tests (auth, guard, sdk)
+      # sdk 전체 + H2 에서만 의미 있는 시험 + 실제 PostgreSQL 위의 guard/auth/bff 전체를 한 컨테이너에서(소스 복사·컴파일을 한 번만).
+      # auth/guard/bff 의 나머지 시험은 PostgreSQL 단계가 수행하므로 H2 로 되풀이하지 않는다.
+      - name: 🧪 Backend tests (sdk, H2 전용 시험, 실제 PostgreSQL 위의 guard/auth/bff)
         run: scripts/ci-test.sh backend
-
-      - name: 🐘 Guard/Auth tests on a real PostgreSQL
-        run: scripts/ci-test.sh pg
 
       - name: 🧪 Web tests and type check
         run: scripts/ci-test.sh web

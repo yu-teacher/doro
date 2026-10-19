@@ -2,8 +2,10 @@
 # CI 에서 테스트를 Docker 컨테이너 안에서 실행한다. 러너(운영 서버)에는 Java 21 만 있고 Node 가 없어서,
 # 프로젝트가 요구하는 Java 25 / Node 24 를 컨테이너로 가져온다. 로컬에서도 같은 방식으로 실행할 수 있다.
 #
-#   scripts/ci-test.sh backend   # auth, guard, sdk, bff 전체 테스트 (./gradlew test, H2)
-#   scripts/ci-test.sh pg        # guard, auth, bff 전체 테스트를 실제 PostgreSQL 위에서 (Flyway + ddl-auto=validate)
+#   scripts/ci-test.sh backend       # CI 용: sdk 전체 + H2 에서만 의미 있는 auth/bff 시험 + 실제 PostgreSQL 위의 guard/auth/bff 전체(한 컨테이너)
+#   scripts/ci-test.sh h2            # 위의 H2 단계만(sdk + H2 전용 시험)
+#   scripts/ci-test.sh pg            # 위의 PostgreSQL 단계만: guard, auth, bff 전체를 실제 PostgreSQL 위에서 (Flyway + ddl-auto=validate)
+#   scripts/ci-test.sh backend-full  # auth, guard, sdk, bff 전체를 H2 로(./gradlew test) — 로컬에서 PostgreSQL 없이 전부 돌려 볼 때
 #   scripts/ci-test.sh web       # 웹 의존성 설치 + vitest + 타입 검사 (npm ci / npm test / tsc -b)
 #   scripts/ci-test.sh mobile    # 포털 모바일 레이아웃 회귀 테스트(실제 Chromium, Playwright 공식 이미지). 폰 4가지 크기에서 가로 넘침·터치 영역·입력 글꼴 측정
 #
@@ -28,18 +30,24 @@ LIMITS=(--cpus "${CI_CPUS:-2}" --memory "${CI_MEMORY:-4g}")
 COMMON=(--rm "${LIMITS[@]}" --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$CACHE:/cache")
 
 case "$TARGET" in
-  backend)
-    docker run "${COMMON[@]}" -e GRADLE_USER_HOME=/cache/gradle -v "$ROOT:/src:ro" "$JAVA_IMAGE" sh -ec '
+  h2|backend-full)
+    # h2: sdk 전체 + H2 에서만 의미 있는 auth/bff 시험. backend-full: auth, guard, sdk, bff 전체를 H2 로(로컬에서 PostgreSQL 없이 전부 돌려 볼 때).
+    if [ "$TARGET" = h2 ]; then GRADLE_TASKS=":sdk:test :auth:testH2Only :bff:testH2Only"; else GRADLE_TASKS="test"; fi
+    docker run "${COMMON[@]}" -e GRADLE_USER_HOME=/cache/gradle -e GRADLE_TASKS="$GRADLE_TASKS" -v "$ROOT:/src:ro" "$JAVA_IMAGE" sh -ec '
       # 읽기 전용 소스를 복사한 뒤 산출물/캐시 디렉터리를 지운다 .
       cp -R /src /tmp/work
       cd /tmp/work
       rm -rf .git build auth/build guard/build sdk/build bff/build web/node_modules
-      ./gradlew test --no-daemon --console=plain
+      ./gradlew $GRADLE_TASKS --no-daemon --console=plain
     '
     ;;
-  pg)
+  pg|backend)
     # 일회용 PostgreSQL 을 같은 도커 네트워크에 띄우고, 그 위에서 마이그레이션·엔티티·제약·동시성을 검증한다.
     # (H2 + create-drop 은 PostgreSQL 전용 SQL, FK, 부분 유니크 인덱스, 엔티티-스키마 불일치를 검증하지 못한다)
+    # backend(CI)는 같은 컨테이너에서 H2 단계(sdk + H2 전용 시험)를 먼저 돌리고 이어서 PostgreSQL 단계를 돌린다. 소스 복사와 컴파일을
+    # 한 번만 하고, auth/guard/bff 의 나머지 시험은 PostgreSQL 단계가 수행하므로 H2 로 되풀이하지 않는다.
+    if [ "$TARGET" = backend ]; then H2_TASKS=":sdk:test :auth:testH2Only :bff:testH2Only"; else H2_TASKS=""; fi
+    PG_TASKS=":guard:testOnPostgres :auth:testOnPostgres :bff:testOnPostgres"
     PG_NAME="ci-pg-$$"; PG_NET="ci-net-$$"; PG_PASSWORD="ci-only-$$"
     cleanup_pg() { docker rm -f "$PG_NAME" >/dev/null 2>&1 || true; docker network rm "$PG_NET" >/dev/null 2>&1 || true; }
     trap cleanup_pg EXIT
@@ -50,13 +58,13 @@ case "$TARGET" in
     for module in guard auth bff; do
       docker exec "$PG_NAME" psql -U postgres -qc "CREATE SCHEMA suite_$module;"
     done
-    docker run "${COMMON[@]}" --network "$PG_NET" -e GRADLE_USER_HOME=/cache/gradle \
-      -e TEST_PG_URL="jdbc:postgresql://$PG_NAME:5432/postgres" -e TEST_PG_USER=postgres -e TEST_PG_PASSWORD="$PG_PASSWORD" \
-      -v "$ROOT:/src:ro" "$JAVA_IMAGE" sh -ec '
+    docker run "${COMMON[@]}" --network "$PG_NET" -e GRADLE_USER_HOME=/cache/gradle       -e H2_TASKS="$H2_TASKS" -e PG_TASKS="$PG_TASKS"       -e TEST_PG_URL="jdbc:postgresql://$PG_NAME:5432/postgres" -e TEST_PG_USER=postgres -e TEST_PG_PASSWORD="$PG_PASSWORD"       -v "$ROOT:/src:ro" "$JAVA_IMAGE" sh -ec '
       cp -R /src /tmp/work
       cd /tmp/work
       rm -rf .git build auth/build guard/build sdk/build bff/build web/node_modules
-      ./gradlew :guard:testOnPostgres :auth:testOnPostgres :bff:testOnPostgres --no-daemon --console=plain
+      # H2 단계에는 TEST_PG_URL 을 넘기지 않는다(그 값이 있으면 PostgreSQL 에서 비활성인 시험이 건너뛰어진다).
+      if [ -n "$H2_TASKS" ]; then env -u TEST_PG_URL ./gradlew $H2_TASKS --no-daemon --console=plain; fi
+      ./gradlew $PG_TASKS --no-daemon --console=plain
     '
     ;;
   web)
@@ -81,7 +89,7 @@ case "$TARGET" in
     '
     ;;
   *)
-    echo "사용법: scripts/ci-test.sh backend|pg|web|mobile" >&2
+    echo "사용법: scripts/ci-test.sh backend|h2|pg|backend-full|web|mobile" >&2
     exit 2
     ;;
 esac
