@@ -54,3 +54,36 @@ export function buildServiceCards({ isLoggedIn, isAdmin }: CatalogOptions): Serv
   }
   return cards;
 }
+
+/** 앱 목록(헤더의 9개 점)이 쓰는 아이콘 이름. 허브로 돌아가는 "home" 이 더해진다. */
+export type LauncherIcon = ServiceIcon | 'home';
+
+export interface LauncherApp {
+  id: string;
+  name: string;
+  desc: string;
+  icon: LauncherIcon;
+  href: string;
+  /** true 면 같은 포털 안의 화면(라우터 이동), false 면 다른 서비스나 외부 문서(전체 페이지 이동) */
+  internal: boolean;
+}
+
+/**
+ * 헤더 앱 목록에 보여줄 항목. 맨 앞은 메인(허브)이라 어느 화면에서든 서비스 전체로 돌아갈 수 있고,
+ * 서비스 주소는 허브와 같은 곳(urlUtils)에서 가져온다. 문서 URL 은 환경변수로만 주입되며 비어 있으면 숨긴다.
+ */
+export function buildLauncherApps({ isAdmin }: { isAdmin: boolean }): LauncherApp[] {
+  const apps: LauncherApp[] = [
+    { id: 'hub', name: 'Doro 홈', desc: '모든 서비스 한눈에', icon: 'home', href: '/', internal: true },
+    { id: 'blog', name: 'DORO.log', desc: '개발자 오픈 기술 블로그', icon: 'blog', href: getBlogUrl(), internal: false },
+    { id: 'party', name: '도로 파티', desc: '친구들과 지도에 핀 모으기', icon: 'party', href: getPartyUrl(), internal: false },
+    { id: 'games', name: '도로 게임 천국', desc: '웹 미니게임', icon: 'games', href: getGamesUrl(), internal: false },
+    { id: 'menu', name: '도로메뉴', desc: '메뉴 정해주는 도로롱', icon: 'menu', href: getMenuUrl(), internal: false },
+  ];
+  if (isAdmin) {
+    const guardDocs = getGuardDocsUrl();
+    if (guardDocs) apps.push({ id: 'guard-docs', name: 'Doro Guard', desc: 'Zanzibar ReBAC API', icon: 'guard', href: guardDocs, internal: false });
+    apps.push({ id: 'logs', name: 'Doro Ops Logs', desc: '시스템 관제 로그', icon: 'logs', href: '/logs', internal: true });
+  }
+  return apps;
+}

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { loginStateFrom } from '../../utils/afterLogin';
 import { useAuthStore } from '../../store/authStore';
-import { Shield, Grid, User, Terminal } from 'lucide-react';
+import { Shield, Grid, User, Terminal, Home } from 'lucide-react';
 import { AppLauncherModal } from './AppLauncherModal';
 import { AccountSwitcherModal } from './AccountSwitcherModal';
 import { AddAccountModal } from './AddAccountModal';
@@ -20,6 +20,8 @@ export const Header: React.FC = () => {
   const isAdmin = activeAccount?.role === 'ADMIN' || activeAccount?.role === 'SUPER_ADMIN';
 
   const isAuthPage = location.pathname === '/login' || location.pathname === '/signup';
+  // 메인(허브)에 있을 때는 돌아갈 곳이 없으므로 홈 버튼을 숨긴다
+  const isHub = location.pathname === '/' || location.pathname === '/portal';
 
   const handleLogoClick = () => {
     if (activeAccount) {
@@ -63,6 +65,19 @@ export const Header: React.FC = () => {
               >
                 <Terminal className="w-4 h-4" />
                 <span className="hidden sm:inline">시스템 로그</span>
+              </button>
+            )}
+
+            {/* 메인(허브)으로 돌아가기: 로그인·가입·계정·로그 어느 화면에서든 서비스 전체로 갈 수 있다 */}
+            {!isHub && (
+              <button
+                onClick={() => navigate('/')}
+                title="Doro 메인으로"
+                aria-label="Doro 메인으로"
+                className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <Home className="w-4 h-4" />
+                <span className="hidden sm:inline">메인</span>
               </button>
             )}
 

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { buildServiceCards } from './serviceCatalog';
+import { buildLauncherApps, buildServiceCards } from './serviceCatalog';
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -80,5 +80,35 @@ describe('buildServiceCards', () => {
     const byId = Object.fromEntries(buildServiceCards({ isLoggedIn: false, isAdmin: false }).map((c) => [c.id, c.href]));
     expect(byId.party).toBe('https://party.example.com/');
     expect(byId.games).toBe('https://games.example.com/');
+  });
+});
+
+describe('buildLauncherApps (헤더 앱 목록)', () => {
+  it('맨 앞이 메인(허브)이라 어느 화면에서든 돌아갈 수 있고, 일반 사용자는 서비스 4개가 이어진다', () => {
+    const apps = buildLauncherApps({ isAdmin: false });
+    expect(ids(apps)).toEqual(['hub', 'blog', 'party', 'games', 'menu']);
+    const hub = apps[0];
+    expect(hub.href).toBe('/');
+    expect(hub.internal).toBe(true);
+  });
+
+  it('서비스 주소는 허브 카드와 같다(한곳에서만 가져온다)', () => {
+    const fromHub = Object.fromEntries(buildServiceCards({ isLoggedIn: false, isAdmin: false }).map((c) => [c.id, c.href]));
+    const fromLauncher = Object.fromEntries(buildLauncherApps({ isAdmin: false }).map((a) => [a.id, a.href]));
+    for (const id of ['blog', 'party', 'games', 'menu']) expect(fromLauncher[id]).toBe(fromHub[id]);
+  });
+
+  it('관리자에게만 로그(내부)와 문서(주입된 경우)가 더해진다', () => {
+    vi.stubEnv('VITE_GUARD_DOCS_URL', 'https://guard.example.com/docs');
+    expect(ids(buildLauncherApps({ isAdmin: false }))).not.toContain('logs');
+    const admin = buildLauncherApps({ isAdmin: true });
+    expect(ids(admin)).toEqual(['hub', 'blog', 'party', 'games', 'menu', 'guard-docs', 'logs']);
+    expect(admin.find((a) => a.id === 'logs')!.internal).toBe(true);
+    expect(admin.find((a) => a.id === 'guard-docs')!.internal).toBe(false);
+  });
+
+  it('문서 URL 이 없으면 Guard 문서 항목은 숨긴다', () => {
+    vi.stubEnv('VITE_GUARD_DOCS_URL', '');
+    expect(ids(buildLauncherApps({ isAdmin: true }))).toEqual(['hub', 'blog', 'party', 'games', 'menu', 'logs']);
   });
 });
