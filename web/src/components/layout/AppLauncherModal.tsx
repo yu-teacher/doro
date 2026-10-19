@@ -1,13 +1,27 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
-import { BookOpen, Shield, Terminal, ExternalLink, X, Utensils } from 'lucide-react';
-import { getBlogUrl, getGuardDocsUrl, getIamDocsUrl, getMenuUrl } from '../../utils/urlUtils';
+import { BookOpen, Shield, Terminal, ExternalLink, X, Utensils, Home, MapPin, Gamepad2 } from 'lucide-react';
+import { getIamDocsUrl } from '../../utils/urlUtils';
+import { buildLauncherApps, type LauncherIcon } from '../../utils/serviceCatalog';
 import { trackEvent } from '../../utils/analytics';
 
 interface AppLauncherModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
+
+const ICONS: Record<LauncherIcon, { Icon: React.ComponentType<{ className?: string }>; color: string }> = {
+  home: { Icon: Home, color: 'text-indigo-500 bg-indigo-50' },
+  blog: { Icon: BookOpen, color: 'text-emerald-500 bg-emerald-50' },
+  party: { Icon: MapPin, color: 'text-sky-500 bg-sky-50' },
+  games: { Icon: Gamepad2, color: 'text-amber-500 bg-amber-50' },
+  menu: { Icon: Utensils, color: 'text-pink-500 bg-pink-50' },
+  account: { Icon: Shield, color: 'text-indigo-500 bg-indigo-50' },
+  iam: { Icon: Shield, color: 'text-indigo-500 bg-indigo-50' },
+  guard: { Icon: Shield, color: 'text-indigo-500 bg-indigo-50' },
+  logs: { Icon: Terminal, color: 'text-indigo-500 bg-indigo-50' },
+};
 
 export const AppLauncherModal: React.FC<AppLauncherModalProps> = ({ isOpen, onClose }) => {
   const { accounts, activeAccountIndex } = useAuthStore();
@@ -16,35 +30,8 @@ export const AppLauncherModal: React.FC<AppLauncherModalProps> = ({ isOpen, onCl
 
   if (!isOpen) return null;
 
-  const baseApps = [
-    {
-      name: 'DORO.log',
-      desc: '개발자 오픈 기술 블로그',
-      icon: BookOpen,
-      color: 'text-emerald-500 bg-emerald-50',
-      link: getBlogUrl(),
-    },
-    {
-      name: '도로메뉴',
-      desc: '메뉴 정해주는 도로롱',
-      icon: Utensils,
-      color: 'text-pink-500 bg-pink-50',
-      link: getMenuUrl(),
-    },
-  ];
-
-  // 문서 URL 은 환경변수(VITE_GUARD_DOCS_URL / VITE_IAM_DOCS_URL)로만 주입하며, 미설정이면 항목을 숨긴다.
-  const guardDocsUrl = getGuardDocsUrl();
   const iamDocsUrl = getIamDocsUrl();
-
-  const adminApps = [
-    ...(guardDocsUrl
-      ? [{ name: 'Doro Guard', desc: 'Zanzibar ReBAC API', icon: Shield, color: 'text-indigo-500 bg-indigo-50', link: guardDocsUrl }]
-      : []),
-    { name: 'Doro Ops Logs', desc: '시스템 관제 로그', icon: Terminal, color: 'text-indigo-500 bg-indigo-50', link: '/logs' },
-  ];
-
-  const apps = isAdmin ? [...baseApps, ...adminApps] : baseApps;
+  const apps = buildLauncherApps({ isAdmin });
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-end p-4 sm:p-6" onClick={onClose}>
@@ -61,26 +48,29 @@ export const AppLauncherModal: React.FC<AppLauncherModalProps> = ({ isOpen, onCl
 
         <div className={`grid ${apps.length === 1 ? 'grid-cols-1' : apps.length <= 4 ? 'grid-cols-2' : 'grid-cols-3'} gap-3 pt-4`}>
           {apps.map((app) => {
-            const Icon = app.icon;
-            return (
-              <a
-                key={app.name}
-                href={app.link}
-                target={app.link.startsWith('http') ? '_blank' : '_self'}
-                rel="noreferrer"
-                onClick={() => {
-                  trackEvent('service_launch', {
-                    service_name: app.name,
-                    destination: app.link,
-                  });
-                }}
-                className="group flex flex-col items-center justify-center p-3 rounded-2xl hover:bg-slate-50 transition-all hover:scale-105 text-center"
-              >
-                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${app.color} mb-2 shadow-xs group-hover:shadow-md transition-shadow`}>
+            const { Icon, color } = ICONS[app.icon];
+            const track = () => {
+              trackEvent('service_launch', { service_name: app.name, destination: app.href });
+              if (app.internal) onClose();
+            };
+            const body = (
+              <>
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${color} mb-2 shadow-xs group-hover:shadow-md transition-shadow`}>
                   <Icon className="w-6 h-6" />
                 </div>
                 <span className="text-xs font-semibold text-slate-700 leading-tight group-hover:text-indigo-600">{app.name}</span>
                 <span className="text-[10px] text-slate-400 mt-0.5 line-clamp-1">{app.desc}</span>
+              </>
+            );
+            const cls = 'group flex flex-col items-center justify-center p-3 rounded-2xl hover:bg-slate-50 transition-all hover:scale-105 text-center';
+            // 포털 안의 화면은 라우터로(새로고침 없이), 다른 서비스·외부 문서는 전체 페이지 이동
+            return app.internal ? (
+              <Link key={app.id} to={app.href} onClick={track} className={cls}>
+                {body}
+              </Link>
+            ) : (
+              <a key={app.id} href={app.href} target={app.href.startsWith('http') ? '_blank' : '_self'} rel="noreferrer" onClick={track} className={cls}>
+                {body}
               </a>
             );
           })}
