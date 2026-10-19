@@ -70,7 +70,9 @@ restore() {
     log "$svc: 이미지를 ${id:7:12} 로 되돌린다(지금 ${cur:7:12})"
   done < "$STATE"
   if [ "${#changed[@]}" -eq 0 ]; then log "되돌릴 서비스가 없다"; return 0; fi
-  docker compose up -d --no-build --no-deps "${changed[@]}"
+  # 이름을 이전 이미지로 되돌린 서비스는 컨테이너를 반드시 새로 만든다. compose 가 "설정이 같다"고 보고 실행 중인 컨테이너를 그대로 두는 환경이 있어
+  # (GitHub 호스팅 러너의 Docker 에서 복원 시험이 실패했다), 복원이 조용히 아무것도 안 하면 안 된다.
+  docker compose up -d --no-build --no-deps --force-recreate "${changed[@]}"
   local bad=0 cid
   for svc in "${changed[@]}"; do
     cid="$(container_of "$svc")"
