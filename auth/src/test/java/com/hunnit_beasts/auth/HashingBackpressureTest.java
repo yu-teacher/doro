@@ -29,9 +29,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 해싱 자리가 없어 거절(SERVER_BUSY)된 로그인은 "비밀번호가 틀렸다"가 아니다.
  * 실패 횟수에 합산되면, 폭주 때 정상 사용자가 5번 거절당해 계정이 잠기는 사고가 난다.
  */
+// 혼잡 거절은 해싱이 실제로 오래 걸려 요청이 겹칠 때만 일어난다. 테스트 프로필의 낮은 비용으로는 겹치지 않아 결과가 시간에 좌우되므로
+// 이 시험은 운영 비용(64MB·3회)으로 고정한다.
 @SpringBootTest(properties = {
         "doro.iam.password-hash.max-concurrency=1",
-        "doro.iam.password-hash.max-queue=0"
+        "doro.iam.password-hash.max-queue=0",
+        "doro.iam.password-hash.memory-kb=65536",
+        "doro.iam.password-hash.iterations=3"
 })
 @ActiveProfiles("test")
 class HashingBackpressureTest {

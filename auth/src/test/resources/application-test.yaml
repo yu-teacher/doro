@@ -41,6 +41,11 @@ doro:
       refresh-token-validity-seconds: 2592000
       # 테스트에는 Redis 가 없어도 기동해야 한다(운영은 기본값 true 로 키를 읽지 못하면 기동을 중단한다)
       fail-on-key-store-error: false
+    # 테스트가 가입·로그인마다 Argon2 해시를 실제로 수행해 스위트의 대부분을 차지했다. 테스트에서만 비용을 낮춘다(운영 기본값 64MB·3회는 그대로).
+    # 운영 값의 동작은 CustomArgon2PasswordEncoder*Test(생성자로 기본값 사용)가 검증한다.
+    password-hash:
+      memory-kb: 1024
+      iterations: 1
     rate-limit:
       enabled: false
     session:
