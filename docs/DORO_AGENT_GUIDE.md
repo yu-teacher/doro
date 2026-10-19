@@ -551,7 +551,7 @@ curl -s -o /dev/null -w '%{http_code}\n' \
 
 ## 13. 운영 참고
 
-- **CI/CD** (`.github/workflows/deploy.yml`): `main` 푸시 시 **테스트 → 배포** 순서다. `test` 작업이 `scripts/ci-test.sh backend`(auth·guard·sdk `./gradlew test`, `gradle:9.5.1-jdk25` 컨테이너)와 `scripts/ci-test.sh web`(`npm ci`, `npm test`, `tsc -b`)을 컨테이너 안에서 실행하고, 통과해야 `deploy` 작업이 돈다. 수동 실행(`workflow_dispatch`)의 `skip_tests` 로 건너뛸 수 있고 배포는 동시에 하나씩만 실행된다.
+- **CI/CD** (`.github/workflows/deploy.yml`): `main` 푸시 시 **테스트 → 배포** 순서다. `test` 작업이 `scripts/ci-test.sh backend`(sdk 전체 + H2 에서만 의미 있는 시험 + 실제 PostgreSQL 위의 guard·auth·bff 전체를 한 `gradle:9.5.1-jdk25` 컨테이너에서; 같은 시험을 H2 로 되풀이하지 않는다. 로컬에서 H2 로 전부 돌리려면 `backend-full`)와 `scripts/ci-test.sh web`(`npm ci`, `npm test`, `tsc -b`)을 컨테이너 안에서 실행하고, 통과해야 `deploy` 작업이 돈다. 수동 실행(`workflow_dispatch`)의 `skip_tests` 로 건너뛸 수 있고 배포는 동시에 하나씩만 실행된다.
 - **게이트웨이 설정**은 CI 로 갱신되지 않는다: 수동 반영 후 `nginx -t` → reload(상세는 `docs/GATEWAY_ROUTING_RULES.md`). 보안 헤더와 **CSP 는 강제**(`Content-Security-Policy`) 상태이며 위반은 `POST /csp-report` 로 수집된다.
 - **Guard 서비스 토큰 운영 스크립트**: `scripts/set-guard-mode.sh`(OFF/WARN/ENFORCE 전환, 검증·자동 복구), `scripts/split-guard-tokens.sh`(공유 토큰 → 호출자별 토큰: `--check` → `--apply` → `--finalize`, 되돌리기 `--rollback`, 권한 부여 `--scopes`).
 - **자격증명**: compose 는 `POSTGRES_PASSWORD` 가 없으면 기동을 거부한다. 교체 절차는 `scripts/rotate-credentials.sh`.
