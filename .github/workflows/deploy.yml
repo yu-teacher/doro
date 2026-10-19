@@ -3,6 +3,9 @@ name: 🚀 DORO CI/CD Deploy to Mini Server
 on:
   push:
     branches: [ "main" ]
+  # 풀 리퀘스트에서는 테스트만 돈다(배포·알림은 건너뜀). 신뢰할 수 없는 코드가 셀프호스티드 러너에서 돌지 않도록
+  # PR 의 테스트는 항상 GitHub 호스팅 러너에서 실행한다.
+  pull_request:
   workflow_dispatch:
     inputs:
       skip_tests:
@@ -16,18 +19,20 @@ permissions:
 
 # 배포가 겹치면 같은 컨테이너/이미지를 동시에 건드리므로 순서대로 하나씩 실행한다.
 # 그룹 이름을 바꾼 이유: 이전 그룹(doro-deploy)의 실행 #45 가 취소도 완료도 되지 않은 채 대기 상태로 남아 뒤의 모든 실행을 막았다(2026-10-08).
+# PR 테스트는 배포 줄에 끼지 않도록 PR 별로 따로 두고, 새 커밋이 오면 이전 실행을 취소한다.
 concurrency:
-  group: doro-deploy-v2
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'pull_request' && format('doro-pr-{0}', github.event.pull_request.number) || 'doro-deploy-v2' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # 테스트가 통과해야 배포한다. 러너에는 Java 25/Node 가 없어서 Docker 컨테이너 안에서 실행한다 (scripts/ci-test.sh).
-  # 운영 서비스와 같은 호스트이므로 CPU/메모리를 제한한다.
-  test:
-    name: Test (backend + web)
-    # 기본은 mini 러너. 저장소 변수 TEST_RUNS_ON(예: ["self-hosted","notebook"])을 설정하면 테스트만 다른 러너(노트북)에서 실행한다.
-    # 배포(deploy)는 항상 mini 에서 한다. 노트북이 꺼져 있어 테스트가 대기하면 변수를 지우거나 수동 실행의 skip_tests 를 쓴다.
-    runs-on: ${{ fromJSON(vars.TEST_RUNS_ON || '["self-hosted","mini"]') }}
+  # 서로 독립인 세 작업(백엔드 / 웹·모바일 / 스크립트)을 병렬로 돌린다. 한 러너에는 작업이 하나씩만 배정되므로 병렬 효과는 러너가 여러 개일 때 생긴다:
+  # 저장소 변수 TEST_RUNS_ON 을 ["ubuntu-latest"](GitHub 호스팅, 공개 저장소는 무료)로 두면 세 작업이 동시에 돈다.
+  # 셀프호스티드(예: ["self-hosted","notebook"])로 두면 한 러너에서 차례로 돈다(예전과 같다). 비우면 mini 러너.
+  # 배포(deploy)는 항상 mini 에서 한다. 노트북이 꺼져 있어 테스트가 대기하면 변수를 지우거나 수동 실행의 skip_tests 를 쓴다.
+  test-backend:
+    name: Test (backend)
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON(vars.TEST_RUNS_ON || '["self-hosted","mini"]') }}
     if: ${{ !inputs.skip_tests }}
     timeout-minutes: 30
 
@@ -35,10 +40,38 @@ jobs:
       - name: 📥 Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
+      # GitHub 호스팅 러너는 실행마다 비어 있으므로 Gradle/npm 캐시(ci-test.sh 가 ~/.cache/doro-ci 에 둔다)를 저장·복원한다. 셀프호스티드는 디스크에 남아 있어 필요 없다.
+      - name: 💾 Restore Gradle/npm cache (GitHub-hosted only)
+        if: ${{ runner.environment == 'github-hosted' }}
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: ~/.cache/doro-ci
+          key: doro-ci-backend-${{ hashFiles('**/*.gradle', 'gradle/wrapper/gradle-wrapper.properties', 'web/package-lock.json') }}
+          restore-keys: doro-ci-backend-
+
       # sdk 전체 + H2 에서만 의미 있는 시험 + 실제 PostgreSQL 위의 guard/auth/bff 전체를 한 컨테이너에서(소스 복사·컴파일을 한 번만).
       # auth/guard/bff 의 나머지 시험은 PostgreSQL 단계가 수행하므로 H2 로 되풀이하지 않는다.
       - name: 🧪 Backend tests (sdk, H2 전용 시험, 실제 PostgreSQL 위의 guard/auth/bff)
         run: scripts/ci-test.sh backend
+
+  test-web:
+    name: Test (web + mobile)
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON(vars.TEST_RUNS_ON || '["self-hosted","mini"]') }}
+    if: ${{ !inputs.skip_tests }}
+    timeout-minutes: 30
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      # GitHub 호스팅 러너는 실행마다 비어 있으므로 Gradle/npm 캐시(ci-test.sh 가 ~/.cache/doro-ci 에 둔다)를 저장·복원한다. 셀프호스티드는 디스크에 남아 있어 필요 없다.
+      - name: 💾 Restore Gradle/npm cache (GitHub-hosted only)
+        if: ${{ runner.environment == 'github-hosted' }}
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: ~/.cache/doro-ci
+          key: doro-ci-web-${{ hashFiles('**/*.gradle', 'gradle/wrapper/gradle-wrapper.properties', 'web/package-lock.json') }}
+          restore-keys: doro-ci-web-
 
       - name: 🧪 Web tests and type check
         run: scripts/ci-test.sh web
@@ -47,6 +80,16 @@ jobs:
       # Playwright 공식 이미지를 쓰며 첫 실행은 이미지를 받느라 오래 걸린다.
       - name: 📱 Mobile layout regression tests (portal)
         run: scripts/ci-test.sh mobile
+
+  test-scripts:
+    name: Test (scripts)
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON(vars.TEST_RUNS_ON || '["self-hosted","mini"]') }}
+    if: ${{ !inputs.skip_tests }}
+    timeout-minutes: 30
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: 🧪 Service worker precache check tests
         run: scripts/test-check-sw-precache.sh
@@ -70,10 +113,10 @@ jobs:
 
   deploy:
     name: Build & Deploy on Mini Server
-    needs: test
-    # test 가 성공했거나(또는 수동 실행에서 의도적으로 건너뛴 경우)에만 배포한다. 실패/취소면 배포하지 않는다.
+    needs: [test-backend, test-web, test-scripts]
+    # 테스트 작업이 모두 성공했거나(또는 수동 실행에서 의도적으로 건너뛴 경우)에만 배포한다. 하나라도 실패/취소면 배포하지 않는다. PR 에서는 배포하지 않는다.
     # always() 를 쓰면 취소 요청이 와도 이 작업이 계속 대기·실행되어 Cancel workflow 가 먹지 않는다. !cancelled() 는 같은 조건에서 취소를 존중한다.
-    if: ${{ !cancelled() && (needs.test.result == 'success' || needs.test.result == 'skipped') }}
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
     # 운영 서버(mini)에서만 배포한다. 다른 셀프호스티드 러너(노트북 등)가 이 작업을 가져가지 않도록 mini 라벨을 명시한다.
     runs-on: [self-hosted, mini]
     # 멈춘 배포가 기본 한도(360분) 동안 뒤의 모든 배포를 막지 않게 한다(2026-10-08 사고). 정상 배포는 이미지 빌드 포함 10분 안팎이다.
@@ -206,8 +249,8 @@ jobs:
   # 없으면 알림만 건너뛴다. 알림 실패가 배포 결과를 바꾸지 않는다. 커밋 메시지는 env 로만 받아 셸에 끼워 넣지 않는다.
   notify:
     name: Telegram notification
-    needs: [test, deploy]
-    if: ${{ !cancelled() }}
+    needs: [test-backend, test-web, test-scripts, deploy]
+    if: ${{ !cancelled() && github.event_name != 'pull_request' }}
     runs-on: [self-hosted, mini]
     timeout-minutes: 5
     steps:
@@ -216,11 +259,23 @@ jobs:
 
       - name: 📨 Send deploy result
         env:
-          TEST_RESULT: ${{ needs.test.result }}
+          TEST_BACKEND: ${{ needs.test-backend.result }}
+          TEST_WEB: ${{ needs.test-web.result }}
+          TEST_SCRIPTS: ${{ needs.test-scripts.result }}
           DEPLOY_RESULT: ${{ needs.deploy.result }}
           SMOKE: ${{ needs.deploy.outputs.smoke }}
           SHA: ${{ github.sha }}
           COMMIT_MSG: ${{ github.event.head_commit.message }}
           ACTOR: ${{ github.actor }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: scripts/format-deploy-message.sh | scripts/notify-telegram.sh
+        run: |
+          # 테스트 세 작업의 결과를 하나로: 하나라도 실패면 failure, 취소면 cancelled, 모두 건너뜀이면 skipped, 그 외 success
+          results=" $TEST_BACKEND $TEST_WEB $TEST_SCRIPTS "
+          case "$results" in
+            *" failure "*) TEST_RESULT=failure ;;
+            *" cancelled "*) TEST_RESULT=cancelled ;;
+            " skipped skipped skipped ") TEST_RESULT=skipped ;;
+            *) TEST_RESULT=success ;;
+          esac
+          export TEST_RESULT
+          scripts/format-deploy-message.sh | scripts/notify-telegram.sh
