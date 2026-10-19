@@ -11,7 +11,7 @@
 #
 # - 저장소는 읽기 전용으로 마운트하고 컨테이너 안의 임시 디렉터리로 복사해서 빌드한다. 호스트 작업 디렉터리에
 #   build/, node_modules 가 남지 않는다(배포 단계의 docker 빌드 컨텍스트와 actions/checkout 청소를 방해하지 않음).
-# - 같은 호스트에서 운영 서비스가 돌아가므로 CPU/메모리를 제한한다 (CI_CPUS, CI_MEMORY 로 조정).
+# - 같은 호스트에서 운영 서비스가 돌아갈 수 있으므로 셀프호스티드에서는 CPU/메모리를 제한한다 (기본 2 CPU·4GB, CI_CPUS, CI_MEMORY 로 조정). GitHub 호스팅 러너는 전용 VM 이라 CPU 전부·10GB.
 # - Gradle/npm 캐시는 $CI_CACHE_DIR(기본 ~/.cache/doro-ci)에 남겨 두 번째 실행부터 빠르다.
 set -Eeuo pipefail
 
@@ -25,7 +25,14 @@ NODE_IMAGE="${CI_NODE_IMAGE:-node:24-alpine}"
 PLAYWRIGHT_IMAGE="${CI_PLAYWRIGHT_IMAGE:-mcr.microsoft.com/playwright:v1.64.0-noble}"
 
 mkdir -p "$CACHE/gradle" "$CACHE/npm"
-LIMITS=(--cpus "${CI_CPUS:-2}" --memory "${CI_MEMORY:-4g}")
+# GitHub 호스팅 러너(RUNNER_ENVIRONMENT=github-hosted)는 이 작업 전용 VM(4 vCPU/16GB)이라 운영 서비스를 걱정할 필요가 없어 CPU 를 모두, 메모리를 10GB 까지 쓴다.
+# 운영 서버와 같은 호스트일 수 있는 셀프호스티드는 기존 제한(2 CPU, 4GB)을 유지한다. CI_CPUS/CI_MEMORY 로 둘 다 덮어쓸 수 있다.
+if [ "${RUNNER_ENVIRONMENT:-}" = github-hosted ]; then
+  DEFAULT_CPUS="$(nproc 2>/dev/null || echo 2)"; DEFAULT_MEMORY=10g
+else
+  DEFAULT_CPUS=2; DEFAULT_MEMORY=4g
+fi
+LIMITS=(--cpus "${CI_CPUS:-$DEFAULT_CPUS}" --memory "${CI_MEMORY:-$DEFAULT_MEMORY}")
 # 호스트 사용자로 실행해 캐시/산출물이 root 소유가 되지 않게 한다.
 COMMON=(--rm "${LIMITS[@]}" --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$CACHE:/cache")
 
