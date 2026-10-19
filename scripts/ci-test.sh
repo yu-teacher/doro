@@ -53,8 +53,10 @@ case "$TARGET" in
     trap cleanup_pg EXIT
     docker network create "$PG_NET" >/dev/null
     docker run -d --name "$PG_NAME" --network "$PG_NET" -e POSTGRES_PASSWORD="$PG_PASSWORD" postgres:16-alpine >/dev/null
-    for _ in $(seq 1 30); do docker exec "$PG_NAME" pg_isready -U postgres >/dev/null 2>&1 && break; sleep 1; done
-    docker exec "$PG_NAME" pg_isready -U postgres >/dev/null || { echo "PostgreSQL 이 기동되지 않았다" >&2; exit 1; }
+    # pg_isready(유닉스 소켓)는 이미지가 초기화하는 동안 잠깐 뜨는 임시 서버에도 성공한다. 그 서버는 곧 내려가고 본 서버가 다시 뜨므로, 그 사이에 스키마를
+    # 만들면 "No such file or directory" 로 실패한다(GitHub 호스팅 러너에서 실제로 났다). 임시 서버는 TCP 를 열지 않으므로 TCP(127.0.0.1)로 질의가 되는지로 기다린다.
+    for _ in $(seq 1 60); do docker exec "$PG_NAME" psql -h 127.0.0.1 -U postgres -tAc 'select 1' >/dev/null 2>&1 && break; sleep 1; done
+    docker exec "$PG_NAME" psql -h 127.0.0.1 -U postgres -tAc 'select 1' >/dev/null || { echo "PostgreSQL 이 기동되지 않았다" >&2; exit 1; }
     for module in guard auth bff; do
       docker exec "$PG_NAME" psql -U postgres -qc "CREATE SCHEMA suite_$module;"
     done
