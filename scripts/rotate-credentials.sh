@@ -117,7 +117,13 @@ printf "ALTER USER %s PASSWORD '%s';\n" "$PG_USER" "$NEW_PG" \
 log "== 4. .env 갱신 =="
 sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$NEW_PG|" "$DORO_DIR/.env"
 BLOG_ENV="$BLOG_DIR/.env"
-if grep -q '^DB_PASSWORD=' "$BLOG_ENV"; then sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=$NEW_PG|" "$BLOG_ENV"; else printf 'DB_PASSWORD=%s\n' "$NEW_PG" >> "$BLOG_ENV"; fi
+# 블로그가 서비스 전용 계정(scripts/split-db-accounts.sh)으로 전환했다면 그 비밀번호는 doro_admin 과 별개이므로 건드리지 않는다.
+BLOG_DB_USER="$(grep -m1 '^DB_USER=' "$BLOG_ENV" | cut -d= -f2- || true)"
+if [ -z "$BLOG_DB_USER" ] || [ "$BLOG_DB_USER" = "$PG_USER" ]; then
+  if grep -q '^DB_PASSWORD=' "$BLOG_ENV"; then sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=$NEW_PG|" "$BLOG_ENV"; else printf 'DB_PASSWORD=%s\n' "$NEW_PG" >> "$BLOG_ENV"; fi
+else
+  log "블로그는 전용 계정($BLOG_DB_USER)이라 DB_PASSWORD 는 그대로 둔다"
+fi
 if grep -q '^MINIO_ROOT_PASSWORD=' "$BLOG_ENV"; then sed -i "s|^MINIO_ROOT_PASSWORD=.*|MINIO_ROOT_PASSWORD=$NEW_MINIO|" "$BLOG_ENV"; else printf 'MINIO_ROOT_PASSWORD=%s\n' "$NEW_MINIO" >> "$BLOG_ENV"; fi
 chmod 600 "$DORO_DIR/.env" "$BLOG_ENV"
 
