@@ -30,13 +30,16 @@ class DoroGuardClientExpandTest {
 
     private Server server;
     private DoroGuardClient client;
+    private ManagedChannel channel;
     private final AtomicReference<ExpandRequest> seenRequest = new AtomicReference<>();
     private final AtomicReference<String> seenToken = new AtomicReference<>();
 
     @AfterEach
     void tearDown() {
-        if (client != null) {
-            client.shutdown();
+        // 채널을 바로 닫는다. DoroGuardClient.shutdown() 은 채널이 끝나길 최대 2초 기다리는데, 서버가 살아 있는 인프로세스 채널은
+        // 그 시간을 항상 채운다(테스트마다 2초). 서버를 먼저 내리면 gRPC 버전이 섞여 있어 NoSuchMethodError 가 난다(백로그 참고).
+        if (channel != null) {
+            channel.shutdownNow();
         }
         if (server != null) {
             server.shutdownNow();
@@ -69,7 +72,7 @@ class DoroGuardClientExpandTest {
                 })
                 .build()
                 .start();
-        ManagedChannel channel = InProcessChannelBuilder.forName(name).directExecutor().build();
+        channel = InProcessChannelBuilder.forName(name).directExecutor().build();
         client = new DoroGuardClient(channel, 3, serviceToken);
     }
 

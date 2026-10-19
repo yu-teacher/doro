@@ -6,6 +6,7 @@ import com.hunnit_beasts.doro.sdk.domain.DoroUserContext;
 import com.hunnit_beasts.doro.sdk.exception.DoroAccessDeniedException;
 import com.hunnit_beasts.doro.sdk.exception.DoroGuardUnavailableException;
 import com.hunnit_beasts.doro.sdk.exception.DoroGuardWriteFailedException;
+import io.grpc.inprocess.InProcessChannelBuilder;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -56,7 +57,10 @@ class DoroExceptionHandlerAdviceTest {
     @Test
     @DisplayName("OrThrow 변형: Guard 에 접속할 수 없으면 거부(false)가 아니라 예외로 구분된다")
     void orThrowVariantsSurfaceOutage() {
-        DoroGuardClient unreachable = new DoroGuardClient("localhost", 59998, 1);
+        // 서버가 등록되지 않은 인프로세스 채널은 즉시 UNAVAILABLE 이다(실제 포트로 접속하면 호출마다 데드라인 1초를 기다린다).
+        // 실제로 닫힌 포트에 접속하는 경우는 DoroGuardClientResilienceTest 가 검증한다.
+        DoroGuardClient unreachable = new DoroGuardClient(
+                InProcessChannelBuilder.forName("no-such-guard-" + UUID.randomUUID()).directExecutor().build(), 1);
         try {
             assertThat(unreachable.check("doc", "1", "viewer", "u1")).isFalse();
             assertThatThrownBy(() -> unreachable.checkOrThrow("doc", "1", "viewer", "u1"))

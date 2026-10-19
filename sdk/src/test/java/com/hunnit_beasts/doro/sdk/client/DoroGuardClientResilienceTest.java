@@ -10,8 +10,8 @@ class DoroGuardClientResilienceTest {
     @Test
     @DisplayName("장애 격리 (Resilience & Fail-Closed): gRPC 서버가 다운되어 접속 불가 시 크래시 없이 안전하게 false 반환")
     void testClientFailClosedWhenServerUnreachable() {
-        // 존재하지 않는 가짜 포트로 클라이언트 생성
-        DoroGuardClient unreachableClient = new DoroGuardClient("localhost", 59999);
+        // 존재하지 않는 가짜 포트로 클라이언트 생성(데드라인 1초: 기본 3초면 호출마다 3초씩 기다린다)
+        DoroGuardClient unreachableClient = new DoroGuardClient("localhost", 59999, 1);
 
         try {
             // 서버 접속 실패 시 애플리케이션 크래시 없이 false 반환 검증
