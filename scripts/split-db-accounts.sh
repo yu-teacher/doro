@@ -4,7 +4,7 @@
 # 운영 서버(mini)에서 실행한다. 비밀번호는 서버에서 만들어 .env 에만 쓰고 화면에 출력하지 않는다.
 #
 #   ssh mini 'bash -s -- --check'                  < scripts/split-db-accounts.sh   # 읽기 전용: 서비스별 현재 접속 계정과 준비 상태
-#   ssh mini 'bash -s -- --apply blog'             < scripts/split-db-accounts.sh   # 한 서비스만 전환(blog|party|games|auth|guard|bff)
+#   ssh mini 'bash -s -- --apply blog'             < scripts/split-db-accounts.sh   # 한 서비스만 전환(blog|party|games|interview|auth|guard|bff)
 #   ssh mini 'bash -s -- --rollback blog'          < scripts/split-db-accounts.sh   # .env 를 전환 전으로 되돌리고 그 서비스만 다시 만든다
 #
 # --apply <서비스> 가 하는 일 (이미 끝난 부분은 건너뛴다)
@@ -23,8 +23,8 @@ ACTION=""; SVC=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --check|--apply|--rollback) ACTION="$1" ;;
-    blog|party|games|auth|guard|bff) SVC="$1" ;;
-    *) echo "사용법: bash -s -- --check | --apply <서비스> | --rollback <서비스>   (서비스: blog party games auth guard bff)" >&2; exit 2 ;;
+    blog|party|games|interview|auth|guard|bff) SVC="$1" ;;
+    *) echo "사용법: bash -s -- --check | --apply <서비스> | --rollback <서비스>   (서비스: blog party games interview auth guard bff)" >&2; exit 2 ;;
   esac
   shift
 done
@@ -36,7 +36,7 @@ ADMIN="${PG_ADMIN_USER:-doro_admin}"
 BACKUP_DIR="${BACKUP_DIR:-$HOME/backups}"
 RUNNER_DIR="${RUNNER_DIR:-$HOME/actions-runner/_work/doro/doro}"
 DORO_ENV="${DORO_ENV:-$HOME/doro/.env}"
-ALL="blog party games auth guard bff"
+ALL="blog party games interview auth guard bff"
 
 log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 die() { log "ERROR: $*"; exit 1; }
@@ -58,6 +58,7 @@ cfg() {
     blog)  DB=service_blog;  ROLE=blog_app;  KIND=sibling; DIR="$HOME/doro-blog";  SERVICE=blog-backend; CONTAINER=doro-blog-backend; USERVAR=DB_USER; PASSVAR=DB_PASSWORD ;;
     party) DB=service_party; ROLE=party_app; KIND=sibling; DIR="$HOME/doro-party"; SERVICE=party-api;    CONTAINER=doro-party-api;    USERVAR=DB_USER; PASSVAR=DB_PASSWORD ;;
     games) DB=service_games; ROLE=games_app; KIND=sibling; DIR="$HOME/doro-games"; SERVICE=games-api;    CONTAINER=doro-games-api;    USERVAR=DB_USER; PASSVAR=DB_PASSWORD ;;
+    interview) DB=service_interview; ROLE=interview_app; KIND=sibling; DIR="$HOME/doro-interview"; SERVICE=interview-api; CONTAINER=doro-interview-api; USERVAR=DB_USER; PASSVAR=DB_PASSWORD ;;
     auth)  DB=doro_auth;     ROLE=auth_app;  KIND=doro; DIR="$RUNNER_DIR"; SERVICE=auth-api;  CONTAINER=doro-auth-api;  USERVAR=AUTH_DB_USER;  PASSVAR=AUTH_DB_PASSWORD ;;
     guard) DB=doro_guard;    ROLE=guard_app; KIND=doro; DIR="$RUNNER_DIR"; SERVICE=guard-api; CONTAINER=doro-guard-api; USERVAR=GUARD_DB_USER; PASSVAR=GUARD_DB_PASSWORD ;;
     bff)   DB=doro_bff;      ROLE=bff_app;   KIND=doro; DIR="$RUNNER_DIR"; SERVICE=bff-api;   CONTAINER=doro-bff-api;   USERVAR=BFF_DB_USER;   PASSVAR=BFF_DB_PASSWORD ;;

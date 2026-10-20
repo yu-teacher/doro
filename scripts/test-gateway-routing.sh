@@ -14,7 +14,7 @@ NET="gwtest-$$"
 WORK="$(mktemp -d)"
 IMG_NGINX="${GW_TEST_NGINX_IMAGE:-nginx:1.27-alpine}"
 IMG_CURL="${GW_TEST_CURL_IMAGE:-curlimages/curl:8.10.1}"
-NAMES=(web auth-api doro-blog-web doro-blog-backend doro-minio doro-menu doro-games-web doro-games-api doro-party-web doro-party-api doro-bff-api loki-central)
+NAMES=(web auth-api doro-blog-web doro-blog-backend doro-minio doro-menu doro-games-web doro-games-api doro-interview-web doro-interview-api doro-party-web doro-party-api doro-bff-api loki-central)
 log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 cleanup() {
   for n in "${NAMES[@]}" gw; do docker rm -f "gwt-$$-$n" >/dev/null 2>&1 || true; done
@@ -31,7 +31,7 @@ docker network create "$NET" >/dev/null
 cat > "$WORK/stub.conf.template" <<'STUBEOF'
 server {
     listen 80;
-    listen 3100; listen 8082; listen 8086; listen 8087; listen 8085; listen 8080; listen 9000;
+    listen 3100; listen 8082; listen 8086; listen 8087; listen 8088; listen 8085; listen 8080; listen 9000;
     location / {
         add_header X-Stub-Name "${STUB_NAME}" always;
         add_header X-Stub-Path "$request_uri" always;
