@@ -37,7 +37,8 @@ if [ "\$1" = compose ]; then
   exit 0
 fi
 if [ "\$1" = inspect ] && [[ "\$*" == *Health.Status* ]]; then
-  if [ "\$2" != "$C" ] && [ -f "\$T/unhealthy" ]; then echo unhealthy; else echo healthy; fi; exit 0
+  # 실제 doro-minio 처럼 헬스체크가 없다(상태 없음). 서비스 컨테이너만 healthy/unhealthy 를 흉내 낸다.
+  if [ "\$2" = "$C" ]; then echo; elif [ -f "\$T/unhealthy" ]; then echo unhealthy; else echo healthy; fi; exit 0
 fi
 if [ "\$1" = inspect ] && [[ "\$*" == *Config.Env* ]]; then
   case "\$2" in

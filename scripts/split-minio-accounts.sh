@@ -137,7 +137,10 @@ apply_one() {
   [ -f "$ENV_FILE" ] || die ".env 가 없다: $ENV_FILE"
   [ -f "$COMPOSE_FILE" ] || die "compose 파일이 없다: $COMPOSE_FILE"
   compose_takes_var || die "$COMPOSE_FILE 이 MINIO_ACCESS_KEY/MINIO_SECRET_KEY 를 받지 않는다. 먼저 --patch-compose $1 로 서버 compose 를 고친다"
-  healthy "$MINIO" || die "$MINIO 가 healthy 가 아니다. 먼저 정상으로 만든다"
+  # doro-minio 에는 헬스체크가 없어 healthy 상태가 없다. 실행 중이고 루트 계정으로 실제 질의가 되는지로 확인한다.
+  [ "$(docker inspect "$MINIO" --format '{{.State.Status}}' 2>/dev/null)" = running ] || die "$MINIO 가 실행 중이 아니다"
+  load_root
+  mc_root ls local >/dev/null 2>&1 || die "$MINIO 에 루트 계정으로 접속하지 못했다(MinIO 가 아직 뜨는 중이거나 루트 비밀번호가 다르다)"
   healthy "$CONTAINER" || die "$CONTAINER 가 healthy 가 아니다. 먼저 정상으로 만든다"
   load_root
   local cur_key cur_pw ts new_pw
