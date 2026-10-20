@@ -18,7 +18,7 @@ export PG_CONTAINER="$CT" PG_USER=postgres BACKUP_DIR="$WORK/backups"
 docker rm -f "$CT" >/dev/null 2>&1 || true
 docker run -d --name "$CT" -e POSTGRES_PASSWORD=test postgres:16-alpine >/dev/null
 for _ in $(seq 1 60); do
-  docker exec "$CT" pg_isready -U postgres >/dev/null 2>&1 && docker exec "$CT" psql -U postgres -tAc 'select 1' >/dev/null 2>&1 && break
+  docker exec "$CT" psql -h 127.0.0.1 -U postgres -tAc 'select 1' >/dev/null 2>&1 && break
   sleep 1
 done
 sql() { docker exec -i "$CT" psql -U postgres -v ON_ERROR_STOP=1 -q -tA -d "$1"; }

@@ -224,8 +224,9 @@ do_verify_restore() {
   trap 'rc=$?; docker rm -f "$RESTORE_NAME" >/dev/null 2>&1 || true; if [ $rc -ne 0 ]; then set_status last_restore_test "FAIL $(date +%FT%T%z)"; log "복원 테스트 실패 (exit $rc)"; fi' EXIT
   local pw; pw="$(openssl rand -hex 16)"
   docker run -d --name "$RESTORE_NAME" --network none -e POSTGRES_PASSWORD="$pw" --tmpfs /var/lib/postgresql/data "$TOOLBOX_IMAGE" >/dev/null
-  for _ in $(seq 1 40); do docker exec "$RESTORE_NAME" pg_isready -U postgres >/dev/null 2>&1 && break; sleep 1; done
-  docker exec "$RESTORE_NAME" pg_isready -U postgres >/dev/null 2>&1 || die "임시 PostgreSQL 이 시작되지 않았다"
+  # pg_isready(유닉스 소켓)는 이미지 초기화 중 잠깐 뜨는 임시 서버에도 성공한다. 그 서버는 TCP 를 열지 않으므로 TCP(127.0.0.1)로 질의가 되는지로 기다린다.
+  for _ in $(seq 1 40); do docker exec "$RESTORE_NAME" psql -h 127.0.0.1 -U postgres -tAc 'select 1' >/dev/null 2>&1 && break; sleep 1; done
+  docker exec "$RESTORE_NAME" psql -h 127.0.0.1 -U postgres -tAc 'select 1' >/dev/null 2>&1 || die "임시 PostgreSQL 이 시작되지 않았다"
 
   local count_sql="select coalesce(sum((xpath('/row/c/text()', query_to_xml(format('select count(*) as c from %I.%I', schemaname, tablename), false, true, '')))[1]::text::bigint),0) from pg_tables where schemaname='public'"
   local dump db expected restored t rows_restored rows_live
