@@ -119,9 +119,14 @@ export const MyAccountPage: React.FC = () => {
     setAdminPage(0);
   };
 
+  // 검색어가 실제로 바뀐 때만 1페이지로 돌아간다(화면을 연 직후 타이머가 한 번 돌 때 방금 누른 '다음'을 취소하지 않게).
+  const appliedQuery = useRef('');
   useEffect(() => {
     const timer = setTimeout(() => {
-      setDebouncedQuery(searchQuery.trim());
+      const q = searchQuery.trim();
+      if (q === appliedQuery.current) return;
+      appliedQuery.current = q;
+      setDebouncedQuery(q);
       setAdminPage(0);
     }, 300);
     return () => clearTimeout(timer);
