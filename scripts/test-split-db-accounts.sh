@@ -13,7 +13,7 @@ check() { if eval "$2"; then ok "$1"; else bad "$1"; fi; }
 
 docker rm -f "$C" >/dev/null 2>&1 || true
 docker run -d --name "$C" -e POSTGRES_PASSWORD=x postgres:16-alpine >/dev/null
-for _ in $(seq 1 40); do docker exec "$C" pg_isready -U postgres >/dev/null 2>&1 && break; sleep 1; done; sleep 2
+for _ in $(seq 1 40); do docker exec "$C" psql -h 127.0.0.1 -U postgres -tAc 'select 1' >/dev/null 2>&1 && break; sleep 1; done
 P() { docker exec -i "$C" psql -U postgres -v ON_ERROR_STOP=1 -q -tA "$@"; }
 asrole() { docker exec -e PGPASSWORD="$3" "$C" psql -h "$(docker exec "$C" hostname -i | awk '{print $1}')" -U "$1" -d "$2" -tAc "$4" 2>&1 || true; }
 
