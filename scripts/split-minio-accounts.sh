@@ -5,6 +5,7 @@
 # 운영 서버(mini)에서 실행한다. 비밀번호는 서버에서 만들어 .env 에만 쓰고 화면에 출력하지 않는다. MinIO 컨테이너 안의 mc 를 쓴다.
 #
 #   ssh mini 'bash -s -- --check'              < scripts/split-minio-accounts.sh   # 읽기 전용: 서비스별 계정·정책·접속 상태
+#   ssh mini 'bash -s -- --patch-compose blog' < scripts/split-minio-accounts.sh   # 서버의 compose 파일에서 MINIO_ACCESS_KEY/SECRET_KEY 두 줄만 .env 변수를 받게 고친다(백업 후)
 #   ssh mini 'bash -s -- --apply blog'         < scripts/split-minio-accounts.sh   # 한 서비스만 전환(blog|party)
 #   ssh mini 'bash -s -- --rollback blog'      < scripts/split-minio-accounts.sh   # .env 를 전환 전으로 되돌리고 그 서비스만 다시 만든다
 #
@@ -13,20 +14,21 @@
 #   2) 새 계정으로 확인: 자기 버킷에는 올리기·읽기·지우기가 되고, 다른 버킷(다른 서비스의 사진, 게임 그림)에는 접근이 거부된다
 #   3) 서비스의 .env 에 MINIO_ACCESS_KEY/MINIO_SECRET_KEY 를 쓰고(백업 후) 그 서비스 컨테이너만 다시 만든다 → healthy 와 접속 계정 확인
 #      healthy 가 되지 않으면 .env 를 되돌리고 다시 만든다. 계정은 그대로 둬도 루트가 계속 쓸 수 있어 안전하다.
-# 서비스의 docker-compose.prod.yml 이 MINIO_ACCESS_KEY 를 받아야 한다(없으면 중단한다): 서비스 저장소의 compose 변경을 먼저 배포한다.
+# 서비스의 docker-compose.prod.yml 이 MINIO_ACCESS_KEY 를 받아야 한다(없으면 중단한다). 서버의 compose 파일은 배포가 덮어쓰지 않으므로(서버 전용 값이 있다)
+# 먼저 --patch-compose <서비스> 로 그 두 줄만 고친다(저장소의 docker-compose.prod.yml 과 같은 형태, 원본은 .bak-miniosplit 으로 백업, 이미 고쳐져 있으면 건너뜀).
 set -Eeuo pipefail
 
 ACTION=""; SVC=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --check|--apply|--rollback) ACTION="$1" ;;
+    --check|--apply|--rollback|--patch-compose) ACTION="$1" ;;
     blog|party) SVC="$1" ;;
-    *) echo "사용법: bash -s -- --check | --apply <서비스> | --rollback <서비스>   (서비스: blog party)" >&2; exit 2 ;;
+    *) echo "사용법: bash -s -- --check | --patch-compose <서비스> | --apply <서비스> | --rollback <서비스>   (서비스: blog party)" >&2; exit 2 ;;
   esac
   shift
 done
 [ -n "$ACTION" ] || { echo "사용법: bash -s -- --check | --apply <서비스> | --rollback <서비스>" >&2; exit 2; }
-{ [ "$ACTION" = --check ] || [ -n "$SVC" ]; } || { echo "--apply/--rollback 은 서비스 이름이 필요하다" >&2; exit 2; }
+{ [ "$ACTION" = --check ] || [ -n "$SVC" ]; } || { echo "--patch-compose/--apply/--rollback 은 서비스 이름이 필요하다" >&2; exit 2; }
 
 MINIO="${MINIO_CONTAINER:-doro-minio}"
 ROOT_ENV="${MINIO_ROOT_ENV:-$HOME/doro-blog/.env}"   # MinIO 루트 계정이 있는 .env (MinIO 컨테이너를 띄우는 compose 의 .env)
@@ -101,6 +103,28 @@ verify_account() {
   return 0
 }
 
+# 서버 compose 의 두 줄만 바꾼다(들여쓰기·나머지 줄·서버 전용 값은 그대로). 결과가 compose 로 해석되는지 확인하고, 안 되면 원본으로 되돌린다.
+patch_compose() {
+  cfg "$1"
+  [ -f "$COMPOSE_FILE" ] || die "compose 파일이 없다: $COMPOSE_FILE"
+  if compose_takes_var; then log "[$1] compose 가 이미 MINIO_ACCESS_KEY 를 받는다(할 일 없음)"; return 0; fi
+  grep -qE '^ +MINIO_ACCESS_KEY: ' "$COMPOSE_FILE" && grep -qE '^ +MINIO_SECRET_KEY: ' "$COMPOSE_FILE" || die "$COMPOSE_FILE 에서 고칠 MINIO_ACCESS_KEY/MINIO_SECRET_KEY 줄을 찾지 못했다"
+  [ "$(grep -cE '^ +MINIO_(ACCESS|SECRET)_KEY: ' "$COMPOSE_FILE")" = 2 ] || die "MINIO_ACCESS_KEY/MINIO_SECRET_KEY 줄이 정확히 한 쌍이 아니다. 직접 확인한다"
+  local bak="$COMPOSE_FILE.bak-miniosplit"
+  [ -f "$bak" ] || cp -p "$COMPOSE_FILE" "$bak"
+  local tmp; tmp="$(mktemp "$COMPOSE_FILE.XXXXXX")"
+  sed -e 's|^\( *\)MINIO_ACCESS_KEY: .*|\1MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-${MINIO_ROOT_USER:-doro_admin}}|' \
+      -e 's|^\( *\)MINIO_SECRET_KEY: .*|\1MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-${MINIO_ROOT_PASSWORD:?MINIO_SECRET_KEY or MINIO_ROOT_PASSWORD must be set in .env}}|' \
+      "$COMPOSE_FILE" > "$tmp"
+  chmod --reference="$bak" "$tmp" 2>/dev/null || chmod 644 "$tmp"
+  mv "$tmp" "$COMPOSE_FILE"
+  if ( cd "$DIR" && docker compose -f docker-compose.prod.yml config >/dev/null 2>&1 ) && compose_takes_var; then
+    log "[$1] compose 두 줄을 고쳤다(백업: $bak). 서비스는 다시 만들지 않았다 — 값이 같아 동작은 그대로다"
+  else
+    cp -p "$bak" "$COMPOSE_FILE"; die "고친 compose 가 해석되지 않아 원본으로 되돌렸다"
+  fi
+}
+
 describe_one() {
   cfg "$1"
   local ck; ck="$(container_key || true)"
@@ -112,7 +136,7 @@ apply_one() {
   cfg "$1"
   [ -f "$ENV_FILE" ] || die ".env 가 없다: $ENV_FILE"
   [ -f "$COMPOSE_FILE" ] || die "compose 파일이 없다: $COMPOSE_FILE"
-  compose_takes_var || die "$COMPOSE_FILE 이 MINIO_ACCESS_KEY/MINIO_SECRET_KEY 를 받지 않는다. 먼저 서비스 저장소의 compose 변경을 배포한다"
+  compose_takes_var || die "$COMPOSE_FILE 이 MINIO_ACCESS_KEY/MINIO_SECRET_KEY 를 받지 않는다. 먼저 --patch-compose $1 로 서버 compose 를 고친다"
   healthy "$MINIO" || die "$MINIO 가 healthy 가 아니다. 먼저 정상으로 만든다"
   healthy "$CONTAINER" || die "$CONTAINER 가 healthy 가 아니다. 먼저 정상으로 만든다"
   load_root
@@ -165,6 +189,7 @@ docker inspect "$MINIO" >/dev/null 2>&1 || die "컨테이너 $MINIO 가 없다"
 load_root
 case "$ACTION" in
   --check) for s in $ALL; do describe_one "$s"; done ;;
+  --patch-compose) patch_compose "$SVC" ;;
   --apply) apply_one "$SVC" ;;
   --rollback) rollback_one "$SVC" ;;
 esac

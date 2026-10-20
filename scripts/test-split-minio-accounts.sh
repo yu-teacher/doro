@@ -24,7 +24,7 @@ H="$T/home"; mkdir -p "$H/doro-party" "$H/doro-blog" "$T/bin"
 printf 'MINIO_ROOT_USER=doro_admin\nMINIO_ROOT_PASSWORD=%s\nOTHER=keep\n' "$ROOTPW" > "$H/doro-blog/.env"
 printf 'MINIO_ROOT_PASSWORD=%s\nOTHER=keep\n' "$ROOTPW" > "$H/doro-party/.env"
 for s in blog party; do
-  printf 'services:\n  x:\n    environment:\n      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-${MINIO_ROOT_USER:-doro_admin}}\n      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-${MINIO_ROOT_PASSWORD:?x}}\n' > "$H/doro-$s/docker-compose.prod.yml"
+  printf 'services:\n  x:\n    environment:\n      SERVER_ONLY: keep-%s\n      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-doro_admin}\n      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-doro_secret}\n      OTHER_LINE: stay\n' "$s" > "$H/doro-$s/docker-compose.prod.yml"
 done
 REAL_DOCKER="$(command -v docker)"
 cat > "$T/bin/docker" <<SHIM
@@ -56,11 +56,20 @@ out="$(run --check)"; check "check 는 서비스 2개를 보여 준다" '[ "$(pr
 check "check 는 비밀번호를 출력하지 않는다" '! printf "%s" "$out" | grep -qF "$ROOTPW"'
 check "check 는 아무것도 바꾸지 않는다" '! grep -q "^MINIO_ACCESS_KEY=" "$H/doro-blog/.env"'
 
-echo "== compose 가 변수를 받지 않으면 거부"
-cp "$H/doro-blog/docker-compose.prod.yml" "$T/compose.keep"
-printf 'services:\n  x:\n    environment:\n      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-doro_admin}\n' > "$H/doro-blog/docker-compose.prod.yml"
-out="$(run --apply blog || true)"; check "변수를 안 받는 compose 면 중단한다" 'printf "%s" "$out" | grep -q "받지 않는다"'
-cp "$T/compose.keep" "$H/doro-blog/docker-compose.prod.yml"
+echo "== compose 가 변수를 받지 않으면 거부하고, --patch-compose 가 두 줄만 고친다"
+out="$(run --apply blog || true)"; check "변수를 안 받는 compose 면 중단하고 --patch-compose 를 안내한다" 'printf "%s" "$out" | grep -q "받지 않는다" && printf "%s" "$out" | grep -q "patch-compose blog"'
+cp "$H/doro-blog/docker-compose.prod.yml" "$T/compose.before"
+out="$(run --patch-compose blog)"; echo "$out" | sed 's/^/    | /'
+check "patch 후 MINIO 두 줄이 .env 변수를 먼저 쓴다" 'grep -q "MINIO_ACCESS_KEY: \${MINIO_ACCESS_KEY:-\${MINIO_ROOT_USER:-doro_admin}}" "$H/doro-blog/docker-compose.prod.yml" && grep -q "MINIO_SECRET_KEY: \${MINIO_SECRET_KEY:-\${MINIO_ROOT_PASSWORD" "$H/doro-blog/docker-compose.prod.yml"'
+check "patch 는 다른 줄(서버 전용 값 포함)을 건드리지 않는다" '[ "$(diff "$T/compose.before" "$H/doro-blog/docker-compose.prod.yml" | grep -c "^[<>]")" = 4 ] && grep -q "SERVER_ONLY: keep-blog" "$H/doro-blog/docker-compose.prod.yml" && grep -q "OTHER_LINE: stay" "$H/doro-blog/docker-compose.prod.yml"'
+check "patch 전 원본이 백업됐다" 'cmp -s "$T/compose.before" "$H/doro-blog/docker-compose.prod.yml.bak-miniosplit"'
+out="$(run --patch-compose blog)"; check "patch 는 멱등이다" 'printf "%s" "$out" | grep -q "이미 MINIO_ACCESS_KEY 를 받는다"'
+run --patch-compose party >/dev/null
+printf 'services:\n  x:\n    environment:\n      A: 1\n' > "$H/doro-party/docker-compose.prod.yml.tmpcase"
+cp "$H/doro-party/docker-compose.prod.yml" "$T/party.compose.keep"
+cp "$H/doro-party/docker-compose.prod.yml.tmpcase" "$H/doro-party/docker-compose.prod.yml"
+out="$(run --patch-compose party || true)"; check "고칠 줄이 없으면 중단한다" 'printf "%s" "$out" | grep -q "찾지 못했다"'
+cp "$T/party.compose.keep" "$H/doro-party/docker-compose.prod.yml"; rm -f "$H/doro-party/docker-compose.prod.yml.tmpcase"
 
 echo "== blog 전환"
 out="$(run --apply blog)"; echo "$out" | sed 's/^/    | /'
