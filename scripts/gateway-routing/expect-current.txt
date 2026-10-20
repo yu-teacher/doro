@@ -84,3 +84,15 @@ GET /games/api/v1/bff/session                           200 doro-games-api  /api
 GET /games/api/v1/scores                                200 doro-games-api  /api/v1/scores
 # --- auth_request 대상은 내부 전용
 GET /_bff_auth_games                                    404 none
+
+# --- 도로 면접(/interview/): 로그인도 BFF(doro-bff)가 처리한다(쿼리 문자열 유지)
+GET /interview/                                         200 doro-interview-web  /interview/
+GET /interview/api/v1/bff/login?return=%2Fq%2Ftx-01      200 doro-bff-api    /bff/interview/login?return=%2Fq%2Ftx-01
+GET /interview/api/v1/bff/callback?code=x&state=y        200 doro-bff-api    /bff/interview/callback?code=x&state=y
+POST /interview/api/v1/bff/logout                        200 doro-bff-api    /bff/interview/logout
+# --- 세션 조회와 나머지 API 는 면접 백엔드(auth_request 를 거쳐 Bearer 가 붙는다)
+GET /interview/api/v1/bff/session                        200 doro-interview-api  /api/v1/bff/session
+GET /interview/api/v1/categories                         200 doro-interview-api  /api/v1/categories
+GET /interview/api/v1/progress/summary                   200 doro-interview-api  /api/v1/progress/summary
+PUT /interview/api/v1/progress/tx-01                     200 doro-interview-api  /api/v1/progress/tx-01
+GET /_bff_auth_interview                                 404 none

@@ -172,6 +172,7 @@ services:
       BLOG_OAUTH_REDIRECT_URI: ${BFF_PUBLIC_ORIGIN:-${DORO_IAM_ISSUER:-https://auth.doro.local}}/blog/api/v1/bff/callback
       PARTY_OAUTH_REDIRECT_URI: ${BFF_PUBLIC_ORIGIN:-${DORO_IAM_ISSUER:-https://auth.doro.local}}/party/api/v1/bff/callback
       GAMES_OAUTH_REDIRECT_URI: ${BFF_PUBLIC_ORIGIN:-${DORO_IAM_ISSUER:-https://auth.doro.local}}/games/api/v1/bff/callback
+      INTERVIEW_OAUTH_REDIRECT_URI: ${BFF_PUBLIC_ORIGIN:-${DORO_IAM_ISSUER:-https://auth.doro.local}}/interview/api/v1/bff/callback
     depends_on:
       postgres:
         condition: service_healthy

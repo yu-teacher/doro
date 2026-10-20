@@ -28,7 +28,7 @@ DORO_DIR="${DORO_DIR:-$HOME/doro}"
 RUNNER_DIR="${RUNNER_DIR:-$HOME/actions-runner/_work/doro/doro}"
 ENV_FILE="$DORO_DIR/.env"
 AUTH=doro-auth-api
-SERVICES=(party games)
+SERVICES=(party games interview)
 
 log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 die() { log "ERROR: $*"; exit 1; }
