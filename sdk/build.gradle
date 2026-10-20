@@ -28,7 +28,7 @@ dependencyManagement {
 	}
 }
 
-def grpcVersion = '1.68.1'
+def grpcVersion = '1.80.0'
 def protobufVersion = '3.25.5'
 def jjwtVersion = '0.12.6'
 
