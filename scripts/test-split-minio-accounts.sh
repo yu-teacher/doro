@@ -99,6 +99,16 @@ check "rotate 출력에 비밀번호가 없다" '! printf "%s" "$out" | grep -qF
 check "rotate 는 다른 .env 항목을 건드리지 않는다" 'grep -q "^OTHER=keep$" "$H/doro-blog/.env" && grep -q "^MINIO_ACCESS_KEY=blog_media$" "$H/doro-blog/.env"'
 out="$(run --apply blog)"; check "rotate 뒤 --apply 는 다시 할 일 없음" 'printf "%s" "$out" | grep -q "이미 blog_media 로 접속 중"'
 
+echo "== 교체 중 서비스가 안 뜨면 새 비밀번호를 그대로 둔다(옛 비밀번호는 이미 무효)"
+prevpw="$bpw"
+touch "$T/fail_after_recreate"
+out="$(run --rotate blog || true)"
+rm -f "$T/fail_after_recreate" "$T/unhealthy"
+newpw="$(grep '^MINIO_SECRET_KEY=' "$H/doro-blog/.env" | cut -d= -f2-)"
+check "실패해도 .env 에는 새 비밀번호가 있고 그 비밀번호가 유효하다" '[ "$newpw" != "$prevpw" ] && asmc blog_media "$newpw" ls local/doro-blog-media >/dev/null'
+check "되돌렸다고 하지 않고 이유를 알린다" 'printf "%s" "$out" | grep -q "되돌리지 않음"'
+bpw="$newpw"; oldpw="$prevpw"
+
 echo "== party 전환 후 격리"
 run --apply party >/dev/null
 ppw="$(grep '^MINIO_SECRET_KEY=' "$H/doro-party/.env" | cut -d= -f2-)"

@@ -169,6 +169,10 @@ apply_one() {
     log "[$1] $CONTAINER healthy, 접속 계정 $ROLE. 현재 DB 연결: $(conn_users)"
     return 0
   fi
+  if [ "$FORCE" = 1 ]; then
+    # 교체 중에는 옛 비밀번호가 이미 무효라 .env 를 되돌리면 서비스가 접속하지 못한다. 새 비밀번호를 그대로 두고 알린다.
+    die "[$1] $CONTAINER 가 healthy 로 돌아오지 않았다. 새 비밀번호는 .env 와 계정에 이미 반영돼 있다(되돌리지 않음). docker logs $CONTAINER 를 확인한다"
+  fi
   log "[$1] $CONTAINER 가 healthy 로 돌아오지 않았다 — .env 를 되돌린다"
   cp -p "$ENV_FILE.bak-dbsplit-$1-$ts" "$ENV_FILE"; recreate || true
   wait_healthy "$CONTAINER" || log "되돌린 뒤에도 healthy 가 아니다. docker logs $CONTAINER 를 확인한다"
