@@ -26,7 +26,7 @@ export FAKE_CRONTAB_FILE="$WORK/crontab.txt"
 
 # inst <인자...>: 운영과 같은 방식(stdin 으로 스크립트)으로 실행. 출력은 $WORK/out, 종료 코드는 $CODE.
 inst() { set +e; env HOME="$FAKE_HOME" PATH="$WORK/bin:$PATH" NOTIFY_CMD="$WORK/bin/no-notify" bash -s -- "$@" < "$INSTALL" > "$WORK/out" 2>&1; CODE=$?; set -e; }
-SRC="$WORK/guard-reconcile.sh"; cp "$HERE/guard-reconcile.sh" "$SRC"
+SRC="$WORK/guard-reconcile.sh"; cp "$HERE/guard-reconcile.sh" "$SRC"; cp "$HERE/notify-telegram.sh" "$WORK/notify-telegram.sh"
 PROD_CRON='0 3 * * * /home/x/backup_db.sh
 30 3 * * * /home/x/ops/backup.sh backup >> /home/x/backups/auto/backup.log 2>&1
 0 5 * * 0 /home/x/ops/backup.sh verify-restore
@@ -53,6 +53,8 @@ eq "기존 항목 4줄은 그대로 맨 앞에" "$(head -4 "$FAKE_CRONTAB_FILE")
 eq "우리 줄은 한 줄만" "$(grep -c 'guard-reconcile.sh --auto' "$FAKE_CRONTAB_FILE")" 1
 grep -q "^30 4 \* \* \* flock -n $FAKE_HOME/backups/auto/.guard-reconcile.lock $FAKE_HOME/ops/guard-reconcile.sh --auto >/dev/null 2>&1$" "$FAKE_CRONTAB_FILE" && pass "04:30, flock, --auto 줄" || fail "cron 줄: $(tail -3 "$FAKE_CRONTAB_FILE")"
 eq "마커가 짝으로 있다" "$(grep -c 'doro guard-reconcile' "$FAKE_CRONTAB_FILE")" 2
+grep -q "^30 8 \* \* \* $FAKE_HOME/ops/guard-reconcile.sh --heartbeat >/dev/null 2>&1$" "$FAKE_CRONTAB_FILE" && pass "08:30 생존 신호(--heartbeat) 줄" || fail "heartbeat 줄: $(tail -3 "$FAKE_CRONTAB_FILE")"
+[ -x "$FAKE_HOME/ops/notify-telegram.sh" ] && cmp -s "$WORK/notify-telegram.sh" "$FAKE_HOME/ops/notify-telegram.sh" && pass "텔레그램 스크립트가 ~/ops 에 같이 설치됐다" || fail "텔레그램 스크립트 설치"
 ls "$FAKE_HOME"/backups/crontab-before-guard-reconcile-*.txt >/dev/null 2>&1 && pass "바꾸기 전 crontab 을 저장했다" || fail "crontab 저장 없음"
 eq "저장본 = 원래 crontab" "$(cat "$FAKE_HOME"/backups/crontab-before-guard-reconcile-*.txt | head -4)" "$PROD_CRON"
 
@@ -62,7 +64,7 @@ inst --apply --src "$SRC"
 eq "crontab 해시 동일" "$(shasum "$FAKE_CRONTAB_FILE" | cut -d' ' -f1)" "$h1"
 grep -q 'crontab: 변경 없음' "$WORK/out" && grep -q '스크립트: 변경 없음' "$WORK/out" && pass "'변경 없음' 출력" || fail "변경 없음 출력"
 eq "백업 파일이 더 생기지 않았다" "$(ls "$FAKE_HOME"/backups | wc -l | tr -d ' ')" "$nb"
-eq "~/ops 에 .bak 이 없다" "$(ls "$FAKE_HOME/ops")" "guard-reconcile.sh"
+eq "~/ops 에는 두 스크립트뿐(.bak 없음)" "$(ls "$FAKE_HOME/ops" | tr "\n" " ")" "guard-reconcile.sh notify-telegram.sh "
 
 echo "== 원본이 바뀌면 스크립트만 백업 후 교체"
 echo '# changed' >> "$SRC"
@@ -94,7 +96,7 @@ eq "crontab 그대로" "$(cat "$FAKE_CRONTAB_FILE")" "$PROD_CRON"
 
 echo "== 빈 crontab 에 설치하고 제거"
 rm -f "$FAKE_CRONTAB_FILE"; inst --apply --src "$SRC"
-eq "블록만 있다(4줄: 마커 2 + 줄 1 = 3줄)" "$(wc -l < "$FAKE_CRONTAB_FILE" | tr -d ' ')" 3
+eq "블록만 있다(마커 2 + 점검·생존 신호 2줄 = 4줄)" "$(wc -l < "$FAKE_CRONTAB_FILE" | tr -d ' ')" 4
 inst --remove; eq "제거하면 빈 crontab" "$(cat "$FAKE_CRONTAB_FILE")" ""
 
 echo

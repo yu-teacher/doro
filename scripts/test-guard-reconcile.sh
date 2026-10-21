@@ -398,5 +398,28 @@ grep -qE '^OK .* c5a=0 c5b=0 deleted=0 left=0$' "$WORK/out" && pass "--auto 도 
 unset MINIO_CONTAINER
 docker exec "$CT" rm -rf /data
 
+echo "== 텔레그램 스크립트 탐색 / --heartbeat"
+# 탐색: NOTIFY_CMD 가 없으면 이 스크립트 옆의 notify-telegram.sh 를 쓴다(예전에는 ~/doro/scripts 만 봐서 알림이 안 나갔다)
+HB="$WORK/hb"; rm -rf "$HB"; mkdir -p "$HB/ops" "$HB/home"
+cp "$SCRIPT" "$HB/ops/guard-reconcile.sh"
+cat > "$HB/ops/notify-telegram.sh" <<'SH'
+#!/usr/bin/env bash
+cat >> "$HB_NOTIFY_LOG"
+SH
+chmod +x "$HB/ops/notify-telegram.sh"
+hb() { set +e; env -u NOTIFY_CMD HOME="$HB/home" HB_NOTIFY_LOG="$HB/notify.log" LOGGER_BIN="$WORK/bin/fake-logger" AUTO_LOG="$HB/auto.log" bash "$HB/ops/guard-reconcile.sh" --heartbeat > "$HB/out" 2>&1; CODE=$?; set -e; }
+: > "$HB/notify.log"; rm -f "$HB/auto.log"
+hb
+eq "로그가 아예 없으면 종료 코드 3" "$CODE" 3
+grep -q 'HEARTBEAT' "$HB/notify.log" && pass "스크립트 옆의 notify-telegram.sh 로 알렸다(NOTIFY_CMD 없이)" || fail "heartbeat 알림 없음: $(cat "$HB/out")"
+: > "$HB/notify.log"; echo "OK 2026-10-21T04:30:02+0900 c1=0" > "$HB/auto.log"
+hb
+eq "로그가 방금 갱신됐으면 종료 코드 0" "$CODE" 0
+[ ! -s "$HB/notify.log" ] && [ ! -s "$HB/out" ] && pass "정상이면 아무것도 알리지 않고 조용하다" || fail "정상인데 알림/출력"
+touch -t 202001010000 "$HB/auto.log"
+hb
+eq "로그가 오래됐으면 종료 코드 3" "$CODE" 3
+grep -q '30시간 넘게' "$HB/notify.log" && pass "오래됐다고 알린다" || fail "오래된 로그 알림 없음"
+
 echo
 if [ "$FAILURES" -eq 0 ]; then echo "모두 통과"; else echo "실패 $FAILURES 건"; exit 1; fi
