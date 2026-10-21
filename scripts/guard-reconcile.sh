@@ -28,20 +28,22 @@
 #   상태 OK(전부 0) / WARN(보고만 하는 3·4b·4c 만 남음) / ALERT(4a: 권한 과다 튜플 있음, 삭제는 1·2 만 하고 종료 코드 3) / ABORT(아무것도 안 지우고 종료 코드 1)
 #   ABORT 사유: 상한 초과(대량 이상 징후), IAM 이 비었음, DB 에 닿지 못함, 예기치 않은 실패. 3·4 는 절대 자동으로 지우지 않는다.
 #   ALERT/ABORT 는 syslog(태그 doro-guard-reconcile, -> journal -> Loki)와 텔레그램(notify-telegram.sh 가 있으면)으로도 알린다. 이 알림에는 개수만 담긴다.
+#   --heartbeat: 로그가 30시간(HEARTBEAT_MAX_HOURS) 넘게 안 갱신됐으면 같은 경로로 알린다(cron 중단·서버 정지 감지, 종료 코드 3). 설치 스크립트가 매일 08:30 에 건다.
 #   백업은 삭제가 있을 때만 만들고 최근 14개만 남긴다. 로그는 1MB 를 넘으면 .1 로 바꾼다.
 set -Eeuo pipefail
 
 STORAGE_GRACE="${STORAGE_GRACE_MINUTES:-60}"
-MODE=report; AUTO=false; MAX_DELETE="${MAX_DELETE:-}"; GRACE_MIN="${GRACE_MINUTES:-10}"
+MODE=report; AUTO=false; HEARTBEAT=false; MAX_DELETE="${MAX_DELETE:-}"; GRACE_MIN="${GRACE_MINUTES:-10}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --report) MODE=report ;;
     --fix-orphans) MODE=fix ;;
     --auto) MODE=fix; AUTO=true ;;
+    --heartbeat) HEARTBEAT=true ;;
     --max-delete) MAX_DELETE="${2:-}"; shift ;;
     --grace-minutes) GRACE_MIN="${2:-}"; shift ;;
     --storage-grace-minutes) STORAGE_GRACE="${2:-}"; shift ;;
-    *) echo "사용법: bash -s -- --report | --fix-orphans | --auto [--max-delete N] [--grace-minutes N]" >&2; exit 2 ;;
+    *) echo "사용법: bash -s -- --report | --fix-orphans | --auto [--max-delete N] [--grace-minutes N] | --heartbeat" >&2; exit 2 ;;
   esac
   shift
 done
@@ -66,7 +68,24 @@ AUTO_LOG="${AUTO_LOG:-$HOME/backups/auto/guard-reconcile.log}"
 AUTO_LOG_MAX_BYTES="${AUTO_LOG_MAX_BYTES:-1048576}"
 LOGGER_BIN="${LOGGER_BIN:-logger}"
 NOTIFY_CMD="${NOTIFY_CMD:-}"
-[ -n "$NOTIFY_CMD" ] || { [ -x "$HOME/doro/scripts/notify-telegram.sh" ] && NOTIFY_CMD="$HOME/doro/scripts/notify-telegram.sh" || true; }
+# 텔레그램 스크립트는 이 스크립트 옆(~/ops, 설치 스크립트가 같이 복사한다) → 옛 ~/doro/scripts 순으로 찾는다.
+# (예전에는 ~/doro/scripts 만 봐서, 그 폴더가 비어 있는 서버에서는 ALERT/ABORT 텔레그램 알림이 한 번도 나가지 않았다)
+if [ -z "$NOTIFY_CMD" ]; then
+  for _c in "$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/notify-telegram.sh" "$HOME/ops/notify-telegram.sh" "$HOME/doro/scripts/notify-telegram.sh"; do
+    [ -x "$_c" ] && { NOTIFY_CMD="$_c"; break; }
+  done
+fi
+HEARTBEAT_MAX_HOURS="${HEARTBEAT_MAX_HOURS:-30}"
+# --heartbeat: 점검 로그가 오래 갱신되지 않았으면(cron 이 안 돌거나 서버가 꺼져 있었음) 텔레그램·syslog 로 알린다. 점검 자체는 하지 않는다.
+if [ "$HEARTBEAT" = true ]; then
+  if [ ! -f "$AUTO_LOG" ] || [ -n "$(find "$AUTO_LOG" -mmin +"$((HEARTBEAT_MAX_HOURS * 60))" 2>/dev/null)" ]; then
+    line="HEARTBEAT $(date +%FT%T%z) Guard 점검 로그가 ${HEARTBEAT_MAX_HOURS}시간 넘게 갱신되지 않았다(cron 중단 의심): $AUTO_LOG"
+    "$LOGGER_BIN" -t doro-guard-reconcile -p user.err -- "$line" >/dev/null 2>&1 || true
+    [ -z "$NOTIFY_CMD" ] || printf '[Doro Guard 점검] %s\n' "$line" | "$NOTIFY_CMD" >/dev/null 2>&1 || true
+    echo "$line"; exit 3
+  fi
+  exit 0
+fi
 [ "$AUTO" = false ] || PATH="$PATH:/usr/local/bin:/usr/bin:/bin"   # cron 의 좁은 PATH 에서도 docker 를 찾는다
 
 exec 3>&1
