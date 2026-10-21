@@ -1236,15 +1236,15 @@ export const MyAccountPage: React.FC = () => {
                   .map((app) => {
                   const Icon = app.icon;
                   return (
-                    <div key={app.name} className="p-5 bg-white border border-slate-200/80 rounded-2xl flex items-center justify-between hover:border-emerald-300 hover:shadow-xs transition-all">
-                      <div className="flex items-center gap-3.5">
+                    <div key={app.name} className="p-5 bg-white border border-slate-200/80 rounded-2xl flex items-center justify-between gap-3 hover:border-emerald-300 hover:shadow-xs transition-all">
+                      <div className="flex items-center gap-3.5 min-w-0 flex-1">
                         <div className={`w-12 h-12 rounded-2xl ${app.color} border flex items-center justify-center shrink-0`}>
                           <Icon className="w-6 h-6" />
                         </div>
-                        <div>
-                          <div className="flex items-center gap-2">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                             <h4 className="text-sm font-bold text-slate-800">{app.name}</h4>
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full text-emerald-600 bg-emerald-50 border border-emerald-200">
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full text-emerald-600 bg-emerald-50 border border-emerald-200 whitespace-nowrap">
                               {app.badge}
                             </span>
                           </div>
@@ -1253,7 +1253,7 @@ export const MyAccountPage: React.FC = () => {
                       </div>
                       <a
                         href={app.link}
-                        className="py-2 px-3.5 bg-slate-50 border border-slate-200 hover:bg-emerald-600 hover:border-emerald-600 hover:text-white rounded-xl text-xs font-bold text-slate-700 flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+                        className="py-2 px-3.5 bg-slate-50 border border-slate-200 hover:bg-emerald-600 hover:border-emerald-600 hover:text-white rounded-xl text-xs font-bold text-slate-700 flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer shrink-0 whitespace-nowrap"
                       >
                         열기 <ExternalLink className="w-3.5 h-3.5" />
                       </a>
