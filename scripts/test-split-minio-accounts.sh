@@ -88,6 +88,17 @@ check "루트는 여전히 모든 버킷을 쓴다(백업·운영)" 'rootmc cat 
 echo "== 멱등"
 out="$(run --apply blog)"; check "다시 실행하면 할 일 없음" 'printf "%s" "$out" | grep -q "이미 blog_media 로 접속 중"'
 
+echo "== 비밀번호 교체(--rotate)"
+oldpw="$bpw"
+out="$(run --rotate blog)"; echo "$out" | sed 's/^/    | /'
+bpw="$(grep '^MINIO_SECRET_KEY=' "$H/doro-blog/.env" | cut -d= -f2-)"
+check "rotate 후 비밀번호가 바뀌었다" '[ "$bpw" != "$oldpw" ] && [ ${#bpw} -ge 40 ]'
+check "옛 비밀번호는 더 이상 안 된다" '! asmc blog_media "$oldpw" ls local/doro-blog-media >/dev/null'
+check "새 비밀번호로 자기 버킷을 쓴다" 'asmc blog_media "$bpw" ls local/doro-blog-media >/dev/null'
+check "rotate 출력에 비밀번호가 없다" '! printf "%s" "$out" | grep -qF "$bpw" && ! printf "%s" "$out" | grep -qF "$oldpw"'
+check "rotate 는 다른 .env 항목을 건드리지 않는다" 'grep -q "^OTHER=keep$" "$H/doro-blog/.env" && grep -q "^MINIO_ACCESS_KEY=blog_media$" "$H/doro-blog/.env"'
+out="$(run --apply blog)"; check "rotate 뒤 --apply 는 다시 할 일 없음" 'printf "%s" "$out" | grep -q "이미 blog_media 로 접속 중"'
+
 echo "== party 전환 후 격리"
 run --apply party >/dev/null
 ppw="$(grep '^MINIO_SECRET_KEY=' "$H/doro-party/.env" | cut -d= -f2-)"
@@ -112,7 +123,7 @@ check ".env 가 전환 전 내용이다" '[ "$(cat "$H/doro-party/.env")" = "$be
 
 echo "== 되돌리기"
 out="$(run --rollback blog)"
-check "rollback 이 .env 를 전환 전으로 돌린다" '! grep -q "^MINIO_ACCESS_KEY=" "$H/doro-blog/.env"'
+check "rollback 이 .env 를 직전 상태(교체 전 비밀번호)로 돌린다" '[ "$(grep "^MINIO_SECRET_KEY=" "$H/doro-blog/.env" | cut -d= -f2-)" = "$oldpw" ]'
 
 echo; echo "통과 $PASS, 실패 $FAIL"
 [ "$FAIL" = 0 ] && echo "모두 통과" || exit 1

@@ -7,6 +7,7 @@
 #   ssh mini 'bash -s -- --check'              < scripts/split-minio-accounts.sh   # 읽기 전용: 서비스별 계정·정책·접속 상태
 #   ssh mini 'bash -s -- --patch-compose blog' < scripts/split-minio-accounts.sh   # 서버의 compose 파일에서 MINIO_ACCESS_KEY/SECRET_KEY 두 줄만 .env 변수를 받게 고친다(백업 후)
 #   ssh mini 'bash -s -- --apply blog'         < scripts/split-minio-accounts.sh   # 한 서비스만 전환(blog|party)
+#   ssh mini 'bash -s -- --rotate blog'        < scripts/split-minio-accounts.sh   # 이미 전환된 서비스의 비밀번호만 새로 정하고 .env 에 쓴 뒤 그 서비스만 다시 만든다(실패하면 .env 복구)
 #   ssh mini 'bash -s -- --rollback blog'      < scripts/split-minio-accounts.sh   # .env 를 전환 전으로 되돌리고 그 서비스만 다시 만든다
 #
 # --apply <서비스> 가 하는 일 (이미 끝난 부분은 건너뛴다)
@@ -18,17 +19,17 @@
 # 먼저 --patch-compose <서비스> 로 그 두 줄만 고친다(저장소의 docker-compose.prod.yml 과 같은 형태, 원본은 .bak-miniosplit 으로 백업, 이미 고쳐져 있으면 건너뜀).
 set -Eeuo pipefail
 
-ACTION=""; SVC=""
+ACTION=""; SVC=""; FORCE=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --check|--apply|--rollback|--patch-compose) ACTION="$1" ;;
+    --check|--apply|--rollback|--patch-compose|--rotate) ACTION="$1" ;;
     blog|party) SVC="$1" ;;
-    *) echo "사용법: bash -s -- --check | --patch-compose <서비스> | --apply <서비스> | --rollback <서비스>   (서비스: blog party)" >&2; exit 2 ;;
+    *) echo "사용법: bash -s -- --check | --patch-compose <서비스> | --apply <서비스> | --rotate <서비스> | --rollback <서비스>   (서비스: blog party)" >&2; exit 2 ;;
   esac
   shift
 done
-[ -n "$ACTION" ] || { echo "사용법: bash -s -- --check | --apply <서비스> | --rollback <서비스>" >&2; exit 2; }
-{ [ "$ACTION" = --check ] || [ -n "$SVC" ]; } || { echo "--patch-compose/--apply/--rollback 은 서비스 이름이 필요하다" >&2; exit 2; }
+[ -n "$ACTION" ] || { echo "사용법: bash -s -- --check | --apply <서비스> | --rotate <서비스> | --rollback <서비스>" >&2; exit 2; }
+{ [ "$ACTION" = --check ] || [ -n "$SVC" ]; } || { echo "--patch-compose/--apply/--rollback/--rotate 은 서비스 이름이 필요하다" >&2; exit 2; }
 
 MINIO="${MINIO_CONTAINER:-doro-minio}"
 ROOT_ENV="${MINIO_ROOT_ENV:-$HOME/doro-blog/.env}"   # MinIO 루트 계정이 있는 .env (MinIO 컨테이너를 띄우는 compose 의 .env)
@@ -145,7 +146,7 @@ apply_one() {
   load_root
   local cur_key cur_pw ts new_pw
   cur_key="$(get_var "$ENV_FILE" MINIO_ACCESS_KEY)"; cur_pw="$(get_var "$ENV_FILE" MINIO_SECRET_KEY)"
-  if [ "$cur_key" = "$KEYUSER" ] && [ -n "$cur_pw" ] && [ "$(container_key || true)" = "$KEYUSER" ] && verify_account "$cur_pw"; then
+  if [ "$FORCE" = 0 ] && [ "$cur_key" = "$KEYUSER" ] && [ -n "$cur_pw" ] && [ "$(container_key || true)" = "$KEYUSER" ] && verify_account "$cur_pw"; then
     log "[$1] 이미 $KEYUSER 로 접속 중이다(할 일 없음)"; return 0
   fi
   ts="$(date +%Y%m%d-%H%M%S)"
@@ -194,5 +195,6 @@ case "$ACTION" in
   --check) for s in $ALL; do describe_one "$s"; done ;;
   --patch-compose) patch_compose "$SVC" ;;
   --apply) apply_one "$SVC" ;;
+  --rotate) FORCE=1; apply_one "$SVC" ;;
   --rollback) rollback_one "$SVC" ;;
 esac

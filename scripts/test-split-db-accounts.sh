@@ -81,6 +81,16 @@ check "비밀번호가 틀리면 로그인되지 않는다" '! asrole games_app 
 echo "== 멱등"
 out="$(run --apply games)"; check "다시 실행하면 할 일 없음" 'printf "%s" "$out" | grep -q "이미 games_app 로 접속 중"'
 
+echo "== 비밀번호 교체(--rotate)"
+oldpw="$pw"
+out="$(run --rotate games)"; echo "$out" | sed 's/^/    | /'
+pw="$(grep '^DB_PASSWORD=' "$H/doro-games/.env" | cut -d= -f2-)"
+check "rotate 후 비밀번호가 바뀌었다" '[ "$pw" != "$oldpw" ] && [ ${#pw} -ge 40 ]'
+check "옛 비밀번호는 더 이상 안 된다" '! asrole games_app service_games "$oldpw" "select 1" | grep -qx 1'
+check "새 비밀번호로 로그인된다" 'asrole games_app service_games "$pw" "select 1" | grep -qx 1'
+check "rotate 출력에 비밀번호가 없다" '! printf "%s" "$out" | grep -qF "$pw" && ! printf "%s" "$out" | grep -qF "$oldpw"'
+check "rotate 는 다른 .env 항목을 건드리지 않는다" 'grep -q "^OTHER=keep$" "$H/doro-games/.env" && grep -q "^DB_USER=games_app$" "$H/doro-games/.env"'
+
 echo "== party 전환 후 격리"
 run --apply party >/dev/null
 ppw="$(grep '^DB_PASSWORD=' "$H/doro-party/.env" | cut -d= -f2-)"
@@ -102,7 +112,7 @@ check "처음부터 unhealthy 면 사전 점검에서 거부한다" 'printf "%s"
 
 echo "== 되돌리기"
 out="$(run --rollback games)"
-check "rollback 이 .env 를 전환 전으로 돌린다" 'grep -q "^DB_USER=postgres$" "$H/doro-games/.env"'
+check "rollback 이 .env 를 직전 상태(교체 전 비밀번호)로 돌린다" '[ "$(grep "^DB_PASSWORD=" "$H/doro-games/.env" | cut -d= -f2-)" = "$oldpw" ]'
 
 echo; echo "통과 $PASS, 실패 $FAIL"
 [ "$FAIL" = 0 ] && echo "모두 통과" || exit 1

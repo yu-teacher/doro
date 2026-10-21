@@ -5,6 +5,7 @@
 #
 #   ssh mini 'bash -s -- --check'                  < scripts/split-db-accounts.sh   # 읽기 전용: 서비스별 현재 접속 계정과 준비 상태
 #   ssh mini 'bash -s -- --apply blog'             < scripts/split-db-accounts.sh   # 한 서비스만 전환(blog|party|games|interview|auth|guard|bff)
+#   ssh mini 'bash -s -- --rotate blog'            < scripts/split-db-accounts.sh   # 이미 전환된 서비스의 비밀번호만 새로 정하고 .env 에 쓴 뒤 그 서비스만 다시 만든다(실패하면 .env 복구)
 #   ssh mini 'bash -s -- --rollback blog'          < scripts/split-db-accounts.sh   # .env 를 전환 전으로 되돌리고 그 서비스만 다시 만든다
 #
 # --apply <서비스> 가 하는 일 (이미 끝난 부분은 건너뛴다)
@@ -19,17 +20,17 @@
 # auth/guard/bff 는 Doro 의 docker-compose.yml 이 <서비스>_DB_USER 변수를 받아야 한다(없으면 중단한다).
 set -Eeuo pipefail
 
-ACTION=""; SVC=""
+ACTION=""; SVC=""; FORCE=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --check|--apply|--rollback) ACTION="$1" ;;
+    --check|--apply|--rollback|--rotate) ACTION="$1" ;;
     blog|party|games|interview|auth|guard|bff) SVC="$1" ;;
-    *) echo "사용법: bash -s -- --check | --apply <서비스> | --rollback <서비스>   (서비스: blog party games interview auth guard bff)" >&2; exit 2 ;;
+    *) echo "사용법: bash -s -- --check | --apply <서비스> | --rotate <서비스> | --rollback <서비스>   (서비스: blog party games interview auth guard bff)" >&2; exit 2 ;;
   esac
   shift
 done
-[ -n "$ACTION" ] || { echo "사용법: bash -s -- --check | --apply <서비스> | --rollback <서비스>" >&2; exit 2; }
-{ [ "$ACTION" = --check ] || [ -n "$SVC" ]; } || { echo "--apply/--rollback 은 서비스 이름이 필요하다" >&2; exit 2; }
+[ -n "$ACTION" ] || { echo "사용법: bash -s -- --check | --apply <서비스> | --rotate <서비스> | --rollback <서비스>" >&2; exit 2; }
+{ [ "$ACTION" = --check ] || [ -n "$SVC" ]; } || { echo "--apply/--rollback/--rotate 은 서비스 이름이 필요하다" >&2; exit 2; }
 
 PG="${PG_CONTAINER:-doro-postgres}"
 ADMIN="${PG_ADMIN_USER:-doro_admin}"
@@ -136,7 +137,7 @@ apply_one() {
   healthy "$CONTAINER" || die "$CONTAINER 가 healthy 가 아니다. 먼저 정상으로 만든다"
   local cur_user cur_pw ts bak new_pw
   cur_user="$(get_var "$ENV_FILE" "$USERVAR")"; cur_pw="$(get_var "$ENV_FILE" "$PASSVAR")"
-  if [ "$cur_user" = "$ROLE" ] && [ -n "$cur_pw" ] && login_ok "$cur_pw" && [ "$(container_user || true)" = "$ROLE" ] && [ "$(db_owner)" = "$ROLE" ]; then
+  if [ "$FORCE" = 0 ] && [ "$cur_user" = "$ROLE" ] && [ -n "$cur_pw" ] && login_ok "$cur_pw" && [ "$(container_user || true)" = "$ROLE" ] && [ "$(db_owner)" = "$ROLE" ]; then
     log "[$1] 이미 $ROLE 로 접속 중이다(할 일 없음)"; return 0
   fi
   ts="$(date +%Y%m%d-%H%M%S)"
@@ -187,5 +188,6 @@ docker inspect "$PG" >/dev/null 2>&1 || die "컨테이너 $PG 가 없다"
 case "$ACTION" in
   --check) for s in $ALL; do describe_one "$s"; done ;;
   --apply) apply_one "$SVC" ;;
+  --rotate) FORCE=1; apply_one "$SVC" ;;
   --rollback) rollback_one "$SVC" ;;
 esac
