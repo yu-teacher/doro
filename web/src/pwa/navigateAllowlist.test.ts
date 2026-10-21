@@ -11,7 +11,7 @@ describe('허브 서비스 워커 이동 허용 목록', () => {
   });
 
   it('다른 서비스·OAuth·API·옛 블로그 주소는 허용하지 않는다(네트워크로 보낸다)', () => {
-    for (const url of ['/blog/', '/blog/@doro', '/party/', '/games/', '/menu/', '/oauth2/consent', '/oauth2/authorize?x=1', '/api/v1/auth/login', '/loki/api/v1/labels', '/.well-known/openid-configuration', '/@doro', '/tags?tag=java', '/loginx', '/logs/extra']) {
+    for (const url of ['/blog/', '/blog/@doro', '/party/', '/games/', '/interview/', '/menu/', '/oauth2/consent', '/oauth2/authorize?x=1', '/api/v1/auth/login', '/loki/api/v1/labels', '/.well-known/openid-configuration', '/@doro', '/tags?tag=java', '/loginx', '/logs/extra']) {
       expect(allowed(url), url).toBe(false);
     }
   });

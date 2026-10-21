@@ -33,7 +33,7 @@ import {
   Ban,
   LockOpen,
   MapPin,
-  Gamepad2,
+  Gamepad2, GraduationCap,
 } from 'lucide-react';
 import { getErrorMessage } from '../utils/errorUtils';
 import { loginStateFrom } from '../utils/afterLogin';
@@ -47,6 +47,7 @@ const SERVICE_STYLE: Partial<Record<ServiceIcon, { Icon: React.ComponentType<{ c
   blog: { Icon: BookOpen, color: 'text-emerald-500 bg-emerald-50 border-emerald-100' },
   party: { Icon: MapPin, color: 'text-sky-500 bg-sky-50 border-sky-100' },
   games: { Icon: Gamepad2, color: 'text-amber-500 bg-amber-50 border-amber-100' },
+  interview: { Icon: GraduationCap, color: 'text-violet-500 bg-violet-50 border-violet-100' },
   menu: { Icon: Utensils, color: 'text-pink-500 bg-pink-50 border-pink-100' },
   logs: { Icon: Terminal, color: 'text-indigo-500 bg-indigo-50 border-indigo-100' },
 };
