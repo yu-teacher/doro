@@ -45,6 +45,7 @@ GET /icon-192.png                      200 web                 /icon-192.png
 GET /icon-512.png                      200 web                 /icon-512.png
 GET /apple-touch-icon.png              200 web                 /apple-touch-icon.png
 GET /favicon.svg                       200 web                 /favicon.svg
+GET /services.json                     200 web                 /services.json
 # 허브 파일 이름과 닮았어도 다른 경로는 그대로 /blog 로 이동한다
 GET /sw.json                           301 redirect:/blog/sw.json
 GET /sw.js/x                           301 redirect:/blog/sw.js/x

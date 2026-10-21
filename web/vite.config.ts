@@ -1,9 +1,11 @@
 import { defineConfig } from 'vitest/config';
+import type { Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
 import { HUB_NAVIGATE_ALLOWLIST } from './src/pwa/navigateAllowlist';
+import { buildServicesManifest } from './src/utils/servicesManifest';
 
 /** 허브는 게이트웨이의 루트(/)에 마운트된다. */
 const BASE = '/';
@@ -11,10 +13,32 @@ const THEME_COLOR = '#4f46e5';
 /** 개발 서버가 /api·/oauth2 를 넘겨 줄 IAM 주소. 로컬에 다른 포트로 띄운 IAM 을 쓸 때 VITE_DEV_API_TARGET 으로 바꾼다. */
 const IAM_DEV_TARGET = process.env.VITE_DEV_API_TARGET ?? 'http://localhost:8080';
 
+/**
+ * 각 서비스 헤더의 "서비스 목록" 버튼이 읽는 /services.json 을 만든다(빌드 산출물과 개발 서버 모두).
+ * 서비스 워커의 precache 에는 들어가지 않는다(workbox 기본 glob 에 json 이 없다): 낡은 목록이 남지 않게 항상 네트워크로 읽는다.
+ */
+function servicesManifestPlugin(): Plugin {
+  const body = () => `${JSON.stringify(buildServicesManifest(), null, 2)}\n`;
+  return {
+    name: 'doro-services-manifest',
+    configureServer(server) {
+      server.middlewares.use('/services.json', (_req, res) => {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.end(body());
+      });
+    },
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: 'services.json', source: body() });
+    },
+  };
+}
+
 export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    servicesManifestPlugin(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
