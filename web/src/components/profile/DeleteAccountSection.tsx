@@ -12,11 +12,13 @@ import {
 interface Props {
   role: UserRole | undefined;
   hasTotp: boolean;
+  /** false 면 비밀번호를 정한 적 없는 소셜 가입 계정이라 비밀번호 입력을 받지 않는다. */
+  passwordSet?: boolean;
   /** 서버가 탈퇴를 접수한 뒤 호출된다. 호출 측이 로컬 세션을 정리하고 화면을 옮긴다. */
   onRequested: (scheduledPurgeAt: string) => void;
 }
 
-export const DeleteAccountSection: React.FC<Props> = ({ role, hasTotp, onRequested }) => {
+export const DeleteAccountSection: React.FC<Props> = ({ role, hasTotp, passwordSet = true, onRequested }) => {
   const [open, setOpen] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [password, setPassword] = useState('');
@@ -36,7 +38,7 @@ export const DeleteAccountSection: React.FC<Props> = ({ role, hasTotp, onRequest
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const problem = validateDeletionForm({ confirmed, password, hasTotp, totpCode });
+    const problem = validateDeletionForm({ confirmed, password, hasTotp, totpCode, passwordRequired: passwordSet });
     if (problem) {
       setError(problem);
       return;
@@ -45,7 +47,7 @@ export const DeleteAccountSection: React.FC<Props> = ({ role, hasTotp, onRequest
     setError(null);
     try {
       const result = await authApi.requestAccountDeletion({
-        password,
+        password: passwordSet ? password : undefined,
         totpCode: hasTotp ? totpCode.trim() : undefined,
       });
       onRequested(result.scheduledPurgeAt);
@@ -109,19 +111,21 @@ export const DeleteAccountSection: React.FC<Props> = ({ role, hasTotp, onRequest
             />
             <span>위 안내를 모두 확인했고, 계정을 삭제하는 데 동의합니다.</span>
           </label>
-          <div>
-            <label htmlFor="delete-account-password" className="block text-[11px] font-bold text-slate-600 mb-1">
-              비밀번호
-            </label>
-            <input
-              id="delete-account-password"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-red-500/20 focus:border-red-500 font-medium"
-            />
-          </div>
+          {passwordSet && (
+            <div>
+              <label htmlFor="delete-account-password" className="block text-[11px] font-bold text-slate-600 mb-1">
+                비밀번호
+              </label>
+              <input
+                id="delete-account-password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-red-500/20 focus:border-red-500 font-medium"
+              />
+            </div>
+          )}
           {hasTotp && (
             <div>
               <label htmlFor="delete-account-totp" className="block text-[11px] font-bold text-slate-600 mb-1">

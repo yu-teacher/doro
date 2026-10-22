@@ -68,6 +68,8 @@ export const MyAccountPage: React.FC = () => {
 
   // 프로필 정보 상태
   const [profile, setProfile] = useState<UserProfileData | null>(null);
+  // 소셜로 가입해 비밀번호를 정한 적 없는 계정은 현재 비밀번호 확인 없이 처음 비밀번호를 정한다.
+  const passwordSet = profile?.passwordSet !== false;
   const [loadingProfile, setLoadingProfile] = useState(false);
 
   // 어드민 사용자 관리 상태
@@ -401,8 +403,10 @@ export const MyAccountPage: React.FC = () => {
 
     setSavingPassword(true);
     try {
-      await authApi.changePassword({ currentPassword, newPassword });
-      setPasswordSuccessMsg('비밀번호가 성공적으로 변경되었습니다!');
+      await authApi.changePassword({ currentPassword: passwordSet ? currentPassword : undefined, newPassword });
+      setPasswordSuccessMsg(passwordSet ? '비밀번호가 성공적으로 변경되었습니다!' : '비밀번호를 설정했습니다. 이제 이메일과 비밀번호로도 로그인할 수 있습니다.');
+      // 서버가 비밀번호를 정한 계정으로 바꿨으니 화면도 바꾼다(이후에는 현재 비밀번호를 묻는다).
+      setProfile((prev) => (prev ? { ...prev, passwordSet: true } : prev));
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
@@ -458,13 +462,13 @@ export const MyAccountPage: React.FC = () => {
       setTotpErrorMessage('이미 2단계 인증이 활성화되어 있습니다. 해제한 뒤 다시 설정해 주세요.');
       return;
     }
-    if (totpSetupPassword.length === 0) {
+    if (passwordSet && totpSetupPassword.length === 0) {
       setTotpErrorMessage('현재 비밀번호를 입력해 주세요.');
       return;
     }
     setTotpLoading(true);
     try {
-      const data = await authApi.setup2fa(totpSetupPassword);
+      const data = await authApi.setup2fa(passwordSet ? totpSetupPassword : undefined);
       setTotpSetupData(data);
       setTotpSetupPassword('');
     } catch (err: unknown) {
@@ -845,7 +849,11 @@ export const MyAccountPage: React.FC = () => {
                     <div className="sm:w-2/3">
                       {!isChangingPassword ? (
                         <div className="flex items-center justify-between">
-                          <span className="font-mono text-slate-400 text-sm tracking-widest">••••••••••••</span>
+                          {passwordSet ? (
+                            <span className="font-mono text-slate-400 text-sm tracking-widest">••••••••••••</span>
+                          ) : (
+                            <span className="text-xs text-slate-500">설정하지 않음 (소셜 로그인으로 가입)</span>
+                          )}
                           <button
                             onClick={() => {
                               setIsChangingPassword(true);
@@ -855,7 +863,7 @@ export const MyAccountPage: React.FC = () => {
                             className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-indigo-600 font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
                           >
                             <Key className="w-3.5 h-3.5" />
-                            비밀번호 변경
+                            {passwordSet ? '비밀번호 변경' : '비밀번호 설정'}
                           </button>
                         </div>
                       ) : (
@@ -865,17 +873,19 @@ export const MyAccountPage: React.FC = () => {
                               {passwordErrorMsg}
                             </div>
                           )}
-                          <div>
-                            <label className="block text-[11px] font-bold text-slate-600 mb-1">현재 비밀번호</label>
-                            <input
-                              type="password"
-                              required
-                              value={currentPassword}
-                              onChange={(e) => setCurrentPassword(e.target.value)}
-                              placeholder="••••••••"
-                              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-medium"
-                            />
-                          </div>
+                          {passwordSet && (
+                            <div>
+                              <label className="block text-[11px] font-bold text-slate-600 mb-1">현재 비밀번호</label>
+                              <input
+                                type="password"
+                                required={passwordSet}
+                                value={currentPassword}
+                                onChange={(e) => setCurrentPassword(e.target.value)}
+                                placeholder="••••••••"
+                                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-medium"
+                              />
+                            </div>
+                          )}
                           <div>
                             <label className="block text-[11px] font-bold text-slate-600 mb-1">새 비밀번호 (8자 이상)</label>
                             <input
@@ -932,7 +942,7 @@ export const MyAccountPage: React.FC = () => {
 
               {/* 2FA 사용 여부를 알아야 올바른 입력칸을 보여 줄 수 있으므로 프로필을 불러온 뒤에만 보여 준다. */}
               {profile && (
-                <DeleteAccountSection role={profile.role} hasTotp={profile.hasTotp} onRequested={handleDeletionRequested} />
+                <DeleteAccountSection role={profile.role} hasTotp={profile.hasTotp} passwordSet={profile.passwordSet !== false} onRequested={handleDeletionRequested} />
               )}
             </div>
           )}
@@ -1058,15 +1068,17 @@ export const MyAccountPage: React.FC = () => {
                     <div>
                       <div className="text-xs font-bold text-slate-800">Authenticator 2FA 등록</div>
                       <div className="text-[11px] text-slate-400">Google Authenticator, Authy, 1Password 지원</div>
-                      <input
-                        type="password"
-                        value={totpSetupPassword}
-                        onChange={(e) => setTotpSetupPassword(e.target.value)}
-                        placeholder="현재 비밀번호 확인"
-                        autoComplete="current-password"
-                        aria-label="2FA 등록을 위한 현재 비밀번호"
-                        className="mt-2 w-full sm:w-64 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-medium"
-                      />
+                      {passwordSet && (
+                        <input
+                          type="password"
+                          value={totpSetupPassword}
+                          onChange={(e) => setTotpSetupPassword(e.target.value)}
+                          placeholder="현재 비밀번호 확인"
+                          autoComplete="current-password"
+                          aria-label="2FA 등록을 위한 현재 비밀번호"
+                          className="mt-2 w-full sm:w-64 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-medium"
+                        />
+                      )}
                     </div>
                     <button
                       onClick={handleStart2faSetup}

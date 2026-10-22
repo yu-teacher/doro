@@ -4,7 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 public record ChangePasswordRequest(
-        @NotBlank(message = "현재 비밀번호를 입력해 주세요.")
+        // 비밀번호를 정한 적 없는 소셜 가입 계정은 비워 보낸다. 필요한 계정에서는 서비스가 비어 있으면 거부한다.
         @Size(max = 128, message = "비밀번호가 너무 깁니다.")
         String currentPassword,
 

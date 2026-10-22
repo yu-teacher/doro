@@ -15,6 +15,8 @@ export interface UserProfileData {
   status: string;
   role: UserRole;
   hasTotp: boolean;
+  /** 비밀번호를 정한 적이 있는지. false 면 소셜로 가입한 계정이다(없으면 true 로 본다). */
+  passwordSet?: boolean;
   createdAt: string;
   /** 관리자 목록에서만 채워진다: 정지 시각·사유, 비밀번호 실패 잠금 여부. */
   suspendedAt?: string | null;

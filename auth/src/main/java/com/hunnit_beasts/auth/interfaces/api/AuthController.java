@@ -6,7 +6,6 @@ import com.hunnit_beasts.auth.domain.user.service.BootstrapService;
 import com.hunnit_beasts.auth.common.web.ClientIpResolver;
 import com.hunnit_beasts.auth.common.web.RefreshTokenCookies;
 import com.hunnit_beasts.auth.common.exception.ErrorCode;
-import com.hunnit_beasts.auth.common.exception.FieldValidationException;
 import com.hunnit_beasts.auth.common.response.ApiResponse;
 import com.hunnit_beasts.auth.domain.auth.dto.*;
 import com.hunnit_beasts.auth.domain.auth.service.AuthService;
@@ -93,10 +92,8 @@ public class AuthController {
         if (userId == null) {
             throw new AuthException(ErrorCode.UNAUTHORIZED, "로그인이 필요한 요청입니다.");
         }
-        if (request == null || request.currentPassword() == null || request.currentPassword().isBlank()) {
-            throw new FieldValidationException("currentPassword", "현재 비밀번호를 입력해 주세요.");
-        }
-        TotpSetupResponse response = authService.setupTotp(userId, request.currentPassword());
+        // 현재 비밀번호 확인(비밀번호가 없는 소셜 가입 계정은 생략)은 서비스가 한다.
+        TotpSetupResponse response = authService.setupTotp(userId, request == null ? null : request.currentPassword());
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 

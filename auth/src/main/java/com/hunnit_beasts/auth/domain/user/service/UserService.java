@@ -59,9 +59,11 @@ public class UserService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new AuthException(ErrorCode.USER_NOT_FOUND));
 
-        boolean hasTotp = credentialRepository.findByUserId(userId)
+        var credential = credentialRepository.findByUserId(userId);
+        boolean hasTotp = credential
                 .map(c -> c.getTotpSecret() != null && !c.getTotpSecret().isBlank())
                 .orElse(false);
+        boolean passwordSet = credential.map(c -> c.isPasswordSet()).orElse(true);
 
         return new UserProfileResponse(
                 user.getId(),
@@ -71,7 +73,8 @@ public class UserService {
                 user.getStatus().name(),
                 user.getRole() != null ? user.getRole().name() : "USER",
                 hasTotp,
-                user.getCreatedAt()
+                user.getCreatedAt(),
+                passwordSet
         );
     }
 
@@ -95,9 +98,11 @@ public class UserService {
         log.info("User profile updated: userId={}, name={}, hasImage={}",
                 userId, LogMasking.maskName(user.getName()), user.getProfileImageUrl() != null);
 
-        boolean hasTotp = credentialRepository.findByUserId(userId)
+        var credential = credentialRepository.findByUserId(userId);
+        boolean hasTotp = credential
                 .map(c -> c.getTotpSecret() != null && !c.getTotpSecret().isBlank())
                 .orElse(false);
+        boolean passwordSet = credential.map(c -> c.isPasswordSet()).orElse(true);
 
         return new UserProfileResponse(
                 user.getId(),
@@ -107,7 +112,8 @@ public class UserService {
                 user.getStatus().name(),
                 user.getRole() != null ? user.getRole().name() : "USER",
                 hasTotp,
-                user.getCreatedAt()
+                user.getCreatedAt(),
+                passwordSet
         );
     }
 
@@ -207,12 +213,18 @@ public class UserService {
                 .orElseThrow(() -> new AuthException(ErrorCode.USER_NOT_FOUND));
 
         // 본인 확인은 로그인과 같은 실패 카운트(잠금)를 공유해, 탈취된 토큰으로 현재 비밀번호를 무차별 대입하지 못하게 한다.
-        if (credentialService.isLocked(credential)) {
-            throw new AuthException(ErrorCode.ACCOUNT_LOCKED);
-        }
-        if (!passwordEncoder.matches(request.currentPassword(), credential.getPasswordHash())) {
-            credentialService.recordFailedAttempt(userId);
-            throw new AuthException(ErrorCode.INVALID_CREDENTIALS, "현재 비밀번호가 일치하지 않습니다.");
+        // 비밀번호를 정한 적 없는 계정(소셜 가입)은 현재 비밀번호가 없으므로 확인 없이 처음 비밀번호를 정한다.
+        if (credential.isPasswordSet()) {
+            if (request.currentPassword() == null || request.currentPassword().isBlank()) {
+                throw new com.hunnit_beasts.auth.common.exception.FieldValidationException("currentPassword", "현재 비밀번호를 입력해 주세요.");
+            }
+            if (credentialService.isLocked(credential)) {
+                throw new AuthException(ErrorCode.ACCOUNT_LOCKED);
+            }
+            if (!passwordEncoder.matches(request.currentPassword(), credential.getPasswordHash())) {
+                credentialService.recordFailedAttempt(userId);
+                throw new AuthException(ErrorCode.INVALID_CREDENTIALS, "현재 비밀번호가 일치하지 않습니다.");
+            }
         }
         // 해싱(Argon2id, 느림)은 트랜잭션 밖에서 끝내고, DB 변경만 짧은 트랜잭션으로 묶는다.
         // 트랜잭션 안에서 해싱하면 커넥션을 오래 쥐고, 실패 기록(REQUIRES_NEW)과 겹쳐 풀이 교착한다.

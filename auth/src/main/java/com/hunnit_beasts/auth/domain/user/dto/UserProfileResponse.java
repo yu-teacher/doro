@@ -20,11 +20,18 @@ public record UserProfileResponse(
         Instant createdAt,
         Instant suspendedAt,
         String suspensionReason,
-        boolean locked
+        boolean locked,
+        /** 비밀번호를 정한 적이 있는지. false 면 소셜 가입 계정이라 화면이 "비밀번호 설정"으로 보여 준다. */
+        boolean passwordSet
 ) {
     public UserProfileResponse(UUID id, String email, String name, String profileImageUrl, String status,
                                String role, boolean hasTotp, Instant createdAt) {
-        this(id, email, name, profileImageUrl, status, role, hasTotp, createdAt, null, null, false);
+        this(id, email, name, profileImageUrl, status, role, hasTotp, createdAt, null, null, false, true);
+    }
+
+    public UserProfileResponse(UUID id, String email, String name, String profileImageUrl, String status,
+                               String role, boolean hasTotp, Instant createdAt, boolean passwordSet) {
+        this(id, email, name, profileImageUrl, status, role, hasTotp, createdAt, null, null, false, passwordSet);
     }
 
     /** 관리자 화면용: 정지 정보와 잠금 상태를 포함한다. */
@@ -40,7 +47,8 @@ public record UserProfileResponse(
                 user.getCreatedAt(),
                 user.getSuspendedAt(),
                 user.getSuspensionReason(),
-                locked
+                locked,
+                true
         );
     }
 }
