@@ -269,7 +269,8 @@ class SocialLoginTest {
         assertThat(identityRepository.findByUserIdAndProvider(userId, "fake2")).isPresent();
         assertThat(identityRepository.findByUserIdAndProvider(userId, "fake")).isPresent();
         assertThat(credentialRepository.findByUserId(userId).orElseThrow().isPasswordSet()).isTrue();
-        // 기존 세션도 끝나지 않았다(이미 확인된 계정이라 버릴 것이 없다)
+        // 기존 세션도 끝나지 않았다(이미 확인된 계정이라 버릴 것이 없다). 첫 공급자(fake)로는 원래 외부 계정으로 다시 들어온다.
+        NEXT_PROFILE.set(new SocialProfile(providerId, email, true, "Social Tester"));
         assertThat(refresh(0, refreshCookieOf(loginWith("fake", 0), 0)).path("accessToken").asText()).isNotBlank();
         int loginStatus = mockMvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"email\":\"" + email + "\",\"password\":\"" + PASSWORD + "\"}")).andReturn().getResponse().getStatus();
