@@ -49,6 +49,10 @@ public class UserSession {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
+    /** OAuth 클라이언트에 발급한 세션이 허용받은 scope(공백 구분). 일반 로그인 세션과 이 기능 이전의 세션은 null. */
+    @Column(name = "oauth_scope", length = 255)
+    private String oauthScope;
+
     @Builder
     public UserSession(UUID id, UUID userId, int userIndex, String deviceInfo,
                        String ipAddress, String userAgent, Instant expiresAt) {
@@ -62,6 +66,10 @@ public class UserSession {
         this.lastActiveAt = Instant.now();
         this.expiresAt = expiresAt;
         this.createdAt = Instant.now();
+    }
+
+    public void grantOAuthScope(String scope) {
+        this.oauthScope = scope;
     }
 
     public void touch() {

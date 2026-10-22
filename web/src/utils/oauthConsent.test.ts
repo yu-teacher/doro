@@ -7,6 +7,7 @@ import {
   resolveAuthorizeError,
   sanitizeServerMessage,
   isFirstPartyClient,
+  clientNameOf,
 } from './oauthConsent';
 import type { ConsentRequest } from './oauthConsent';
 
@@ -174,5 +175,18 @@ describe('isFirstPartyClient', () => {
     expect(isFirstPartyClient({ data: null })).toBe(false);
     expect(isFirstPartyClient({ data: { firstParty: 'true' } })).toBe(false);
     expect(isFirstPartyClient({ data: { firstParty: 1 } })).toBe(false);
+  });
+});
+
+describe('clientNameOf', () => {
+  it('등록된 앱 이름을 읽는다', () => {
+    expect(clientNameOf({ data: { clientId: 'x', name: '  시험 외부 앱 ' } })).toBe('시험 외부 앱');
+  });
+  it('이름이 없거나 형식이 다르거나 너무 길면 null(호출한 쪽이 client_id 로 대신 보여 준다)', () => {
+    expect(clientNameOf(null)).toBeNull();
+    expect(clientNameOf({})).toBeNull();
+    expect(clientNameOf({ data: { name: 3 } })).toBeNull();
+    expect(clientNameOf({ data: { name: '   ' } })).toBeNull();
+    expect(clientNameOf({ data: { name: 'x'.repeat(101) } })).toBeNull();
   });
 });

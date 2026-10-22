@@ -40,6 +40,8 @@ public class JwtTokenProvider {
 
     /** OAuth 클라이언트에 발급한 액세스 토큰임을 나타내는 클레임(값은 client_id) */
     public static final String CLAIM_CLIENT_ID = "cid";
+    /** OAuth 액세스 토큰에 허용된 scope(공백 구분). 없으면 이 기능 이전에 발급된 토큰이다. */
+    public static final String CLAIM_SCOPE = "scope";
 
     @Value("${doro.iam.jwt.access-token-validity-seconds:900}")
     private long accessTokenValiditySeconds;
@@ -82,10 +84,15 @@ public class JwtTokenProvider {
      * ({@code JwtAuthenticationFilter}: userinfo / 세션 확인만 예외).
      */
     public String createOAuthAccessToken(UUID userId, String email, UUID sessionId, int userIndex, String clientId) {
+        return createOAuthAccessToken(userId, email, sessionId, userIndex, clientId, null);
+    }
+
+    /** scope 가 있으면 토큰에 싣는다(userinfo 가 허용된 범위만 돌려주는 근거). */
+    public String createOAuthAccessToken(UUID userId, String email, UUID sessionId, int userIndex, String clientId, String scope) {
         Date now = new Date();
         Date validity = new Date(now.getTime() + (accessTokenValiditySeconds * 1000));
 
-        return Jwts.builder()
+        JwtBuilder builder = Jwts.builder()
                 .header()
                 .keyId(keyProvider.getKeyId())
                 .type("JWT")
@@ -98,9 +105,11 @@ public class JwtTokenProvider {
                 .claim("role", "USER")
                 .claim(CLAIM_CLIENT_ID, clientId)
                 .issuedAt(now)
-                .expiration(validity)
-                .signWith(keyProvider.getPrivateKey(), Jwts.SIG.RS256)
-                .compact();
+                .expiration(validity);
+        if (scope != null && !scope.isBlank()) {
+            builder.claim(CLAIM_SCOPE, scope);
+        }
+        return builder.signWith(keyProvider.getPrivateKey(), Jwts.SIG.RS256).compact();
     }
 
     /**

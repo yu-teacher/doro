@@ -4,7 +4,11 @@
   "type": "module",
   "description": "진짜 IAM + 진짜 서비스 + 진짜 브라우저로 로그인 흐름을 끝까지 확인하는 통합 시험",
   "scripts": {
-    "test": "playwright test"
+    "test": "playwright test",
+    "test:third-party": "playwright test -c playwright.third-party.config.ts"
+  },
+  "dependencies": {
+    "openid-client": "^6.1.0"
   },
   "devDependencies": {
     "@playwright/test": "1.64.0",
