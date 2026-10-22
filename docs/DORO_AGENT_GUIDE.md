@@ -59,6 +59,8 @@ IAM ──(REST, 관리자 판정·역할 튜플 동기화)──▶ Guard
    - BFF 가 쓰는 OAuth 클라이언트는 `firstParty: true` 로 등록하고, 서비스 SDK 의 `doro.iam.oauth-client-ids` 에 그 클라이언트 ID 를 넣어야 BFF 가 받은 `cid` 토큰이 통과한다(§4.1). doro-bff 의 기본 클라이언트: `doro-blog`, `doro-party`, `doro-games`. [코드: `bff/src/main/resources/application.yaml`]
 3. **OAuth 2.1 인가 코드 + PKCE / OIDC (외부·별도 origin 앱용)**: 리다이렉트 방식 SSO. 클라이언트 등록(`oauth_clients`), 포털 동의 화면, 토큰/리프레시/폐기/`id_token`/`userinfo` 가 구현돼 있다(§5). 공개 클라이언트(PKCE)와 **기밀 클라이언트(PKCE + client_secret)** 를 지원한다. (위 2번도 같은 엔드포인트를 쓰는 OAuth 클라이언트다.)
 
+> **소셜 로그인(GitHub·Google)**: 위 세 방식과 별개로 IAM 로그인 화면에 "GitHub/Google 로 계속하기"가 있다(공급자 키를 설정한 경우만). 공급자에서 이메일 소유가 확인되면 같은 이메일의 Doro 계정에 자동 연결하고, 없으면 비밀번호 없는 계정을 만든다. 로그인에 성공하면 인앱 로그인과 같은 세션·리프레시 쿠키 모델로 합류한다. 상세는 §2.7. [코드: `SocialAuthController`, `SocialLoginService`]
+
 ---
 
 ## 2. IAM API — 실제 규격
@@ -138,7 +140,7 @@ IAM ──(REST, 관리자 판정·역할 튜플 동기화)──▶ Guard
 
 ### 2.4 요청 제한과 클라이언트 IP [코드]
 
-- IP 단위 고정 윈도우, 초과 시 **429 + `Retry-After`**: 로그인/2FA 로그인/**부트스트랩(`POST /auth/bootstrap`)/비밀번호 변경(`PUT /users/me/password`)** 10분당 20회, 계정 조회 10분당 30회, 가입 1시간당 10회, `POST /oauth2/token`·**`POST /oauth2/revoke`** 및 **Bearer 없는** `GET /oauth2/authorize` 10분당 60회. 키는 IPv6 를 /64 로 묶는다. 경로는 퍼센트 디코딩·정규화한 값(`RequestPaths.canonical`)으로 판정해 `/log%69n` 같은 인코딩으로 빗나가지 않는다. 429 가 폭주해도 경고 로그는 버킷별로 일정 간격에 한 번만 남긴다. `doro.iam.rate-limit.*` 로 조정, `DORO_IAM_RATE_LIMIT_ENABLED=false` 로 끈다. **단일 인스턴스 메모리 기준**.
+- IP 단위 고정 윈도우, 초과 시 **429 + `Retry-After`**: 로그인/2FA 로그인/**부트스트랩(`POST /auth/bootstrap`)/비밀번호 변경(`PUT /users/me/password`)** 10분당 20회, 계정 조회 10분당 30회, 가입 1시간당 10회, 소셜 로그인 시작·콜백(`GET /auth/social/*/start|callback`) 은 로그인과 같은 10분당 20회, `POST /oauth2/token`·**`POST /oauth2/revoke`** 및 **Bearer 없는** `GET /oauth2/authorize` 10분당 60회. 키는 IPv6 를 /64 로 묶는다. 경로는 퍼센트 디코딩·정규화한 값(`RequestPaths.canonical`)으로 판정해 `/log%69n` 같은 인코딩으로 빗나가지 않는다. 429 가 폭주해도 경고 로그는 버킷별로 일정 간격에 한 번만 남긴다. `doro.iam.rate-limit.*` 로 조정, `DORO_IAM_RATE_LIMIT_ENABLED=false` 로 끈다. **단일 인스턴스 메모리 기준**.
 - 클라이언트 IP(`ClientIpResolver`): **신뢰 프록시(`doro.iam.trusted-proxies`, 기본 루프백 + 도커 브리지 `172.16.0.0/12`)** 에서 온 연결의 `X-Real-IP` 만 신뢰한다. LAN(192.168/16, 10/8)이나 인터넷에서 온 헤더는 무시. 요청 제한·세션 기록·로그가 같은 규칙을 쓴다. 게이트웨이는 `X-Real-IP`/`X-Forwarded-For` 를 **접속 주소로 덮어쓴다**.
 
 ### 2.5 CORS [코드]
@@ -158,6 +160,18 @@ Docker 내부 네트워크에서 서비스가 직접 부른다. 게이트웨이�
 - 이 경로는 Spring Security 상 `permitAll`(GET, 두 경로만)이라 JWT 가 필요 없고, **`InternalApiAuthFilter`**(`HIGHEST_PRECEDENCE+10`, `/internal` 또는 `/internal/` 접두 경로만; 경로는 퍼센트 디코딩·`//`·`/./`·`/../` 정규화 후 판정)가 막는다. 순서: ① 프록시 헤더가 있으면 404 ② 모드 OFF 면 통과 ③ 토큰이 등록된 값과 같으면 통과 ④ 아니면 WARN 모드는 경고만 남기고 통과, ENFORCE 는 **401**(`ApiResponse` 실패 봉투, 코드 `AUTH_40101`). 사용자 JWT(`Authorization: Bearer`)는 호출자 인증을 대신하지 못한다. ENFORCE 인데 `DORO_IAM_INTERNAL_TOKENS` 가 비어 있으면 모든 `/internal` 요청이 401 이다(기동 때 경고 로그). 알 수 없는 모드 값은 기동 실패. 토큰 값은 로그에 남지 않는다. [코드·테스트: `InternalApiAuthFilter`, `InternalApiAuthFilterTest`(ENFORCE/WARN/OFF·프록시·경로 우회), `AccountDeletionTest`(피드 인증: 빈 토큰·한 글자 짧거나 긴 토큰·Bearer 거부)]
 - **`deleted-users` 세부** [코드·테스트: `InternalUserController`, `UserRepository.findDeletedSince`, `AccountDeletionTest`]: `since` 는 **포함**(`deletedAt >= since`)이고 `deletedAt ASC, id ASC` 순서다. `limit` 은 1~500 으로 잘린다(0·음수는 1, 초과는 500). `since` 형식이 틀리면 400, 미래 시각이면 빈 목록(`nextSince`=요청한 `since`). 항목은 `{userId, deletedAt}` 뿐이다(`DeletedUserRef`) — 이메일·이름 없음.
 - **`users/{userId}/status` 세부** [코드·테스트: `UserStatusResponse`, `InternalUserStatusTest`]: 응답 `data` = `{userId, status}`, `status` 는 `UserStatus` enum 이름(`ACTIVE`/`LOCKED`/`SUSPENDED`/`PENDING_DELETION`/`DELETED`)을 DB 값 그대로 돌려준다(정지가 풀리면 다시 `ACTIVE`). 없는 사용자는 본문 없는 404. 테스트가 확인하는 것: 상태 4종 반영, 없는 사용자 404, 토큰 없음/틀림 401, `X-Forwarded-For`·`X-Real-IP` 404, 응답에 이메일·이름 없음. 라이브 서버의 실제 응답은 호출하지 않았다 — 확인(서버에서, 토큰 없이): `ssh mini "curl -s -o /dev/null -w '%{http_code}\n' localhost:8080/internal/v1/deleted-users"` 가 `401` 이면 ENFORCE, `200` 이면 WARN/OFF 다. 정상 호출 응답은 서비스 토큰이 필요하므로 서버의 `.env` 값을 채팅·로그에 옮기지 않고 서버 안에서만 시험한다(`[미검증]`: 운영 모드·토큰 등록 상태).
+
+### 2.7 소셜 로그인 [코드: `SocialAuthController`, `SocialLoginService`, `GithubProvider`, `GoogleProvider`, `V14__social_login.sql`]
+
+- **흐름(브라우저 이동 방식)**: 로그인 화면 → `GET /api/v1/auth/social/{provider}/start?slot=0~4` → 공급자 → `GET …/{provider}/callback` → `/login?social=ok|2fa|error`. 성공하면 콜백이 리프레시 토큰을 인앱 로그인과 같은 HttpOnly 쿠키(`doro_rt_<슬롯>`)로 심고, 화면이 그 쿠키로 `token/refresh` 를 불러 액세스 토큰을 받는다(토큰이 주소에 실리지 않는다). 2FA 가 켜진 계정은 `social=2fa&ticket=…` 로 돌아오고 기존 `POST /auth/2fa/login` 으로 이어진다. 실패·취소는 `social=error&code=…`(`invalid_state`·`email_not_verified`·`account_suspended`·`denied`·`provider_error`·`unavailable`·`too_many`).
+- `GET /api/v1/auth/social/providers` → `[{id,name}]`: 설정이 끝난 공급자만(공개 주소 `doro.social.public-base-url` 과 공급자 `client-id`/`client-secret` 이 모두 있어야 켜진다).
+- **보안**: PKCE(S256), 서버가 한 번만 쓰게 보관하는 `state`(10분, 단일 인스턴스 메모리) + 시작할 때 브라우저에 심는 `doro_sso_state`(HttpOnly·SameSite=Lax, 경로 `/api/v1/auth/social`) 일치 확인(로그인 CSRF 방어). 공급자가 **이메일 소유를 확인해 준 경우만** 가입·연결한다(GitHub 는 확인된 primary 이메일, noreply 주소 제외 / Google 은 `email_verified`).
+- **계정 연결 정책**: ① 이미 연결된 외부 계정(`social_identities` 의 (공급자, 공급자 사용자 ID))이면 그 계정으로 로그인 ② 같은 이메일의 Doro 계정이 있으면 자동 연결. 그 계정이 이메일 확인(`users.email_verified`)을 받은 적 없으면(비밀번호 가입은 이메일 인증이 없다) **연결 순간 예전 비밀번호·2FA 를 버리고 모든 세션을 끝낸다**(남이 먼저 그 이메일로 가입해 둔 계정에 연결되는 사고 방지) ③ 없으면 비밀번호 없는 계정(`credentials.password_set=false`, 해시는 아무도 모르는 무작위 값)을 만든다. 정지·영구 탈퇴 계정은 거부, 탈퇴 유예 계정은 로그인으로 복구된다. 영구 탈퇴 처리 때 소셜 연결도 지운다.
+- **비밀번호 없는 계정**: 비밀번호 로그인은 불가. `PUT /users/me/password` 는 현재 비밀번호 없이 처음 비밀번호를 정할 수 있고(`GET /users/me` 의 `passwordSet:false`), 2FA 등록도 현재 비밀번호 확인을 건너뛴다. **회원탈퇴는 확인할 비밀번호가 없으므로 비밀번호 없이 접수한다**(30일 유예, 접수 즉시 전체 세션 종료, 2FA 를 켰다면 OTP 요구 — 유예 중 소셜로 다시 로그인하면 복구).
+- 설정: `DORO_SOCIAL_PUBLIC_BASE_URL`, `DORO_SOCIAL_GITHUB_CLIENT_ID/SECRET`, `DORO_SOCIAL_GOOGLE_CLIENT_ID/SECRET`(값은 서버 `.env`). 공급자 앱의 콜백 주소: `<공개 주소>/api/v1/auth/social/<github|google>/callback`.
+- 한계: 연결된 소셜 계정을 보거나 해제하는 API·화면은 아직 없다. 새 공급자는 `SocialProvider` 구현 빈을 추가한다.
+
+---
 
 ---
 
@@ -649,6 +663,8 @@ curl -s localhost:8085/actuator/health                                          
 ---
 
 ## 14. 변경 이력
+
+- **2026-10-22 (소셜 로그인)** — GitHub·Google 소셜 로그인을 추가하고(§1.1·§2.4·§2.7) 이 가이드에 반영했다. 코드 기준으로 적었고 실제 공급자 왕복·PostgreSQL 마이그레이션(V14)은 서버에서 확인하지 못했다 `[미검증]`.
 
 - **주의(2026-10-22)**: 이 갱신의 기준은 `bb03743` 이다. 이후 main 에 들어간 OAuth 관련 변경(third-party OIDC e2e 작업 #50: OAuth 세션 scope(`V13__session_oauth_scope.sql`), OIDC 엔드포인트와 동의 오류 처리)은 이 문서에 반영하지 않았다 `[미검증]`: §5 는 그 변경 전 기준이다. 코드가 맞다.
 

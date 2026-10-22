@@ -2,6 +2,7 @@ package com.hunnit_beasts.auth.domain.auth.service;
 
 import com.hunnit_beasts.auth.common.exception.AuthException;
 import com.hunnit_beasts.auth.common.exception.ErrorCode;
+import com.hunnit_beasts.auth.common.exception.FieldValidationException;
 import com.hunnit_beasts.auth.common.log.LogMasking;
 import com.hunnit_beasts.auth.common.util.EmailNormalizer;
 import com.hunnit_beasts.auth.core.crypto.CustomArgon2PasswordEncoder;
@@ -176,14 +177,7 @@ public class AuthService {
 
         // 2FA 등록 여부 확인 (2FA 계정은 OTP 까지 통과해야 실패 카운트를 초기화한다)
         if (credential.getTotpSecret() != null && !credential.getTotpSecret().isBlank()) {
-            requireTicketCapacity();
-            String tempTicket = UUID.randomUUID().toString();
-            pendingTwoFactorTickets.put(tempTicket, new TwoFactorTicketSession(
-                    user.getId(),
-                    new AtomicInteger(0),
-                    Instant.now().plusSeconds(300) // 5분 유효
-            ));
-            return LoginResponse.requiresTwoFactor(tempTicket);
+            return LoginResponse.requiresTwoFactor(openTwoFactorTicket(user.getId()));
         }
 
         // REQUIRES_NEW 라서 발급 트랜잭션을 열기 전에 호출한다(커넥션을 쥔 채 두 번째를 요구하지 않도록).
@@ -191,6 +185,26 @@ public class AuthService {
         TokenResponse tokenResponse = transactionTemplate.execute(
                 status -> issueSessionAndTokens(user, request.deviceInfo(), ipAddress, userAgent));
         return LoginResponse.directSuccess(tokenResponse);
+    }
+
+    /** 2FA 임시 티켓을 발급한다(5분, 한 번만). 비밀번호 로그인과 소셜 로그인이 같은 {@link #loginWithTotp} 로 이어진다. */
+    public String openTwoFactorTicket(UUID userId) {
+        requireTicketCapacity();
+        String tempTicket = UUID.randomUUID().toString();
+        pendingTwoFactorTickets.put(tempTicket, new TwoFactorTicketSession(
+                userId,
+                new AtomicInteger(0),
+                Instant.now().plusSeconds(300) // 5분 유효
+        ));
+        return tempTicket;
+    }
+
+    /**
+     * 본인 확인(비밀번호·소셜 공급자 등)을 이미 마친 사용자에게 세션과 토큰을 발급한다.
+     * 트랜잭션을 걸지 않는다(이유는 {@link #login}). 세션·토큰 발급만 한 트랜잭션으로 묶는다.
+     */
+    public TokenResponse establishSession(User user, String deviceInfo, String ipAddress, String userAgent) {
+        return transactionTemplate.execute(status -> issueSessionAndTokens(user, deviceInfo, ipAddress, userAgent));
     }
 
     /** 트랜잭션을 걸지 않는다(이유는 {@link #login}). 세션·토큰 발급만 한 트랜잭션으로 묶는다. */
@@ -246,12 +260,18 @@ public class AuthService {
                 .orElseThrow(() -> new AuthException(ErrorCode.INVALID_CREDENTIALS));
 
         // 액세스 토큰만으로는 2FA 기기를 등록할 수 없다: 현재 비밀번호로 다시 확인하고, 실패는 로그인과 같은 잠금 횟수에 합산한다.
-        if (credentialService.isLocked(credential)) {
-            throw new AuthException(ErrorCode.ACCOUNT_LOCKED);
-        }
-        if (!passwordEncoder.matches(currentPassword, credential.getPasswordHash())) {
-            credentialService.recordFailedAttempt(userId);
-            throw new AuthException(ErrorCode.INVALID_CREDENTIALS, "현재 비밀번호가 일치하지 않습니다.");
+        // 비밀번호를 정한 적 없는 계정(소셜 가입)은 확인할 비밀번호가 없다.
+        if (credential.isPasswordSet()) {
+            if (currentPassword == null || currentPassword.isBlank()) {
+                throw new FieldValidationException("currentPassword", "현재 비밀번호를 입력해 주세요.");
+            }
+            if (credentialService.isLocked(credential)) {
+                throw new AuthException(ErrorCode.ACCOUNT_LOCKED);
+            }
+            if (!passwordEncoder.matches(currentPassword, credential.getPasswordHash())) {
+                credentialService.recordFailedAttempt(userId);
+                throw new AuthException(ErrorCode.INVALID_CREDENTIALS, "현재 비밀번호가 일치하지 않습니다.");
+            }
         }
 
         // 비밀번호 검증(느림)은 트랜잭션 밖에서 끝냈다. 엔티티 수정만 짧은 트랜잭션으로 묶는다.

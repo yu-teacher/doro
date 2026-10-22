@@ -38,6 +38,10 @@ public class Credential extends BaseTimeEntity {
     @Column(name = "pending_totp_secret", length = 255)
     private String pendingTotpSecret;
 
+    /** false 면 비밀번호를 정한 적이 없다(소셜 가입, 또는 이메일 소유 확인 전의 옛 비밀번호를 버린 계정). 저장된 해시는 아무도 모르는 값이다. */
+    @Column(name = "password_set", nullable = false)
+    private boolean passwordSet = true;
+
     @Column(name = "failed_attempts", nullable = false)
     private int failedAttempts;
 
@@ -56,6 +60,16 @@ public class Credential extends BaseTimeEntity {
 
     public void updatePassword(String newPasswordHash) {
         this.passwordHash = newPasswordHash;
+        this.passwordSet = true;
+        resetFailedAttempts();
+    }
+
+    /** 비밀번호와 2FA 를 버린다. 해시는 아무도 모르는 무작위 값으로 바꿔 비밀번호 로그인을 막는다. */
+    public void discardPassword(String unusableHash) {
+        this.passwordHash = unusableHash;
+        this.passwordSet = false;
+        this.totpSecret = null;
+        this.pendingTotpSecret = null;
         resetFailedAttempts();
     }
 

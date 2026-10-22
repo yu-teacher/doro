@@ -37,6 +37,10 @@ public class User extends BaseTimeEntity {
     @Column(name = "role", nullable = false, length = 30)
     private UserRole role;
 
+    /** 이메일 소유가 확인됐는지. 소셜 공급자가 확인해 준 계정만 true(비밀번호 가입은 이메일 인증을 하지 않는다). */
+    @Column(name = "email_verified", nullable = false)
+    private boolean emailVerified;
+
     /** 탈퇴를 요청한 시각. PENDING_DELETION 인 동안에만 값이 있다. */
     @Column(name = "deletion_requested_at")
     private Instant deletionRequestedAt;
@@ -56,13 +60,19 @@ public class User extends BaseTimeEntity {
     private String suspensionReason;
 
     @Builder
-    public User(UUID id, String email, String name, String profileImageUrl, UserStatus status, UserRole role) {
+    public User(UUID id, String email, String name, String profileImageUrl, UserStatus status, UserRole role,
+                boolean emailVerified) {
         this.id = id != null ? id : UUID.randomUUID();
         this.email = email;
         this.name = name;
         this.profileImageUrl = profileImageUrl;
         this.status = status != null ? status : UserStatus.ACTIVE;
         this.role = role != null ? role : UserRole.USER;
+        this.emailVerified = emailVerified;
+    }
+
+    public void markEmailVerified() {
+        this.emailVerified = true;
     }
 
     public void changeRole(UserRole newRole) {

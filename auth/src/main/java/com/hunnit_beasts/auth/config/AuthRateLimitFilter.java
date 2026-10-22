@@ -136,6 +136,11 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
         if ("PUT".equals(request.getMethod()) && "/api/v1/users/me/password".equals(uri)) {
             return Bucket.LOGIN;
         }
+        // 소셜 로그인 시작·콜백(브라우저 이동). 공급자 호출과 계정 연결을 하므로 로그인과 같은 IP 제한을 적용한다.
+        if ("GET".equals(request.getMethod()) && uri.startsWith("/api/v1/auth/social/")
+                && (uri.endsWith("/start") || uri.endsWith("/callback"))) {
+            return Bucket.LOGIN;
+        }
         // 브라우저가 Bearer 없이 이동해 오는 인가 요청만 제한한다(Bearer 가 있는 포털의 fetch 는 인증된 호출).
         if ("GET".equals(request.getMethod()) && "/oauth2/authorize".equals(uri) && !hasBearer(request)) {
             return Bucket.TOKEN;

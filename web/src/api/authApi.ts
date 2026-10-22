@@ -2,6 +2,7 @@ import { apiClient } from './client';
 import { cookieSessionHeaders } from './cookieSession';
 import { AccountDeletionResult, AdminUserSummary, LoginData, TokenResponse, TotpSetupData, SessionResponseDto, UserProfileData } from '../types/auth';
 import { AdminUserListParams, adminUserListParams, parseTotalCount } from '../utils/adminUserList';
+import type { SocialProvider } from '../utils/socialLogin';
 
 export const authApi = {
   // 1. 회원가입
@@ -30,6 +31,19 @@ export const authApi = {
     return response.data.data;
   },
 
+  // 2-1. 소셜 로그인으로 쓸 수 있는 공급자(설정이 끝난 것만 온다). 실패하면 버튼을 보이지 않는다.
+  socialProviders: async (): Promise<SocialProvider[]> => {
+    const response = await apiClient.get<{ success: boolean; data: SocialProvider[] }>('/api/v1/auth/social/providers');
+    return response.data.data;
+  },
+
+  // 2-2. 소셜 로그인 뒤 서버가 슬롯 쿠키에 심은 리프레시 토큰으로 액세스 토큰을 받는다.
+  refreshFromCookie: async (slot: number) => {
+    const response = await apiClient.post<{ success: boolean; data: TokenResponse }>(
+      '/api/v1/auth/token/refresh', {}, { headers: cookieSessionHeaders(slot) });
+    return response.data.data;
+  },
+
   // 3. 2FA 로그인 완료 (2차 OTP 입력)
   loginWith2fa: async (data: { tempTicket: string; code: string }, slot: number) => {
     const response = await apiClient.post<{ success: boolean; data: TokenResponse }>('/api/v1/auth/2fa/login', data, { headers: cookieSessionHeaders(slot) });
@@ -49,7 +63,8 @@ export const authApi = {
   },
 
   // 6. 비밀번호 변경
-  changePassword: async (data: { currentPassword: string; newPassword: string }) => {
+  // 비밀번호를 정한 적 없는 소셜 가입 계정은 currentPassword 없이 처음 비밀번호를 정한다.
+  changePassword: async (data: { currentPassword?: string; newPassword: string }) => {
     // 이 요청은 401 에서 토큰을 갱신해 다시 보내지 않으므로(실패가 잠금 횟수에 두 번 합산되지 않게), 먼저 토큰을 최신으로 만든다.
     await apiClient.get('/api/v1/users/me');
     const response = await apiClient.put<{ success: boolean }>('/api/v1/users/me/password', data);
@@ -57,7 +72,7 @@ export const authApi = {
   },
 
   // 6-1. 회원탈퇴 요청 (비밀번호 재확인, 2FA 사용 시 OTP 코드 포함)
-  requestAccountDeletion: async (data: { password: string; totpCode?: string }) => {
+  requestAccountDeletion: async (data: { password?: string; totpCode?: string }) => {
     // 이 요청은 401 에서 토큰을 갱신해 다시 보내지 않으므로, 먼저 인증된 요청으로 액세스 토큰을 최신으로 만든다.
     await apiClient.get('/api/v1/users/me');
     const response = await apiClient.post<{ success: boolean; data: AccountDeletionResult }>(
@@ -69,7 +84,7 @@ export const authApi = {
 
   // 7. 2FA 등록 시작 (QR 코드 URI 발급)
   // 현재 비밀번호로 다시 확인한다(액세스 토큰만으로는 인증 기기를 등록할 수 없다). 401 재전송은 하지 않으므로 먼저 토큰을 최신으로 만든다.
-  setup2fa: async (currentPassword: string) => {
+  setup2fa: async (currentPassword?: string) => {
     await apiClient.get('/api/v1/users/me');
     const response = await apiClient.post<{ success: boolean; data: TotpSetupData }>('/api/v1/auth/2fa/setup', { currentPassword });
     return response.data.data;
