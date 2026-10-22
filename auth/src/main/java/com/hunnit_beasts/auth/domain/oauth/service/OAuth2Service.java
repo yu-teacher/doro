@@ -210,7 +210,8 @@ public class OAuth2Service {
                 user.getId(),
                 OAuth2Constants.SESSION_DEVICE_PREFIX + client.clientId(),
                 OAuth2Constants.SESSION_IP_MARKER,
-                OAuth2Constants.SESSION_USER_AGENT_PREFIX + client.clientId()
+                OAuth2Constants.SESSION_USER_AGENT_PREFIX + client.clientId(),
+                data.scope()
         );
 
         // OAuth 액세스 토큰은 role=USER + 클라이언트 표시(cid). IAM 자신의 API 에서는 인정되지 않는다(JwtAuthenticationFilter).
@@ -219,7 +220,8 @@ public class OAuth2Service {
                 user.getEmail(),
                 session.getId(),
                 session.getUserIndex(),
-                client.clientId()
+                client.clientId(),
+                data.scope()
         );
         String refreshToken = refreshTokenService.createRefreshToken(session.getId());
 
@@ -274,7 +276,8 @@ public class OAuth2Service {
                 user.getEmail(),
                 session.getId(),
                 session.getUserIndex(),
-                client.clientId()
+                client.clientId(),
+                session.getOauthScope()
         );
         log.info("OAuth refresh token rotated: clientId={}, userId={}", client.clientId(), user.getId());
         return TokenResponse.ofOAuth(accessToken, rotated.newRefreshToken(), accessTokenValiditySeconds,
@@ -327,19 +330,31 @@ public class OAuth2Service {
         return claims;
     }
 
-    /** UserInfo 응답. 액세스 토큰에는 스코프가 없으므로 sub + email + name + (http(s)) picture 를 돌려준다. */
-    public Map<String, Object> userInfo(UUID userId) {
+    /**
+     * UserInfo 응답. sub 는 항상, email(+email_verified)은 email scope 가, name·picture 는 profile scope 가 있을 때만 돌려준다.
+     * scope 가 null 이면(이 기능 이전에 발급된 토큰·세션) 예전처럼 전부 돌려준다.
+     */
+    public Map<String, Object> userInfo(UUID userId, String grantedScope) {
         User user = userRepository.findById(userId).orElseThrow(() -> new AuthException(ErrorCode.USER_NOT_FOUND));
         if (!user.isActive()) {
             throw new AuthException(ErrorCode.ACCOUNT_SUSPENDED);
         }
+        Set<String> scopes = grantedScope == null ? null : OAuthClientRegistry.parseScope(grantedScope);
         Map<String, Object> claims = new LinkedHashMap<>();
         claims.put("sub", user.getId().toString());
-        claims.put("email", user.getEmail());
-        claims.put("email_verified", false);
-        claims.put("name", user.getName());
-        safePictureUrl(user.getProfileImageUrl()).ifPresent(url -> claims.put("picture", url));
+        if (scopes == null || scopes.contains(OAuth2Constants.SCOPE_EMAIL)) {
+            claims.put("email", user.getEmail());
+            claims.put("email_verified", false);
+        }
+        if (scopes == null || scopes.contains(OAuth2Constants.SCOPE_PROFILE)) {
+            claims.put("name", user.getName());
+            safePictureUrl(user.getProfileImageUrl()).ifPresent(url -> claims.put("picture", url));
+        }
         return claims;
+    }
+
+    public Map<String, Object> userInfo(UUID userId) {
+        return userInfo(userId, null);
     }
 
     /** http(s) 절대 URL 만 허용한다. data: URL 등은 토큰/응답에 싣지 않는다. */

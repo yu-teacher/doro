@@ -186,3 +186,17 @@ export function isFirstPartyClient(body: unknown): boolean {
   if (typeof data !== 'object' || data === null) return false;
   return (data as { firstParty?: unknown }).firstParty === true;
 }
+
+/**
+ * /oauth2/client-info 응답에서 앱 이름을 읽는다. 사용자는 client_id 문자열이 아니라 등록된 이름을 보고 허용 여부를 정한다.
+ * 이름이 없거나 형식이 다르거나 너무 길면 null 이고, 호출한 쪽이 client_id 로 대신 보여 준다. 화면에는 텍스트로만 쓰인다(HTML 로 넣지 않는다).
+ */
+export function clientNameOf(body: unknown): string | null {
+  if (typeof body !== 'object' || body === null) return null;
+  const data = (body as { data?: unknown }).data;
+  if (typeof data !== 'object' || data === null) return null;
+  const name = (data as { name?: unknown }).name;
+  if (typeof name !== 'string') return null;
+  const trimmed = name.trim();
+  return trimmed.length > 0 && trimmed.length <= 100 ? trimmed : null;
+}
