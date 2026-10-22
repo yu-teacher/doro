@@ -35,6 +35,11 @@ echo "--set google (github 값 유지)"
 run_set google https://doro.example gid "$SECRET" >/dev/null
 check "google 추가 후에도 github 키가 남는다" bash -c 'grep -q "^DORO_SOCIAL_GITHUB_CLIENT_ID=my-client-id" "$1" && grep -q "^DORO_SOCIAL_GOOGLE_CLIENT_ID=gid" "$1"' _ "$ENV"
 
+echo "--set kakao"
+run_set kakao https://doro.example kakao-rest-key "$SECRET" >/dev/null
+check "kakao 키가 기록되고 다른 공급자 키는 유지" bash -c 'grep -q "^DORO_SOCIAL_KAKAO_CLIENT_ID=kakao-rest-key" "$1" && grep -q "^DORO_SOCIAL_KAKAO_CLIENT_SECRET=" "$1" && grep -q "^DORO_SOCIAL_GITHUB_CLIENT_ID=my-client-id" "$1"' _ "$ENV"
+check "check 가 카카오 상태도 보여 준다" bash -c '[[ "$(bash "$1" --check 2>&1)" == *"KAKAO: client-id 설정됨 / client-secret 설정됨"* ]]' _ "$SCRIPT"
+
 echo "--set 입력 검증"
 BEFORE="$(cat "$ENV")"
 run_set github http://insecure.example id "$SECRET" >/dev/null; check "http 공개 주소 거부" test $? -ne 0

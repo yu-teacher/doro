@@ -1,6 +1,7 @@
 package com.hunnit_beasts.auth.domain.social.provider;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -17,12 +18,19 @@ public class GoogleProvider implements SocialProvider {
 
     private final String clientId;
     private final String clientSecret;
-    private final SocialHttp http = new SocialHttp();
+    private final SocialHttp http;
 
+    @Autowired
     public GoogleProvider(@Value("${doro.social.google.client-id:}") String clientId,
                           @Value("${doro.social.google.client-secret:}") String clientSecret) {
+        this(clientId, clientSecret, new SocialHttp());
+    }
+
+    /** 시험에서 공급자 호출을 바꿔 끼우려는 생성자. */
+    GoogleProvider(String clientId, String clientSecret, SocialHttp http) {
         this.clientId = clientId;
         this.clientSecret = clientSecret;
+        this.http = http;
     }
 
     @Override

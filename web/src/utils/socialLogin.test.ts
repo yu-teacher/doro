@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseSocialReturn, socialErrorMessage, socialStartUrl } from './socialLogin';
+import { continueLabel, parseSocialReturn, socialErrorMessage, socialStartUrl } from './socialLogin';
 
 const parse = (query: string) => parseSocialReturn(new URLSearchParams(query));
 
@@ -45,5 +45,20 @@ describe('socialStartUrl', () => {
   it('공급자 이름을 인코딩하고 슬롯을 붙인다', () => {
     expect(socialStartUrl('github', 1)).toBe('/api/v1/auth/social/github/start?slot=1');
     expect(socialStartUrl('a/b', 0)).toBe('/api/v1/auth/social/a%2Fb/start?slot=0');
+  });
+});
+
+describe('continueLabel', () => {
+  it('받침에 맞는 조사를 붙인다', () => {
+    expect(continueLabel('카카오')).toBe('카카오로 계속하기');
+    expect(continueLabel('네이버')).toBe('네이버로 계속하기');
+    expect(continueLabel('구글')).toBe('구글로 계속하기'); // ㄹ 받침은 "로"
+    expect(continueLabel('애플')).toBe('애플로 계속하기');
+    expect(continueLabel('도로닷')).toBe('도로닷으로 계속하기');
+  });
+
+  it('한글이 아니면 "로"', () => {
+    expect(continueLabel('GitHub')).toBe('GitHub로 계속하기');
+    expect(continueLabel('Google')).toBe('Google로 계속하기');
   });
 });

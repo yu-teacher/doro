@@ -55,3 +55,15 @@ export function socialErrorMessage(code: string): string {
 export function socialStartUrl(providerId: string, slot: number): string {
   return `/api/v1/auth/social/${encodeURIComponent(providerId)}/start?slot=${slot}`;
 }
+
+/** "카카오로 계속하기"처럼 받침에 맞는 조사(로/으로)를 붙인 버튼 문구. 한글이 아니면 "로"를 쓴다. */
+export function continueLabel(name: string): string {
+  const last = name.charCodeAt(name.length - 1);
+  const isHangul = last >= 0xac00 && last <= 0xd7a3;
+  if (isHangul) {
+    const finalConsonant = (last - 0xac00) % 28;
+    // 받침이 없거나 ㄹ(8)이면 "로", 그 밖의 받침은 "으로"
+    return `${name}${finalConsonant === 0 || finalConsonant === 8 ? '로' : '으로'} 계속하기`;
+  }
+  return `${name}로 계속하기`;
+}
