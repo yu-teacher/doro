@@ -97,12 +97,12 @@ class OidcEndpointsTest extends OAuthTestSupport {
     }
 
     @Test
-    @DisplayName("userinfo: Bearer 필수(없거나 잘못되면 401), 유효하면 sub/email/name 반환")
+    @DisplayName("userinfo: Bearer 필수(없거나 잘못되면 401), 허용한 scope(openid profile email)만큼 sub/email/name 반환")
     void userInfoRequiresBearer() throws Exception {
         String clientId = uniqueClientId();
         registerClient(clientId, List.of(GOOD_REDIRECT));
         Login me = signupAndLogin();
-        JsonNode tokens = exchange(me, clientId, GOOD_REDIRECT, "openid", null);
+        JsonNode tokens = exchange(me, clientId, GOOD_REDIRECT, "openid profile email", null);
 
         mockMvc.perform(get("/oauth2/userinfo")).andExpect(status().isUnauthorized());
         mockMvc.perform(get("/oauth2/userinfo").header("Authorization", "Bearer nope")).andExpect(status().isUnauthorized());
