@@ -30,6 +30,7 @@
 | `menu_upstream` | `doro-menu:80` | 도로메뉴 서브 서비스 |
 | `party_web_upstream` / `party_api_upstream` | `doro-party-web:80` / `doro-party-api:8086` | 도로 파티(`/party/`) 프런트엔드 / 백엔드 |
 | `games_web_upstream` / `games_api_upstream` | `doro-games-web:80` / `doro-games-api:8087` | 도로 게임 천국(`/games/`) 프런트엔드 / 백엔드 |
+| `notify_api_upstream` | `doro-notify-api:8089` | 플랫폼 알림 서비스(API 만, web 없음). 내부 API(`/internal/v1/**`)는 라우팅하지 않는다 |
 | `bff_upstream` | `doro-bff-api:8085` | 브라우저 로그인·세션을 서비스 밖에서 맡는 BFF([`BFF.md`](BFF.md), §2.4) |
 
 **Guard(`guard-api`)는 업스트림에 없다. Guard 는 게이트웨이로 프록시하지 않는다**(8081/9090 은 내부 전용, §5).
@@ -75,6 +76,8 @@ nginx 의 평가 순서(이 순서를 모르고 location 을 추가하면 반드
 | `/blog/api/` | `blog_api_upstream/api/` | 블로그 API(새 주소). `/blog` 접두어를 떼고 전달. 쓰기 제한(`blog_writes`) 적용, BFF `auth_request` 가 붙는다(§2.4). 업로드(`/blog/api/v1/uploads`)는 별도 location 에서 더 엄격한 제한 |
 | `/party/api/`, `/party/` | `party_api_upstream/api/`, `party_web_upstream` | 도로 파티. API 는 BFF `auth_request`(§2.4), 웹은 서비스 전용 CSP. `= /party` 는 `/party/` 로 301 |
 | `/games/api/`, `/games/` | `games_api_upstream/api/`, `games_web_upstream` | 도로 게임 천국. 구성은 파티와 같다. `= /games` 는 `/games/` 로 301 |
+| `/notify/api/v1/` | `notify_api_upstream/api/v1/notify/` | 알림 서비스, 허브용. **Bearer 토큰을 그대로 전달**(auth_request 없음). 클라이언트가 보낸 `X-Doro-Notify-App` 은 빈 값으로 덮어써 보내지 않는다 |
+| `/party/api/v1/notify/`, `/blog/api/v1/notify/`, `/games/api/v1/notify/` | `notify_api_upstream/api/v1/notify/` | 알림 서비스, 앱 화면용. 각 앱의 `auth_request /_bff_auth_<app>` + `Authorization $bff_authorization` 을 쓰고, **`X-Doro-Notify-App <app>` 을 location 이 고정**한다. 기존 `/<app>/api/` 보다 접두사가 길어 먼저 맞는다. notify 는 BFF 서비스가 아니라 `doro.bff.services` 에 없다. 설계: `NOTIFICATION_SERVICE_DESIGN.md` 7.1 |
 | `/blog/` | `blog_web_upstream/` | 블로그 웹. `/blog` 를 떼고 전달(웹은 `VITE_BASE_PATH=/blog` 로 빌드돼 에셋이 `/blog/assets/`). `= /blog` 는 `/blog/` 로 302 |
 | `/assets/` | **`$assets_upstream`**(기본 포털, §3) | 포털 빌드 산출물(블로그 에셋은 `/blog/assets/` 로 와서 이 규칙을 타지 않는다) |
 | `/menu/` | `menu_upstream/` | 도로메뉴(`/menu` 접두어 제거) |

@@ -13,6 +13,9 @@ const THEME_COLOR = '#4f46e5';
 /** 개발 서버가 /api·/oauth2 를 넘겨 줄 IAM 주소. 로컬에 다른 포트로 띄운 IAM 을 쓸 때 VITE_DEV_API_TARGET 으로 바꾼다. */
 const IAM_DEV_TARGET = process.env.VITE_DEV_API_TARGET ?? 'http://localhost:8080';
 
+/** 개발 서버가 /notify 를 넘겨 줄 알림 서비스(doro-notify) 주소. 허브는 게이트웨이의 /notify/api/v1/ 를 /api/v1/notify/ 로 넘기는 것과 같게 고쳐 쓴다. */
+const NOTIFY_DEV_TARGET = process.env.VITE_DEV_NOTIFY_TARGET ?? 'http://localhost:8089';
+
 /**
  * 각 서비스 헤더의 "서비스 목록" 버튼이 읽는 /services.json 을 만든다(빌드 산출물과 개발 서버 모두).
  * 서비스 워커의 precache 에는 들어가지 않는다(workbox 기본 glob 에 json 이 없다): 낡은 목록이 남지 않게 항상 네트워크로 읽는다.
@@ -81,6 +84,11 @@ export default defineConfig({
       '/api': {
         target: IAM_DEV_TARGET,
         changeOrigin: true,
+      },
+      '/notify/api/v1': {
+        target: NOTIFY_DEV_TARGET,
+        changeOrigin: true,
+        rewrite: (requestPath) => requestPath.replace(/^\/notify\/api\/v1/, '/api/v1/notify'),
       },
       '/oauth2': {
         target: IAM_DEV_TARGET,

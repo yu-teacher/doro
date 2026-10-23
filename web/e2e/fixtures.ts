@@ -99,6 +99,36 @@ export interface MockApiOptions {
   account?: FakeAccount;
   /** 관리자 목록에 더할 대량 사용자 수(페이지 이동 확인용) */
   adminExtraUsers?: number;
+  /** 알림 서비스 응답: 'ok' 면 긴 이름·긴 브라우저명이 섞인 가짜 데이터, 'down' 이면 503. 없으면 모의하지 않은 API 라 404(= 사용할 수 없음). */
+  notify?: 'ok' | 'down';
+}
+
+function notifyBody(pathname: string, method: string) {
+  const ok = (data: unknown) => ({ success: true, data });
+  if (pathname.endsWith('/config')) return ok({ enabled: true, publicKey: 'k' });
+  if (pathname.endsWith('/preferences') && method === 'GET') {
+    return ok({
+      apps: [
+        { app: 'party', displayName: '도로 파티', types: [
+          { type: 'comment', label: '새 댓글·답글', description: '내 핀에 댓글이나 답글이 달리면 알려줘요', defaultOn: true, enabled: true },
+          { type: 'friend', label: '친구 요청·수락', description: null, defaultOn: true, enabled: false },
+          { type: `long-${LONG_UNBROKEN}`, label: `이름이아주길어서줄바꿈이필요한알림종류${LONG_UNBROKEN}`, description: null, defaultOn: true, enabled: true },
+        ] },
+        { app: 'blog', displayName: 'DORO.log', types: [{ type: 'reply', label: '답글', description: null, defaultOn: true, enabled: true }] },
+      ],
+    });
+  }
+  if (pathname.endsWith('/devices') && method === 'GET') {
+    const app = (id: string, name: string) => ({ app: id, displayName: name, subscribedAt: null, lastSuccessAt: null });
+    return ok({
+      devices: [
+        { deviceId: 'dev-1', browser: 'Chrome (Android)', lastSeenAt: null, lastSuccessAt: '2026-10-20T01:00:00Z', apps: [app('party', '도로 파티')] },
+        { deviceId: 'dev-2', browser: `Safari ${LONG_UNBROKEN}`, lastSeenAt: null, lastSuccessAt: null, apps: [app('party', '도로 파티'), app('blog', 'DORO.log')] },
+      ],
+    });
+  }
+  if (pathname.endsWith('/test')) return ok({ devices: 2, delivered: 2 });
+  return ok(null);
 }
 
 const json = (route: Route, body: unknown, status = 200) =>
@@ -108,12 +138,17 @@ const json = (route: Route, body: unknown, status = 200) =>
 export async function mockApi(page: Page, options: MockApiOptions = {}): Promise<void> {
   const me = options.account ?? USER_ACCOUNT;
   // 개발 서버가 내려 주는 소스(/src/api/...)와 겹치지 않도록 주소의 맨 앞 경로로만 판단한다
-  await page.route((url) => /^\/(api\/v1|oauth2|loki)\//.test(url.pathname), async (route) => {
+  await page.route((url) => /^\/(api\/v1|oauth2|loki|notify\/api\/v1)\//.test(url.pathname), async (route) => {
     const request = route.request();
     // 화면 이동(/oauth2/consent 등)은 개발 서버가 내려 주는 페이지다. 데이터 요청(xhr/fetch)만 가짜로 응답한다.
     if (!['xhr', 'fetch'].includes(request.resourceType())) return route.fallback();
     const { pathname } = new URL(request.url());
     const method = request.method();
+
+    if (pathname.startsWith('/notify/api/v1/') && options.notify) {
+      if (options.notify === 'down') return json(route, { success: false, message: 'down' }, 503);
+      return json(route, notifyBody(pathname, method));
+    }
 
     if (pathname === '/api/v1/auth/lookup' && method === 'POST') {
       return json(route, { success: true, data: { email: (request.postDataJSON() as { email: string }).email, name: '테스트 사용자', profileImageUrl: null } });

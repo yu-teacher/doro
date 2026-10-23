@@ -97,3 +97,16 @@ GET /interview/api/v1/categories                         200 doro-interview-api 
 GET /interview/api/v1/progress/summary                   200 doro-interview-api  /api/v1/progress/summary
 PUT /interview/api/v1/progress/tx-01                     200 doro-interview-api  /api/v1/progress/tx-01
 GET /_bff_auth_interview                                 404 none
+# --- 도로 알림(doro-notify): 허브는 /notify/api/v1/ 로 Bearer 그대로, 앱 화면은 자기 접두사 아래로(앱 식별 헤더는 location 이 고정, 위조 헤더는 덮어쓰거나 지운다)
+GET /notify/api/v1/preferences                          200 doro-notify-api /api/v1/notify/preferences app=
+GET /notify/api/v1/devices                              200 doro-notify-api /api/v1/notify/devices app=
+GET /party/api/v1/notify/config                         200 doro-notify-api /api/v1/notify/config app=party
+PUT /party/api/v1/notify/subscriptions                  200 doro-notify-api /api/v1/notify/subscriptions app=party
+GET /blog/api/v1/notify/preferences                     200 doro-notify-api /api/v1/notify/preferences app=blog
+GET /games/api/v1/notify/preferences                    200 doro-notify-api /api/v1/notify/preferences app=games
+# --- 알림 접두사가 기존 앱 API 를 가리지 않고, 내부 API 는 어떤 경로로도 notify 에 닿지 않는다
+GET /party/api/v1/maps                                  200 doro-party-api /api/v1/maps
+GET /blog/api/v1/posts?page=0&size=1                    200 doro-blog-backend /api/v1/posts?page=0&size=1
+GET /games/api/v1/bff/session                           200 doro-games-api /api/v1/bff/session
+GET /notify/internal/v1/notifications                   301 redirect:/blog/notify/internal/v1/notifications
+GET /_bff_auth_blog                                     404 none

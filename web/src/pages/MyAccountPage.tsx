@@ -5,6 +5,7 @@ import { authApi } from '../api/authApi';
 import { AdminUserFilter, AdminUserSummary, SessionResponseDto, TotpSetupData, UserProfileData } from '../types/auth';
 import { AvatarModal } from '../components/profile/AvatarModal';
 import { DeleteAccountSection } from '../components/profile/DeleteAccountSection';
+import { NotificationSettingsSection } from '../components/notifications/NotificationSettingsSection';
 import { deletionNotice } from '../utils/accountDeletion';
 import { QRCodeSVG } from 'qrcode.react';
 import {
@@ -1224,6 +1225,8 @@ export const MyAccountPage: React.FC = () => {
                   })}
                 </div>
               </div>
+
+              <NotificationSettingsSection />
             </div>
           )}
 
