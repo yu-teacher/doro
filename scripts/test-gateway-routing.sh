@@ -5,7 +5,8 @@
 #
 #   scripts/test-gateway-routing.sh <nginx.conf> <expectations-file>   (현재 기대 파일: scripts/gateway-routing/expect-current.txt, 옛 단계 파일은 마이그레이션 기록이다)
 #
-# 기대 파일(탭 구분 없이 공백): <메서드> <경로> <기대 상태> <기대 업스트림 또는 'redirect:<Location>'> [<기대 업스트림이 받은 경로>]
+# 기대 파일(탭 구분 없이 공백): <메서드> <경로> <기대 상태> <기대 업스트림 또는 'redirect:<Location>'> [<기대 업스트림이 받은 경로>] [app=<업스트림이 받은 X-Doro-Notify-App 값, 빈 값은 'app='>]
+# 모든 요청에 위조 헤더 X-Doro-Notify-App: spoof 를 실어 보내므로, app= 기대로 게이트웨이가 이 헤더를 덮어쓰거나 지우는지 확인한다.
 set -Eeuo pipefail
 
 CONF="${1:?시험할 nginx.conf 경로가 필요하다}"
@@ -14,7 +15,7 @@ NET="gwtest-$$"
 WORK="$(mktemp -d)"
 IMG_NGINX="${GW_TEST_NGINX_IMAGE:-nginx:1.27-alpine}"
 IMG_CURL="${GW_TEST_CURL_IMAGE:-curlimages/curl:8.10.1}"
-NAMES=(web auth-api doro-blog-web doro-blog-backend doro-minio doro-menu doro-games-web doro-games-api doro-party-web doro-party-api doro-bff-api loki-central)
+NAMES=(web auth-api doro-blog-web doro-blog-backend doro-minio doro-menu doro-games-web doro-games-api doro-party-web doro-party-api doro-bff-api doro-notify-api loki-central)
 log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 cleanup() {
   for n in "${NAMES[@]}" gw; do docker rm -f "gwt-$$-$n" >/dev/null 2>&1 || true; done
@@ -31,10 +32,11 @@ docker network create "$NET" >/dev/null
 cat > "$WORK/stub.conf.template" <<'STUBEOF'
 server {
     listen 80;
-    listen 3100; listen 8082; listen 8086; listen 8087; listen 8085; listen 8080; listen 9000;
+    listen 3100; listen 8082; listen 8086; listen 8087; listen 8085; listen 8089; listen 8080; listen 9000;
     location / {
         add_header X-Stub-Name "${STUB_NAME}" always;
         add_header X-Stub-Path "$request_uri" always;
+        add_header X-Stub-Notify-App "$http_x_doro_notify_app" always;
         default_type text/plain;
         return 200 "stub=${STUB_NAME} path=$request_uri\n";
     }
@@ -57,13 +59,14 @@ if ! docker exec "gwt-$$-gw" nginx -t >/dev/null 2>&1; then docker exec "gwt-$$-
 
 # 3) 요청을 보내고 기대와 비교한다.
 pass=0; fail=0
-while read -r method path status want_up want_path; do
+while read -r method path status want_up want_path want_app; do
   [ -z "${method:-}" ] && continue
   case "$method" in \#*) continue ;; esac
-  out="$(docker run --rm --network "$NET" "$IMG_CURL" -sk -m 10 -X "$method" -o /dev/null -D - -w 'CODE:%{http_code}\n' "https://gateway$path" 2>/dev/null | tr -d '\r')"
+  out="$(docker run --rm --network "$NET" "$IMG_CURL" -sk -m 10 -H 'X-Doro-Notify-App: spoof' -X "$method" -o /dev/null -D - -w 'CODE:%{http_code}\n' "https://gateway$path" 2>/dev/null | tr -d '\r')"
   code="$(printf '%s\n' "$out" | sed -n 's/^CODE://p')"
   up="$(printf '%s\n' "$out" | sed -n 's/^[Xx]-[Ss]tub-[Nn]ame: //p' | head -1)"
   got_path="$(printf '%s\n' "$out" | sed -n 's/^[Xx]-[Ss]tub-[Pp]ath: //p' | head -1)"
+  got_app="$(printf '%s\n' "$out" | sed -n 's/^[Xx]-[Ss]tub-[Nn]otify-[Aa]pp: *//p' | head -1)"
   # Location 은 nginx 가 요청 호스트를 붙인 절대 주소(https://gateway/blog/)로 내보내는 것이 정상이다. 비교는 호스트를 뗀 경로로 한다.
   loc="$(printf '%s\n' "$out" | sed -n 's/^[Ll]ocation: //p' | head -1 | sed -E 's#^https?://[^/]+##')"
   ok=true; detail="상태=$code"
@@ -72,7 +75,8 @@ while read -r method path status want_up want_path; do
     redirect:*) [ "$loc" = "${want_up#redirect:}" ] || ok=false; detail="$detail Location=$loc" ;;
     none) [ -z "$up" ] || ok=false; detail="$detail 업스트림=${up:-없음}" ;;
     *) [ "$up" = "$want_up" ] || ok=false; detail="$detail 업스트림=${up:-없음}"
-       if [ -n "${want_path:-}" ]; then [ "$got_path" = "$want_path" ] || ok=false; detail="$detail 받은경로=$got_path"; fi ;;
+       if [ -n "${want_path:-}" ]; then [ "$got_path" = "$want_path" ] || ok=false; detail="$detail 받은경로=$got_path"; fi
+       if [ -n "${want_app:-}" ]; then [ "app=$got_app" = "$want_app" ] || ok=false; detail="$detail 앱헤더=$got_app"; fi ;;
   esac
   if [ "$ok" = true ]; then pass=$((pass + 1)); printf '  통과  %-5s %-52s %s\n' "$method" "$path" "$detail"
   else fail=$((fail + 1)); printf '  실패  %-5s %-52s %s   (기대: 상태=%s %s %s)\n' "$method" "$path" "$detail" "$status" "$want_up" "${want_path:-}"; fi

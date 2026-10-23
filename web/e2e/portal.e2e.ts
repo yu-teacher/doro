@@ -76,6 +76,29 @@ test.describe('포털: 로그인한 일반 사용자', () => {
   }
 });
 
+test.describe('포털: 알림 설정(내 계정 > 기기 및 세션)', () => {
+  test('앱별 토글·내 기기 목록·긴 이름이 모바일에서 깨지지 않는다', async ({ page }) => {
+    await mockApi(page, { account: USER_ACCOUNT, notify: 'ok' });
+    await seedLoggedIn(page, USER_ACCOUNT);
+    await page.goto('/account');
+    await page.getByRole('button', { name: '기기 및 세션 킬스위치', exact: true }).click();
+    const section = page.getByTestId('notify-settings');
+    await expect(section.getByRole('switch', { name: '도로 파티 새 댓글·답글 알림' })).toBeVisible();
+    await expect(section.getByRole('button', { name: /Chrome \(Android\) 기기 해제/ })).toBeVisible();
+    await expectMobileFriendly(page);
+  });
+
+  test('알림 서비스가 내려가 있으면 이 섹션만 사용할 수 없음으로 보인다', async ({ page }) => {
+    await mockApi(page, { account: USER_ACCOUNT, notify: 'down' });
+    await seedLoggedIn(page, USER_ACCOUNT);
+    await page.goto('/account');
+    await page.getByRole('button', { name: '기기 및 세션 킬스위치', exact: true }).click();
+    await expect(page.getByText('알림 서비스를 사용할 수 없습니다')).toBeVisible();
+    await expect(page.getByText('로그인된 기기 및 활성 세션')).toBeVisible();
+    await expectMobileFriendly(page);
+  });
+});
+
 test.describe('포털: 관리자', () => {
   test.beforeEach(async ({ page }) => {
     await mockApi(page, { account: ADMIN_ACCOUNT });

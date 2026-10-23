@@ -295,3 +295,23 @@ notify_requests        -- 요청 단위 기록 + 멱등 키
 3. 허브 알림 섹션.
 4. 파티 이관(12장 P0→P3), 안정화.
 5. 블로그 연동(13장).
+
+## 19. 구현 현황 (Doro 저장소 쪽)
+
+18장의 3단계(허브 알림 섹션)와 게이트웨이 연결 지점까지 Doro 저장소에 넣었다. 알림 서비스 본체(`doro-notify`)는 별도 저장소다. 서버 반영과 17장의 나머지 항목은 배포 단계에서 한다.
+
+**들어간 것**
+- 허브 알림 섹션: `web/src/components/notifications/NotificationSettingsSection.tsx`, API 클라이언트 `web/src/api/notifyApi.ts`, 순수 로직 `web/src/utils/notifySettings.ts`. "내 계정 > 기기 및 세션" 탭 아래에 붙는다. 허브에서 다른 앱의 구독을 직접 만드는 기능은 넣지 않았다(8장). 서버가 없거나 내려가 있으면(404·502·503·504) 이 섹션만 "사용할 수 없음"으로 보인다.
+- 게이트웨이(`gateway/nginx.conf` 참고 사본): upstream `notify_api_upstream`(api 포트 8089)과 location 4개. 허브용 `/notify/api/v1/`은 Bearer를 그대로 넘기고 클라이언트의 `X-Doro-Notify-App`을 지운다. 앱용 `/party|blog|games/api/v1/notify/`는 각 앱의 `auth_request`를 쓰고 `X-Doro-Notify-App`을 location이 고정한다. `/internal/v1/**`은 라우팅하지 않는다. 라우팅 시험(`scripts/test-gateway-routing.sh`)은 위조 헤더가 덮어써지는지도 확인한다.
+- 개발 서버 프록시: `/notify/api/v1`을 알림 서비스의 `/api/v1/notify`로 넘긴다(`VITE_DEV_NOTIFY_TARGET`).
+
+**허브 쪽 가정(백엔드 확정 시 `notifyApi.ts` 타입만 맞춘다)**
+- 응답은 플랫폼 공통 봉투 `{ success, data }`다.
+- `GET /config` → `{ available }`, `GET /preferences` → 앱 배열(`app`, `displayName`, `types[]`: `type`, `label`, `description`, `enabled`, `deprecated`), `GET /devices` → `{ deviceId, browser, lastSuccessAt, apps[] }` 배열, `PUT /preferences` 본문 `{ app, type, enabled }`, `POST /test` → `{ sent }`.
+- 기기 표식(`deviceId`)은 같은 출처의 `localStorage` 키 `doro.notify.deviceId`에서 읽는다. 허브는 읽기만 하므로 앱의 구독 코드가 같은 키로 쓰기로 정해야 한다.
+
+**내부 토큰 호출자 이름 규칙**: 서비스 토큰(`X-Doro-Service-Token`)의 `이름`은 요청 본문 `app`과 같은 `app_id`(`party`, `blog` ...)로 한다. 알림 서비스가 "토큰 이름과 `app` 일치"를 검사하므로(7.2) 호출자마다 자기 `app_id` 이름으로 토큰을 한 개씩 발급한다. 값은 문서·로그에 쓰지 않는다.
+
+**배포 단계에서 할 것(이 변경에 포함하지 않음)**
+- 서버 게이트웨이 설정에 위 location 반영(참고 사본과 같은 내용을 서버에서 손으로 적용하고 `nginx -t` 후 reload). 앞의 기존 앱 location(`/party/api/` 등)은 건드리지 않으며, 더 긴 접두사라 순서와 무관하게 먼저 맞는다.
+- `docker-compose.yml`에는 notify를 넣지 않는다(서비스 저장소의 compose로 따로 운영). DB `service_notify`와 계정 `notify_app` 생성은 `scripts/split-db-accounts.sh`, 스모크 항목은 `scripts/post-deploy-smoke.sh`에 서비스가 서버에 뜬 뒤 별도 PR로 추가한다(먼저 넣으면 스모크가 실패한다).
