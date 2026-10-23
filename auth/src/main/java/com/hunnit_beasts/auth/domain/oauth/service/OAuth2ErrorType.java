@@ -16,7 +16,9 @@ public enum OAuth2ErrorType {
     INVALID_GRANT("invalid_grant", 400, ErrorCode.INVALID_TOKEN),
     UNSUPPORTED_GRANT_TYPE("unsupported_grant_type", 400, ErrorCode.INVALID_INPUT),
     UNSUPPORTED_RESPONSE_TYPE("unsupported_response_type", 400, ErrorCode.INVALID_INPUT),
-    INVALID_SCOPE("invalid_scope", 400, ErrorCode.INVALID_INPUT);
+    INVALID_SCOPE("invalid_scope", 400, ErrorCode.INVALID_INPUT),
+    /** 사용자가 동의 화면에서 거부했다(RFC 6749 §4.1.2.1). 인가 응답(리다이렉트)으로만 쓰인다. */
+    ACCESS_DENIED("access_denied", 403, ErrorCode.ACCESS_DENIED);
 
     private final String code;
     private final int httpStatus;

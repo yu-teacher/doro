@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
-import { BookOpen, Shield, Terminal, ExternalLink, X, Utensils, Home, MapPin, Gamepad2 } from 'lucide-react';
+import { BookOpen, Shield, Terminal, ExternalLink, X, Utensils, Home, MapPin, Gamepad2, GraduationCap } from 'lucide-react';
 import { getIamDocsUrl } from '../../utils/urlUtils';
 import { buildLauncherApps, type LauncherIcon } from '../../utils/serviceCatalog';
 import { trackEvent } from '../../utils/analytics';
@@ -16,6 +16,7 @@ const ICONS: Record<LauncherIcon, { Icon: React.ComponentType<{ className?: stri
   blog: { Icon: BookOpen, color: 'text-emerald-500 bg-emerald-50' },
   party: { Icon: MapPin, color: 'text-sky-500 bg-sky-50' },
   games: { Icon: Gamepad2, color: 'text-amber-500 bg-amber-50' },
+  interview: { Icon: GraduationCap, color: 'text-violet-500 bg-violet-50' },
   menu: { Icon: Utensils, color: 'text-pink-500 bg-pink-50' },
   account: { Icon: Shield, color: 'text-indigo-500 bg-indigo-50' },
   iam: { Icon: Shield, color: 'text-indigo-500 bg-indigo-50' },

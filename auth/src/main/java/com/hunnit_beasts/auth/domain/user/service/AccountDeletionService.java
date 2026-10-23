@@ -53,14 +53,22 @@ public class AccountDeletionService {
 
         Credential credential = credentialRepository.findByUserId(userId)
                 .orElseThrow(() -> new AuthException(ErrorCode.USER_NOT_FOUND));
-        if (credentialService.isLocked(credential)) {
+        // 비밀번호를 정한 적 없는 계정(소셜 가입)은 확인할 비밀번호가 없다. 대신 30일 유예(로그인하면 복구)·전체 세션 종료·
+        // 2FA(켠 경우)가 남용을 막는다(정책 예외: .private/ACCOUNT_DELETION_POLICY.md).
+        if (credential.isPasswordSet()) {
+            if (credentialService.isLocked(credential)) {
+                throw new AuthException(ErrorCode.ACCOUNT_LOCKED);
+            }
+            // 본인 확인은 로그인과 같은 실패 카운트(잠금)를 공유해, 탈취된 토큰으로 비밀번호를 무차별 대입하지 못하게 한다.
+            if (request.password() == null || request.password().isBlank()) {
+                throw new com.hunnit_beasts.auth.common.exception.FieldValidationException("password", "비밀번호를 입력해 주세요.");
+            }
+            if (!passwordEncoder.matches(request.password(), credential.getPasswordHash())) {
+                credentialService.recordFailedAttempt(userId);
+                throw new AuthException(ErrorCode.INVALID_CREDENTIALS, "비밀번호가 일치하지 않습니다.");
+            }
+        } else if (credentialService.isLocked(credential)) {
             throw new AuthException(ErrorCode.ACCOUNT_LOCKED);
-        }
-
-        // 본인 확인은 로그인과 같은 실패 카운트(잠금)를 공유해, 탈취된 토큰으로 비밀번호를 무차별 대입하지 못하게 한다.
-        if (!passwordEncoder.matches(request.password(), credential.getPasswordHash())) {
-            credentialService.recordFailedAttempt(userId);
-            throw new AuthException(ErrorCode.INVALID_CREDENTIALS, "비밀번호가 일치하지 않습니다.");
         }
         if (credential.hasActiveTotp()) {
             String code = request.totpCode();

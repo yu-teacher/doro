@@ -20,12 +20,14 @@ export interface DeletionForm {
   password: string;
   hasTotp: boolean;
   totpCode: string;
+  /** 비밀번호를 정한 적 없는 소셜 가입 계정은 false. 없으면 true 로 본다. */
+  passwordRequired?: boolean;
 }
 
 /** 제출 전 입력 검증. 문제가 없으면 null. */
 export function validateDeletionForm(form: DeletionForm): string | null {
   if (!form.confirmed) return '삭제 안내를 확인했다는 항목에 체크해 주세요.';
-  if (form.password.length === 0) return '비밀번호를 입력해 주세요.';
+  if (form.passwordRequired !== false && form.password.length === 0) return '비밀번호를 입력해 주세요.';
   if (form.hasTotp && !/^\d{6}$/.test(form.totpCode.trim())) return '인증기 앱의 6자리 코드를 입력해 주세요.';
   return null;
 }

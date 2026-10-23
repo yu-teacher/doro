@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { BookOpen, Gamepad2, MapPin, Shield, Terminal, User, Utensils, ExternalLink, ArrowRight, FileText, LogIn } from 'lucide-react';
+import { BookOpen, Gamepad2, GraduationCap, MapPin, Shield, Terminal, User, Utensils, ExternalLink, ArrowRight, FileText, LogIn } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { loginStateFrom } from '../utils/afterLogin';
 import { buildServiceCards, type ServiceCard, type ServiceIcon } from '../utils/serviceCatalog';
@@ -9,6 +9,7 @@ const ICONS: Record<ServiceIcon, { Icon: React.ComponentType<{ className?: strin
   blog: { Icon: BookOpen, color: 'text-emerald-500 bg-emerald-50' },
   party: { Icon: MapPin, color: 'text-sky-500 bg-sky-50' },
   games: { Icon: Gamepad2, color: 'text-amber-500 bg-amber-50' },
+  interview: { Icon: GraduationCap, color: 'text-violet-500 bg-violet-50' },
   menu: { Icon: Utensils, color: 'text-pink-500 bg-pink-50' },
   account: { Icon: User, color: 'text-indigo-500 bg-indigo-50' },
   iam: { Icon: FileText, color: 'text-indigo-500 bg-indigo-50' },

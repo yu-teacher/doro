@@ -56,6 +56,18 @@ doro:
     code-ttl-seconds: ${DORO_OAUTH_CODE_TTL_SECONDS:300}
     # 재사용된 인가 코드/미등록 client 경고 로그의 최소 간격(초). 폭주 방지용 rate limit.
     warn-log-interval-seconds: ${DORO_OAUTH_WARN_LOG_INTERVAL_SECONDS:60}
+  social:
+    # 소셜 로그인(GitHub, Google). 공급자에 등록하는 콜백 주소는 <public-base-url>/api/v1/auth/social/<공급자>/callback 이다.
+    # public-base-url 이 비거나 공급자의 client-id/secret 이 비면 그 공급자는 꺼진다(로그인 화면에 버튼이 나오지 않는다).
+    public-base-url: ${DORO_SOCIAL_PUBLIC_BASE_URL:}
+    github:
+      client-id: ${DORO_SOCIAL_GITHUB_CLIENT_ID:}
+      client-secret: ${DORO_SOCIAL_GITHUB_CLIENT_SECRET:}
+    google:
+      client-id: ${DORO_SOCIAL_GOOGLE_CLIENT_ID:}
+      client-secret: ${DORO_SOCIAL_GOOGLE_CLIENT_SECRET:}
+    # 공급자 화면에서 돌아오기를 기다리는 로그인 시작 상태의 상한(메모리). 초과하면 시작을 거부한다.
+    max-pending-logins: ${DORO_SOCIAL_MAX_PENDING_LOGINS:10000}
   cors:
     # 브라우저에서 IAM 을 직접 호출할 수 있는 Origin 패턴 (쉼표 구분). 와일드카드(*) 전체 허용은 사용하지 않는다.
     allowed-origin-patterns: ${DORO_CORS_ALLOWED_ORIGIN_PATTERNS:https://varen05.asuscomm.com,http://192.168.0.101:*,http://localhost:*,http://127.0.0.1:*}

@@ -9,8 +9,7 @@ import {
   describeScopes,
   isFirstPartyClient,
   parseConsentRequest,
-  resolveAuthorizeError,
-} from '../utils/oauthConsent';
+  resolveAuthorizeError, clientNameOf } from '../utils/oauthConsent';
 import { saveConsentReturn } from '../utils/consentReturn';
 import { Shield, Check, CheckCircle2, AlertTriangle } from 'lucide-react';
 
@@ -35,6 +34,8 @@ export const OAuthConsentPage: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   // 자사 앱인지 확인하는 동안에는 동의 화면을 보여 주지 않는다 (확인 후 깜빡이며 바뀌는 것을 막는다)
   const [clientChecked, setClientChecked] = useState(false);
+  // 서버에 등록된 앱 이름(없으면 client_id 로 대신 보여 준다). 동의하는 사람이 알아볼 수 있는 이름이어야 한다.
+  const [clientName, setClientName] = useState<string | null>(null);
   const inFlight = useRef(false);
 
   // 로그인 전이라면 검증된 동의 요청을 보관해 두었다가, 로그인 직후 이 화면으로 돌아오게 한다.
@@ -89,6 +90,7 @@ export const OAuthConsentPage: React.FC = () => {
       .get<unknown>('/oauth2/client-info', { params: { client_id: checkedClientId } })
       .then(async (response) => {
         if (cancelled) return;
+        setClientName(clientNameOf(response.data));
         if (isFirstPartyClient(response.data)) {
           await handleApprove();
         }
@@ -105,7 +107,24 @@ export const OAuthConsentPage: React.FC = () => {
     };
   }, [canCheckClient, checkedClientId, handleApprove]);
 
-  const handleDeny = () => {
+  // 취소하면 앱에도 알린다(error=access_denied). 앱이 영원히 기다리지 않게 서버가 검증한 주소로 돌려보내고, 실패하면 내 계정으로 돌아간다.
+  const handleDeny = async () => {
+    if (!parsed.ok) {
+      navigate('/account');
+      return;
+    }
+    try {
+      const response = await apiClient.post<{ data?: { redirectUrl?: string } }>('/oauth2/deny', null, {
+        params: { client_id: parsed.request.clientId, redirect_uri: parsed.request.redirectUri, state: parsed.request.state },
+      });
+      const target = response.data?.data?.redirectUrl;
+      if (target) {
+        window.location.assign(target);
+        return;
+      }
+    } catch (error) {
+      console.warn('OAuth deny request failed; returning to the account page', error);
+    }
     navigate('/account');
   };
 
@@ -153,7 +172,7 @@ export const OAuthConsentPage: React.FC = () => {
 
           <h1 className="text-xl font-extrabold text-slate-900">Doro 계정으로 로그인</h1>
           <p className="text-xs text-slate-500 mt-1">
-            <strong className="text-indigo-600 font-bold break-all">{clientId}</strong> 앱에서 다음 권한을 요청합니다.
+            <strong className="text-indigo-600 font-bold break-all">{clientName ?? clientId}</strong> 앱에서 다음 권한을 요청합니다.
           </p>
           <p className="text-[11px] text-slate-400 mt-1">승인 후 <strong className="font-semibold text-slate-600 break-all">{redirectHost}</strong> 로 이동합니다.</p>
 

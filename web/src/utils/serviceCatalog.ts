@@ -1,7 +1,7 @@
-import { getBlogUrl, getGamesUrl, getGuardDocsUrl, getIamDocsUrl, getMenuUrl, getPartyUrl } from './urlUtils';
+import { getBlogUrl, getGamesUrl, getGuardDocsUrl, getIamDocsUrl, getInterviewUrl, getMenuUrl, getPartyUrl } from './urlUtils';
 
 /** 허브 카드가 쓰는 아이콘 이름. 화면(HubPage)이 이름을 실제 아이콘으로 바꾼다(이 파일은 화면 라이브러리에 의존하지 않는다). */
-export type ServiceIcon = 'blog' | 'party' | 'games' | 'menu' | 'account' | 'guard' | 'iam' | 'logs';
+export type ServiceIcon = 'blog' | 'party' | 'games' | 'interview' | 'menu' | 'account' | 'guard' | 'iam' | 'logs';
 
 export type ServiceGroup = 'service' | 'platform';
 
@@ -24,7 +24,7 @@ export interface CatalogOptions {
 
 /**
  * 허브에 보여줄 카드 목록. 서비스 주소를 한곳(urlUtils)에서만 가져오므로 주소가 바뀌어도 여기는 그대로다.
- * - 서비스(group=service): 블로그, 도로 파티, 도로 게임 천국, 도로메뉴
+ * - 서비스(group=service): 블로그, 도로 파티, 도로 게임 천국, 도로 면접, 도로메뉴
  * - 플랫폼(group=platform): Doro 계정(로그인 여부에 따라 안내가 달라진다), 관리자에게만 개발자 문서와 관제 로그
  * 문서 URL 은 환경변수로만 주입되며 비어 있으면 카드를 숨긴다(기존 앱 목록과 같은 규칙).
  */
@@ -33,6 +33,7 @@ export function buildServiceCards({ isLoggedIn, isAdmin }: CatalogOptions): Serv
     { id: 'blog', name: 'DORO.log', desc: '개발자 오픈 기술 블로그', icon: 'blog', href: getBlogUrl(), group: 'service', internal: false },
     { id: 'party', name: '도로 파티', desc: '친구들과 지도에 핀을 모아 "오늘 어디 가지?"를 정해요', icon: 'party', href: getPartyUrl(), group: 'service', internal: false },
     { id: 'games', name: '도로 게임 천국', desc: '잠깐 쉬어 가는 웹 미니게임', icon: 'games', href: getGamesUrl(), group: 'service', internal: false },
+    { id: 'interview', name: '도로 면접', desc: '개발자 면접 질문을 읽고, 체크하고, 랜덤으로 풀어 봐요', icon: 'interview', href: getInterviewUrl(), group: 'service', internal: false },
     { id: 'menu', name: '도로메뉴', desc: '메뉴 정해주는 도로롱', icon: 'menu', href: getMenuUrl(), group: 'service', internal: false },
     {
       id: 'account',
@@ -78,6 +79,7 @@ export function buildLauncherApps({ isAdmin }: { isAdmin: boolean }): LauncherAp
     { id: 'blog', name: 'DORO.log', desc: '개발자 오픈 기술 블로그', icon: 'blog', href: getBlogUrl(), internal: false },
     { id: 'party', name: '도로 파티', desc: '친구들과 지도에 핀 모으기', icon: 'party', href: getPartyUrl(), internal: false },
     { id: 'games', name: '도로 게임 천국', desc: '웹 미니게임', icon: 'games', href: getGamesUrl(), internal: false },
+    { id: 'interview', name: '도로 면접', desc: '면접 질문 은행', icon: 'interview', href: getInterviewUrl(), internal: false },
     { id: 'menu', name: '도로메뉴', desc: '메뉴 정해주는 도로롱', icon: 'menu', href: getMenuUrl(), internal: false },
   ];
   if (isAdmin) {

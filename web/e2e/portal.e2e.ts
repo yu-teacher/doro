@@ -119,6 +119,27 @@ test.describe('포털: 관리자', () => {
   });
 });
 
+test.describe('포털: 관리자 — 검색 대기 타이머', () => {
+  // 검색어 입력 대기(300ms) 타이머가 화면을 연 직후 한 번 돌 때 쪽을 1페이지로 되돌리면, 느린 환경에서 방금 누른 '다음'이 취소된다.
+  // 시계를 가짜로 바꿔 그 타이머가 돈 뒤에도 쪽이 유지되는지 정확히 확인한다.
+  test('다음 쪽으로 간 뒤 검색 대기 타이머가 지나도 쪽이 유지된다', async ({ page }) => {
+    await page.clock.install({ time: new Date('2026-01-01T00:00:00Z') });
+    await page.clock.pauseAt(new Date('2026-01-01T00:00:01Z')); // 시계를 멈춰 두어 대기 타이머가 쪽 이동보다 먼저 돌지 않게 한다
+    await mockApi(page, { account: ADMIN_ACCOUNT, adminExtraUsers: 45 });
+    await seedLoggedIn(page, ADMIN_ACCOUNT);
+    await page.goto('/account');
+    await page.getByRole('button', { name: '사용자 및 권한 관리' }).click();
+    const pager = page.getByTestId('admin-pager');
+    await expect(pager.getByText('1–20 / 51')).toBeVisible();
+    await pager.getByRole('button', { name: '다음' }).click();
+    await expect(page.getByText('대량회원015')).toBeVisible();
+    await page.clock.runFor(1000);
+    await page.waitForTimeout(500); // 되돌려졌다면 1페이지를 다시 불러오는 시간을 준다
+    await expect(pager.getByText('21–40 / 51')).toBeVisible();
+    await expect(page.getByText('대량회원015')).toBeVisible();
+  });
+});
+
 test.describe('포털: 관리자 — 사용자가 많을 때', () => {
   // 가짜 사용자 6명 + 대량 회원 45명 = 51명 → 20명씩 3페이지
   test.beforeEach(async ({ page }) => {

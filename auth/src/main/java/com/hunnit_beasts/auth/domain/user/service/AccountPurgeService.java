@@ -2,6 +2,7 @@ package com.hunnit_beasts.auth.domain.user.service;
 
 import com.hunnit_beasts.auth.domain.credential.repository.CredentialRepository;
 import com.hunnit_beasts.auth.domain.session.repository.UserSessionRepository;
+import com.hunnit_beasts.auth.domain.social.repository.SocialIdentityRepository;
 import com.hunnit_beasts.auth.domain.user.entity.UserRole;
 import com.hunnit_beasts.auth.domain.user.entity.UserStatus;
 import com.hunnit_beasts.auth.domain.user.repository.UserRepository;
@@ -35,6 +36,7 @@ public class AccountPurgeService {
     private final UserRepository userRepository;
     private final CredentialRepository credentialRepository;
     private final UserSessionRepository sessionRepository;
+    private final SocialIdentityRepository socialIdentityRepository;
     private final UserRelationSyncService userRelationSyncService;
     private final TransactionTemplate transaction;
 
@@ -47,11 +49,13 @@ public class AccountPurgeService {
     public AccountPurgeService(UserRepository userRepository,
                                CredentialRepository credentialRepository,
                                UserSessionRepository sessionRepository,
+                               SocialIdentityRepository socialIdentityRepository,
                                UserRelationSyncService userRelationSyncService,
                                PlatformTransactionManager transactionManager) {
         this.userRepository = userRepository;
         this.credentialRepository = credentialRepository;
         this.sessionRepository = sessionRepository;
+        this.socialIdentityRepository = socialIdentityRepository;
         this.userRelationSyncService = userRelationSyncService;
         this.transaction = new TransactionTemplate(transactionManager);
     }
@@ -101,6 +105,7 @@ public class AccountPurgeService {
                 return false;
             }
             credentialRepository.deleteByUserId(userId);
+            socialIdentityRepository.deleteByUserId(userId);
             sessionRepository.deleteAllByUserId(userId);
             return true;
         });

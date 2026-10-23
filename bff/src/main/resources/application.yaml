@@ -44,7 +44,7 @@ doro:
     jwks-uri: ${DORO_IAM_JWKS_URI:http://${IAM_HOST:localhost}:${IAM_PORT:28080}/.well-known/jwks.json}
     issuer: ${DORO_IAM_ISSUER:https://auth.doro.local}
     revocation-check: ${DORO_IAM_REVOCATION_CHECK:ENFORCE}
-    oauth-client-ids: ${DORO_BFF_CLIENT_IDS:doro-blog,doro-party,doro-games}
+    oauth-client-ids: ${DORO_BFF_CLIENT_IDS:doro-blog,doro-party,doro-games,doro-interview}
     internal-url: http://${IAM_HOST:localhost}:${IAM_PORT:28080}
     # IAM 의 DORO_IAM_INTERNAL_TOKENS 에 'bff:<이 토큰>' 으로 등록한다(탈퇴 동기화용). 값은 환경변수로만 준다.
     internal-token: ${DORO_IAM_INTERNAL_TOKEN:}
@@ -88,3 +88,12 @@ doro:
         web-base-path: ${GAMES_WEB_BASE_PATH:/games}
         return-path-relative-to-web-base: true
         redirect-uri: ${GAMES_OAUTH_REDIRECT_URI:http://localhost:5173/api/v1/bff/callback}
+      interview:
+        client-id: ${INTERVIEW_OAUTH_CLIENT_ID:doro-interview}
+        cookie-name: doro_interview_session
+        login-cookie-name: doro_interview_login
+        csrf-header: X-Interview-Csrf
+        cookie-path: ${INTERVIEW_WEB_BASE_PATH:/interview}
+        web-base-path: ${INTERVIEW_WEB_BASE_PATH:/interview}
+        return-path-relative-to-web-base: true
+        redirect-uri: ${INTERVIEW_OAUTH_REDIRECT_URI:http://localhost:3007/interview/api/v1/bff/callback}

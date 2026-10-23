@@ -97,6 +97,25 @@ public class OAuth2Controller {
     }
 
     /**
+     * 포털 동의 화면의 "취소". 앱으로 돌려보낼 {@code access_denied} 주소를 만들어 준다(RFC 6749 §4.1.2.1: 앱이 영원히 기다리지 않게).
+     * 동의 화면의 쿼리는 사용자가 직접 만든 주소일 수 있어서 브라우저가 준 redirect_uri 를 믿지 않고, 인가 요청과 같은 검증
+     * (등록된 클라이언트, 등록된 redirect_uri 와 정확히 일치)을 통과한 경우에만 주소를 돌려준다(오픈 리다이렉트 방지).
+     */
+    @PostMapping(value = "/oauth2/deny", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> deny(
+            @RequestParam(value = "client_id", required = false) String clientId,
+            @RequestParam(value = "redirect_uri", required = false) String redirectUri,
+            @RequestParam(value = "state", required = false) String state,
+            @AuthenticationPrincipal UUID userId) {
+        if (userId == null) {
+            throw new AuthException(ErrorCode.UNAUTHORIZED, "로그인이 필요한 요청입니다.");
+        }
+        oAuth2Service.validateClientAndRedirect(clientId, redirectUri);
+        String location = errorLocation(redirectUri, OAuth2ErrorType.ACCESS_DENIED, "사용자가 요청을 거부했습니다.", state);
+        return noStore(ResponseEntity.ok()).body(ApiResponse.success(Map.of("redirectUrl", location)));
+    }
+
+    /**
      * RFC 7009 토큰 폐기(폼). 성공이든 알 수 없는 토큰이든 200 으로 응답한다. 클라이언트(예: 블로그 BFF)가 로그아웃할 때
      * 자기 리프레시 토큰을 폐기해 IAM 세션까지 끝낸다.
      */
@@ -193,7 +212,9 @@ public class OAuth2Controller {
                     .build();
         }
         oAuth2Service.requireActiveSession(sessionIdOf(authentication));
-        return noStore(ResponseEntity.ok()).body(oAuth2Service.userInfo(userId));
+        String grantedScope = authentication != null && authentication.getDetails() instanceof io.jsonwebtoken.Claims claims
+                ? claims.get(com.hunnit_beasts.auth.core.token.JwtTokenProvider.CLAIM_SCOPE, String.class) : null;
+        return noStore(ResponseEntity.ok()).body(oAuth2Service.userInfo(userId, grantedScope));
     }
 
     /**
@@ -237,14 +258,19 @@ public class OAuth2Controller {
 
     /** RFC 6749 §4.1.2.1: redirect_uri 에 error, error_description, state 를 쿼리로 붙여 302. 값은 모두 URL 인코딩한다. */
     private ResponseEntity<Void> redirectWithError(String redirectUri, OAuth2Exception e, String state) {
+        return noStore(ResponseEntity.status(HttpStatus.FOUND))
+                .header(HttpHeaders.LOCATION, errorLocation(redirectUri, e.getType(), e.getMessage(), state)).build();
+    }
+
+    private static String errorLocation(String redirectUri, OAuth2ErrorType type, String description, String state) {
         StringBuilder location = new StringBuilder(redirectUri)
                 .append(redirectUri.contains("?") ? '&' : '?')
-                .append("error=").append(encode(e.getType().getCode()))
-                .append("&error_description=").append(encode(e.getMessage()));
+                .append("error=").append(encode(type.getCode()))
+                .append("&error_description=").append(encode(description));
         if (state != null && !state.isEmpty() && state.length() <= OAuth2Constants.MAX_STATE_LENGTH) {
             location.append("&state=").append(encode(state));
         }
-        return noStore(ResponseEntity.status(HttpStatus.FOUND)).header(HttpHeaders.LOCATION, location.toString()).build();
+        return location.toString();
     }
 
     private static String encode(String value) {

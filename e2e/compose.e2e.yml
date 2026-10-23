@@ -66,7 +66,8 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${E2E_DB_PASSWORD}
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
-      DORO_IAM_ISSUER: http://localhost:${E2E_AUTH_PORT}
+      # 기본은 IAM 자신의 주소. 외부 앱 시험(run-third-party.sh)은 운영처럼 한 주소(포털 개발 서버가 /oauth2·/.well-known 을 IAM 으로 넘김)를 발급자로 쓴다.
+      DORO_IAM_ISSUER: ${E2E_ISSUER:-http://localhost:${E2E_AUTH_PORT}}
       DORO_GUARD_URL: http://guard-api:8081
       DORO_IAM_ACCESS_TOKEN_TTL_SECONDS: ${E2E_ACCESS_TOKEN_TTL_SECONDS}
       DORO_IAM_RATE_LIMIT_ENABLED: "false"

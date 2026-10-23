@@ -54,6 +54,12 @@ public class SessionService {
      */
     @Transactional
     public UserSession createClientSession(UUID userId, String deviceInfo, String ipAddress, String userAgent) {
+        return createClientSession(userId, deviceInfo, ipAddress, userAgent, null);
+    }
+
+    /** OAuth 클라이언트용 세션. oauthScope 는 사용자가 허용한 scope(공백 구분)로, userinfo 와 갱신에서 그대로 따른다. */
+    @Transactional
+    public UserSession createClientSession(UUID userId, String deviceInfo, String ipAddress, String userAgent, String oauthScope) {
         int limit = Math.max(1, maxOAuthSessionsPerClient);
         List<UserSession> sameClient = sessionRepository
                 .findByUserIdAndUserAgentAndIsActiveTrueOrderByLastActiveAtAsc(userId, userAgent);
@@ -64,7 +70,12 @@ public class SessionService {
             log.info("Revoked {} least-recently-used session(s) over the per-client device limit: userId={}, limit={}",
                     stalest.size(), userId, limit);
         }
-        return persistSession(userId, deviceInfo, ipAddress, userAgent);
+        UserSession created = persistSession(userId, deviceInfo, ipAddress, userAgent);
+        if (oauthScope != null) {
+            created.grantOAuthScope(oauthScope);
+            created = sessionRepository.save(created);
+        }
+        return created;
     }
 
     @Transactional

@@ -15,20 +15,23 @@
 # - 중복 실행은 flock -n 으로 막는다(backup.sh 와 같은 방식). 로그: ~/backups/auto/guard-reconcile.log (1MB 넘으면 .1 로 교체).
 set -Eeuo pipefail
 
-ACTION=""; SRC=""
+ACTION=""; SRC=""; NOTIFY_SRC=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --check|--apply|--remove) ACTION="$1" ;;
     --src) SRC="${2:-}"; shift ;;
-    *) echo "사용법: bash -s -- --check | --apply [--src PATH] | --remove" >&2; exit 2 ;;
+    --notify-src) NOTIFY_SRC="${2:-}"; shift ;;
+    *) echo "사용법: bash -s -- --check | --apply [--src PATH] [--notify-src PATH] | --remove" >&2; exit 2 ;;
   esac
   shift
 done
-[ -n "$ACTION" ] || { echo "사용법: bash -s -- --check | --apply [--src PATH] | --remove" >&2; exit 2; }
+[ -n "$ACTION" ] || { echo "사용법: bash -s -- --check | --apply [--src PATH] [--notify-src PATH] | --remove" >&2; exit 2; }
 
 OPS_DIR="${OPS_DIR:-$HOME/ops}"
 TARGET="$OPS_DIR/guard-reconcile.sh"
 SRC="${SRC:-$HOME/doro/scripts/guard-reconcile.sh}"
+NOTIFY_SRC="${NOTIFY_SRC:-$(dirname "$SRC")/notify-telegram.sh}"
+NOTIFY_TARGET="$OPS_DIR/notify-telegram.sh"
 LOG_DIR="${LOG_DIR:-$HOME/backups/auto}"
 LOG="$LOG_DIR/guard-reconcile.log"
 LOCK="$LOG_DIR/.guard-reconcile.lock"
@@ -37,6 +40,8 @@ SCHEDULE_MIN="${SCHEDULE_MIN:-30}"; SCHEDULE_HOUR="${SCHEDULE_HOUR:-4}"
 BEGIN='# >>> doro guard-reconcile (managed by scripts/install-guard-reconcile-cron.sh; do not edit between markers)'
 END='# <<< doro guard-reconcile'
 CRON_LINE="$SCHEDULE_MIN $SCHEDULE_HOUR * * * flock -n $LOCK $TARGET --auto >/dev/null 2>&1"
+# 점검 로그가 오래 갱신되지 않았을 때(cron 중단·서버 정지) 알린다. 점검(04:30)·백업·재부팅(05:10)이 끝난 뒤.
+HEARTBEAT_LINE="30 8 * * * $TARGET --heartbeat >/dev/null 2>&1"
 
 log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 die() { log "ERROR: $*" >&2; exit 1; }
@@ -94,7 +99,7 @@ do_check() {
   else
     log "로그 없음($LOG): 아직 한 번도 실행되지 않았다"
   fi
-  local n="${NOTIFY_CMD:-$HOME/doro/scripts/notify-telegram.sh}"
+  local n="${NOTIFY_CMD:-$NOTIFY_TARGET}"
   if [ -x "$n" ]; then log "알림: ALERT/ABORT 는 syslog(doro-guard-reconcile -> Loki)와 텔레그램($("$n" --check 2>&1 | head -1))으로 나간다"
   else log "알림: 텔레그램 스크립트($n)가 없어 syslog(doro-guard-reconcile -> Loki)로만 나간다"; fi
 }
@@ -120,10 +125,21 @@ do_apply() {
     cp "$SRC" "$TARGET.new.$$"; chmod 755 "$TARGET.new.$$"; mv -f "$TARGET.new.$$" "$TARGET"
     log "스크립트: $TARGET 설치"
   fi
+  # 텔레그램 스크립트도 ~/ops 에 둔다(점검 스크립트가 옆에서 찾는다). 원본이 없으면 알림 없이 설치하되 알려 준다.
+  if [ -f "$NOTIFY_SRC" ]; then
+    if [ -f "$NOTIFY_TARGET" ] && cmp -s "$NOTIFY_SRC" "$NOTIFY_TARGET"; then log "텔레그램 스크립트: 변경 없음($NOTIFY_TARGET)"
+    else
+      if [ -f "$NOTIFY_TARGET" ]; then cp -p "$NOTIFY_TARGET" "$NOTIFY_TARGET.bak-$STAMP"; fi
+      cp "$NOTIFY_SRC" "$NOTIFY_TARGET.new.$$"; chmod 755 "$NOTIFY_TARGET.new.$$"; mv -f "$NOTIFY_TARGET.new.$$" "$NOTIFY_TARGET"
+      log "텔레그램 스크립트: $NOTIFY_TARGET 설치"
+    fi
+  else
+    log "경고: 텔레그램 스크립트 원본($NOTIFY_SRC)이 없어 설치하지 않았다. 텔레그램 알림 없이 syslog 로만 알린다(--notify-src 로 지정)"
+  fi
   local old new rest
   old="$(current_cron)"
   rest="$(strip_block "$old" | trim_trailing_blank)"
-  new="$(printf '%s\n%s\n%s\n%s' "$rest" "$BEGIN" "$CRON_LINE" "$END" | awk 'NR==1 && $0=="" {next} {print}')"
+  new="$(printf '%s\n%s\n%s\n%s\n%s' "$rest" "$BEGIN" "$CRON_LINE" "$HEARTBEAT_LINE" "$END" | awk 'NR==1 && $0=="" {next} {print}')"
   old="$(printf '%s' "$old" | trim_trailing_blank)"
   write_cron "$new" "$old"
   log "다음: --check 로 확인. 로그: $LOG"
