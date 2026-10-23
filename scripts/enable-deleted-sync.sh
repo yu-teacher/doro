@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 파티·게임의 탈퇴 동기화(Doro 에서 영구 탈퇴한 사용자의 서비스 데이터를 정리)를 켜기 위한 서버 준비. 운영 서버(mini)에서 실행한다.
+# 파티·게임·면접·알림의 탈퇴 동기화(Doro 에서 영구 탈퇴한 사용자의 서비스 데이터를 정리)를 켜기 위한 서버 준비. 운영 서버(mini)에서 실행한다.
 # 비밀 값(서비스 토큰)은 화면에 출력하지 않는다.
 #
 #   ssh mini 'bash -s -- --check'                < scripts/enable-deleted-sync.sh   # 읽기 전용: 준비 상태
@@ -28,7 +28,7 @@ DORO_DIR="${DORO_DIR:-$HOME/doro}"
 RUNNER_DIR="${RUNNER_DIR:-$HOME/actions-runner/_work/doro/doro}"
 ENV_FILE="$DORO_DIR/.env"
 AUTH=doro-auth-api
-SERVICES=(party games interview)
+SERVICES=(party games interview notify)
 
 log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 die() { log "ERROR: $*"; exit 1; }
