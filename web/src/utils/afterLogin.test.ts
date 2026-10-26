@@ -20,6 +20,8 @@ describe('로그인 뒤 이동 경로', () => {
     expect(loginStateFrom({ pathname: '/' })).toEqual({ from: '/' });
     expect(loginStateFrom({ pathname: '/account' })).toEqual({ from: '/account' });
     expect(loginStateFrom({ pathname: '/logs' })).toEqual({ from: '/logs' });
+    // 개발자 입구에서 로그인하면 같은 입구로 돌아온다
+    for (const path of ['/dev', '/dev/account', '/dev/logs']) expect(loginStateFrom({ pathname: path })).toEqual({ from: path });
     for (const path of ['/login', '/signup', '/oauth2/consent', '/anything-else']) {
       expect(loginStateFrom({ pathname: path })).toBeUndefined();
     }

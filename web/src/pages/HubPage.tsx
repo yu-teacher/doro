@@ -1,56 +1,10 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { BookOpen, Gamepad2, GraduationCap, MapPin, Shield, Terminal, User, Utensils, ExternalLink, ArrowRight, FileText, LogIn } from 'lucide-react';
+import { LogIn } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { loginStateFrom } from '../utils/afterLogin';
-import { buildServiceCards, type ServiceCard, type ServiceIcon } from '../utils/serviceCatalog';
-
-const ICONS: Record<ServiceIcon, { Icon: React.ComponentType<{ className?: string }>; color: string }> = {
-  blog: { Icon: BookOpen, color: 'text-emerald-500 bg-emerald-50' },
-  party: { Icon: MapPin, color: 'text-sky-500 bg-sky-50' },
-  games: { Icon: Gamepad2, color: 'text-amber-500 bg-amber-50' },
-  interview: { Icon: GraduationCap, color: 'text-violet-500 bg-violet-50' },
-  menu: { Icon: Utensils, color: 'text-pink-500 bg-pink-50' },
-  account: { Icon: User, color: 'text-indigo-500 bg-indigo-50' },
-  iam: { Icon: FileText, color: 'text-indigo-500 bg-indigo-50' },
-  guard: { Icon: Shield, color: 'text-indigo-500 bg-indigo-50' },
-  logs: { Icon: Terminal, color: 'text-slate-600 bg-slate-100' },
-};
-
-const CardBody: React.FC<{ card: ServiceCard }> = ({ card }) => {
-  const { Icon, color } = ICONS[card.icon];
-  return (
-    <>
-      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${color}`}>
-        <Icon className="w-6 h-6" />
-      </div>
-      <div className="mt-4 flex items-center justify-between gap-2">
-        <h3 className="text-base font-extrabold text-slate-800">{card.name}</h3>
-        {card.internal ? (
-          <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-indigo-500 transition-colors" />
-        ) : (
-          <ExternalLink className="w-4 h-4 text-slate-300 group-hover:text-indigo-500 transition-colors" />
-        )}
-      </div>
-      <p className="mt-1 text-sm text-slate-500 leading-relaxed">{card.desc}</p>
-    </>
-  );
-};
-
-const CARD_CLASS =
-  'group glass-card google-card-shadow rounded-3xl p-6 border border-slate-100 hover:border-indigo-200 hover:-translate-y-0.5 transition-all duration-200 block';
-
-const HubCard: React.FC<{ card: ServiceCard }> = ({ card }) =>
-  card.internal ? (
-    <Link to={card.href} className={CARD_CLASS}>
-      <CardBody card={card} />
-    </Link>
-  ) : (
-    // 다른 서비스(블로그·파티 등)는 별도 앱이라 라우터가 아니라 일반 링크로 전체 페이지를 이동한다.
-    <a href={card.href} className={CARD_CLASS}>
-      <CardBody card={card} />
-    </a>
-  );
+import { buildServiceCards } from '../utils/serviceCatalog';
+import { HubCard } from '../components/hub/HubCard';
 
 export const HubPage: React.FC = () => {
   const location = useLocation();

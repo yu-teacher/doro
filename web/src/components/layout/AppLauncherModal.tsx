@@ -4,11 +4,14 @@ import { useAuthStore } from '../../store/authStore';
 import { BookOpen, Shield, Terminal, ExternalLink, X, Utensils, Home, MapPin, Gamepad2, GraduationCap } from 'lucide-react';
 import { getIamDocsUrl } from '../../utils/urlUtils';
 import { buildLauncherApps, type LauncherIcon } from '../../utils/serviceCatalog';
+import type { Product } from '../../utils/product';
 import { trackEvent } from '../../utils/analytics';
 
 interface AppLauncherModalProps {
   isOpen: boolean;
   onClose: () => void;
+  /** 들어온 입구. 개발자 입구에서는 개발자 서비스만 나열한다. */
+  product?: Product;
 }
 
 const ICONS: Record<LauncherIcon, { Icon: React.ComponentType<{ className?: string }>; color: string }> = {
@@ -24,7 +27,7 @@ const ICONS: Record<LauncherIcon, { Icon: React.ComponentType<{ className?: stri
   logs: { Icon: Terminal, color: 'text-indigo-500 bg-indigo-50' },
 };
 
-export const AppLauncherModal: React.FC<AppLauncherModalProps> = ({ isOpen, onClose }) => {
+export const AppLauncherModal: React.FC<AppLauncherModalProps> = ({ isOpen, onClose, product = 'hub' }) => {
   const { accounts, activeAccountIndex } = useAuthStore();
   const activeAccount = accounts[activeAccountIndex] || accounts[0];
   const isAdmin = activeAccount?.role === 'ADMIN' || activeAccount?.role === 'SUPER_ADMIN';
@@ -32,7 +35,7 @@ export const AppLauncherModal: React.FC<AppLauncherModalProps> = ({ isOpen, onCl
   if (!isOpen) return null;
 
   const iamDocsUrl = getIamDocsUrl();
-  const apps = buildLauncherApps({ isAdmin });
+  const apps = buildLauncherApps({ isAdmin, product });
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-end p-4 sm:p-6" onClick={onClose}>
@@ -41,7 +44,7 @@ export const AppLauncherModal: React.FC<AppLauncherModalProps> = ({ isOpen, onCl
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Doro Apps</span>
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{product === 'dev' ? 'Doro Dev Apps' : 'Doro Apps'}</span>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-100 cursor-pointer">
             <X className="w-4 h-4" />
           </button>

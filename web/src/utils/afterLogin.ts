@@ -7,7 +7,7 @@ export const DEFAULT_AFTER_LOGIN_PATH = '/account';
  * 로그인 뒤에 돌아올 수 있는 포털 화면. 외부 주소나 임의 경로로 보내지 못하도록 이 목록에 있는 경로만 인정한다.
  * (로그인·가입 화면 자신과 동의 화면은 제외한다. 동의 화면은 consentReturn 이 따로 복원한다.)
  */
-const RETURNABLE_PATHS = new Set(['/', '/portal', '/account', '/logs']);
+const RETURNABLE_PATHS = new Set(['/', '/portal', '/account', '/logs', '/dev', '/dev/account', '/dev/logs']);
 
 export interface LoginNavigationState {
   /** 로그인 뒤에 돌아갈 포털 경로 */
