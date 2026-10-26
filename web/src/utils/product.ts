@@ -16,3 +16,13 @@ export function inProduct(product: Product, path: string): string {
   if (product === 'hub') return path;
   return path === '/' ? `${DEV_ROOT}/` : `${DEV_ROOT}${path}`;
 }
+
+/** 서비스가 돌아올 주소(redirect_uri)가 개발자 제품(/dev/ 아래)이면 dev. 주소가 아니거나 없으면 허브. 로그인·가입·동의 화면이 어느 제품에서 왔는지 알아내는 데 쓴다. */
+export function productOfRedirectUri(uri: string | null | undefined): Product {
+  if (!uri) return 'hub';
+  try {
+    return productOf(new URL(uri).pathname);
+  } catch {
+    return 'hub';
+  }
+}

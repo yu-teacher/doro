@@ -41,7 +41,7 @@ import { loginStateFrom } from '../utils/afterLogin';
 import { moderationFor, validateSuspensionReason } from '../utils/adminModeration';
 import { clampPage, pageRangeLabel, totalPages } from '../utils/adminUserList';
 import { buildServiceCards, type ServiceIcon } from '../utils/serviceCatalog';
-import { productOf } from '../utils/product';
+import { useProduct } from '../utils/useProduct';
 import { UserRole } from '../types/auth';
 
 /** 연동 서비스 목록의 아이콘·색. 서비스 목록 자체(이름·주소·설명)는 허브와 같은 카탈로그(serviceCatalog)에서 온다. */
@@ -57,6 +57,7 @@ const SERVICE_STYLE: Partial<Record<ServiceIcon, { Icon: React.ComponentType<{ c
 export const MyAccountPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const product = useProduct();
   const { accounts, activeAccountIndex, updateActiveProfile, updateProfileByEmail, removeAccountByEmail } = useAuthStore();
   const activeAccount = accounts[activeAccountIndex] || accounts[0];
 
@@ -664,7 +665,7 @@ export const MyAccountPage: React.FC = () => {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {buildServiceCards({ isLoggedIn: true, isAdmin, product: productOf(location.pathname) })
+                  {buildServiceCards({ isLoggedIn: true, isAdmin, product })
                     .filter((c) => c.group === 'service' || c.id === 'logs')
                     .map((c) => ({
                       name: c.name,
@@ -1240,7 +1241,7 @@ export const MyAccountPage: React.FC = () => {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {buildServiceCards({ isLoggedIn: true, isAdmin, product: productOf(location.pathname) })
+                {buildServiceCards({ isLoggedIn: true, isAdmin, product })
                   .filter((c) => c.group === 'service')
                   .map((c) => ({
                     name: c.name,

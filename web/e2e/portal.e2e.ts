@@ -30,6 +30,46 @@ test.describe('포털: 비로그인 화면', () => {
     await expectMobileFriendly(page);
   });
 
+  test('개발자 서비스에서 시작한 로그인 화면은 허브(일반 서비스)를 보여 주지 않는다', async ({ page }) => {
+    const consent = new URLSearchParams({
+      client_id: 'doro-blog',
+      redirect_uri: 'https://doro.example.com/dev/blog/api/v1/bff/callback',
+      code_challenge: 'c'.repeat(43),
+      code_challenge_method: 'S256',
+      state: 'abc',
+    });
+    await page.addInitScript(
+      ([key, value]) => sessionStorage.setItem(key, value),
+      ['doro_oauth_consent_return', JSON.stringify({ query: consent.toString(), savedAt: Date.now() })],
+    );
+    await page.goto('/login');
+    await expect(page.getByText('Doro Dev').first()).toBeVisible();
+    await page.getByTitle('Doro Dev 앱').click();
+    await expect(page.getByText('Doro Dev 홈')).toBeVisible();
+    for (const hidden of ['도로 파티', '도로 게임 천국', '도로메뉴', '모든 서비스 한눈에']) {
+      await expect(page.getByText(hidden)).toHaveCount(0);
+    }
+  });
+
+  test('일반 서비스에서 시작한 로그인 화면은 그대로 허브 모양이다', async ({ page }) => {
+    const consent = new URLSearchParams({
+      client_id: 'doro-party',
+      redirect_uri: 'https://doro.example.com/party/api/v1/bff/callback',
+      code_challenge: 'c'.repeat(43),
+      code_challenge_method: 'S256',
+      state: 'abc',
+    });
+    await page.addInitScript(
+      ([key, value]) => sessionStorage.setItem(key, value),
+      ['doro_oauth_consent_return', JSON.stringify({ query: consent.toString(), savedAt: Date.now() })],
+    );
+    await page.goto('/login');
+    await page.getByTitle('Doro 앱').click();
+    await expect(page.getByText('도로 파티')).toBeVisible();
+    await expect(page.getByText('DORO.log')).toHaveCount(0);
+    await expect(page.getByText('도로 면접')).toHaveCount(0);
+  });
+
   test('로그인(이메일 단계)', async ({ page }) => {
     await page.goto('/login');
     await expect(page.getByRole('button', { name: '다음' })).toBeVisible();
