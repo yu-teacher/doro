@@ -35,8 +35,12 @@ export interface CatalogOptions {
  */
 export const HIDE_DEV_ON_HUB = true;
 
-/** 입구(제품)에 보여 줄 대상인지: 개발자 입구는 개발자 항목만, 허브는 (숨김 설정이 켜지면) 개발자 항목을 뺀 나머지 */
-function visibleIn(product: Product, audience: ServiceAudience): boolean {
+/**
+ * 입구(제품)에 보여 줄 대상인지: 개발자 입구는 개발자 항목만, 허브는 (숨김 설정이 켜지면) 개발자 항목을 뺀 나머지.
+ * 관리자(운영자)는 양쪽을 오가야 하므로 어느 입구에서든 두 제품의 서비스를 모두 본다. 일반 사용자에게는 상대 쪽이 보이지 않는다.
+ */
+function visibleIn(product: Product, audience: ServiceAudience, isAdmin: boolean): boolean {
+  if (isAdmin) return true;
   if (product === 'dev') return audience === 'developer';
   return !HIDE_DEV_ON_HUB || audience === 'general';
 }
@@ -59,7 +63,7 @@ export function buildServiceCards({ isLoggedIn, isAdmin, product = 'hub' }: Cata
       name: 'Doro 계정',
       desc: isLoggedIn ? '프로필, 보안(2단계 인증), 로그인한 기기 관리' : '한 번 로그인으로 모든 서비스를 쓰고, 계정과 보안을 관리해요',
       icon: 'account',
-      href: isLoggedIn ? '/account' : '/login',
+      href: isLoggedIn ? inProduct(product, '/account') : '/login',
       group: 'platform',
       audience: 'general',
       internal: true,
@@ -73,7 +77,7 @@ export function buildServiceCards({ isLoggedIn, isAdmin, product = 'hub' }: Cata
     if (guardDocs) cards.push({ id: 'guard-docs', name: 'Doro Guard', desc: '권한 판정(Zanzibar ReBAC) API 문서', icon: 'guard', href: guardDocs, group: 'platform', audience: 'developer', internal: false });
     cards.push({ id: 'logs', name: 'Doro Ops Logs', desc: '시스템 관제 로그', icon: 'logs', href: inProduct(product, '/logs'), group: 'platform', audience: 'developer', internal: true });
   }
-  return cards.filter((card) => visibleIn(product, card.audience));
+  return cards.filter((card) => visibleIn(product, card.audience, isAdmin));
 }
 
 /** 앱 목록(헤더의 9개 점)이 쓰는 아이콘 이름. 허브로 돌아가는 "home" 이 더해진다. */
@@ -99,8 +103,17 @@ export function buildLauncherApps({ isAdmin, product = 'hub' }: { isAdmin: boole
     product === 'dev'
       ? { id: 'hub', name: 'Doro Dev 홈', desc: '개발자 서비스 한눈에', icon: 'home', audience: 'developer', href: inProduct('dev', '/'), internal: true }
       : { id: 'hub', name: 'Doro 홈', desc: '모든 서비스 한눈에', icon: 'home', audience: 'general', href: '/', internal: true };
+  // 관리자는 다른 제품의 홈으로도 바로 갈 수 있다(일반 사용자에게는 보이지 않는다).
+  const otherHome: LauncherApp[] = isAdmin
+    ? [
+        product === 'dev'
+          ? { id: 'other-home', name: 'Doro 홈', desc: '일반 서비스 허브', icon: 'home', audience: 'general', href: '/', internal: true }
+          : { id: 'other-home', name: 'Doro Dev 홈', desc: '개발자 서비스', icon: 'home', audience: 'developer', href: inProduct('dev', '/'), internal: true },
+      ]
+    : [];
   const apps: LauncherApp[] = [
     home,
+    ...otherHome,
     { id: 'blog', name: 'DORO.log', desc: '개발자 오픈 기술 블로그', icon: 'blog', audience: 'developer', href: getBlogUrl(), internal: false },
     { id: 'party', name: '도로 파티', desc: '친구들과 지도에 핀 모으기', icon: 'party', audience: 'general', href: getPartyUrl(), internal: false },
     { id: 'games', name: '도로 게임 천국', desc: '웹 미니게임', icon: 'games', audience: 'general', href: getGamesUrl(), internal: false },
@@ -112,5 +125,5 @@ export function buildLauncherApps({ isAdmin, product = 'hub' }: { isAdmin: boole
     if (guardDocs) apps.push({ id: 'guard-docs', name: 'Doro Guard', desc: 'Zanzibar ReBAC API', icon: 'guard', audience: 'developer', href: guardDocs, internal: false });
     apps.push({ id: 'logs', name: 'Doro Ops Logs', desc: '시스템 관제 로그', icon: 'logs', audience: 'developer', href: inProduct(product, '/logs'), internal: true });
   }
-  return apps.filter((app) => app.id === 'hub' || visibleIn(product, app.audience));
+  return apps.filter((app) => app.id === 'hub' || app.id === 'other-home' || visibleIn(product, app.audience, isAdmin));
 }
