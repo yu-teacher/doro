@@ -3,6 +3,7 @@ import {
   CONSENT_RETURN_STORAGE_KEY,
   CONSENT_RETURN_TTL_MS,
   clearConsentReturn,
+  peekConsentRedirectUri,
   peekConsentReturnPath,
   saveConsentReturn,
 } from './consentReturn';
@@ -80,5 +81,12 @@ describe('consentReturn', () => {
     saveConsentReturn(params());
     clearConsentReturn();
     expect(peekConsentReturnPath()).toBeNull();
+  });
+
+  it('저장된 동의 요청의 redirect_uri 만 엿볼 수 있고, 없거나 만료되면 null 이다', () => {
+    expect(peekConsentRedirectUri(1000)).toBeNull();
+    saveConsentReturn(params({ redirect_uri: 'https://doro.example.com/dev/blog/api/v1/bff/callback' }), 1000);
+    expect(peekConsentRedirectUri(2000)).toBe('https://doro.example.com/dev/blog/api/v1/bff/callback');
+    expect(peekConsentRedirectUri(1000 + CONSENT_RETURN_TTL_MS + 1)).toBeNull();
   });
 });

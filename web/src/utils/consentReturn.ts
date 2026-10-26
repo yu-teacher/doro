@@ -93,3 +93,10 @@ export function peekConsentReturnPath(now: number = Date.now()): string | null {
   }
   return `${CONSENT_PATH}?${filtered.toString()}`;
 }
+
+/** 저장된 동의 요청의 redirect_uri(서비스가 로그인 뒤 돌아올 주소). 어느 제품에서 온 로그인인지 알아내는 데만 쓴다. 없거나 만료됐으면 null. */
+export function peekConsentRedirectUri(now: number = Date.now()): string | null {
+  const path = peekConsentReturnPath(now);
+  if (path === null) return null;
+  return new URLSearchParams(path.slice(path.indexOf('?') + 1)).get('redirect_uri');
+}

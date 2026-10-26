@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { loginStateFrom } from '../../utils/afterLogin';
 import { useAuthStore } from '../../store/authStore';
-import { inProduct, productOf } from '../../utils/product';
+import { inProduct } from '../../utils/product';
+import { useProduct } from '../../utils/useProduct';
 import { Shield, Grid, User, Terminal, Home } from 'lucide-react';
 import { AppLauncherModal } from './AppLauncherModal';
 import { AccountSwitcherModal } from './AccountSwitcherModal';
@@ -20,7 +21,11 @@ export const Header: React.FC = () => {
   const activeAccount = accounts[activeAccountIndex] || accounts[0];
   const isAdmin = activeAccount?.role === 'ADMIN' || activeAccount?.role === 'SUPER_ADMIN';
 
-  const product = productOf(location.pathname);
+  const product = useProduct();
+  // 브라우저 탭 제목도 입구에 맞춘다(개발자 입구가 허브 이름 "Doro" 로 보이지 않게).
+  useEffect(() => {
+    document.title = product === 'dev' ? 'Doro Dev' : 'Doro';
+  }, [product]);
   const isAuthPage = location.pathname === '/login' || location.pathname === '/signup';
   // 메인(허브)에 있을 때는 돌아갈 곳이 없으므로 홈 버튼을 숨긴다
   const isHub = ['/', '/portal', '/dev', '/dev/'].includes(location.pathname);

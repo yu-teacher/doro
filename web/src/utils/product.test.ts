@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { inProduct, productOf } from './product';
+import { inProduct, productOf, productOfRedirectUri } from './product';
 
 describe('productOf', () => {
   it('/dev 와 그 아래 경로만 개발자 제품이다', () => {
@@ -20,5 +20,20 @@ describe('inProduct', () => {
     expect(inProduct('dev', '/logs')).toBe('/dev/logs');
     expect(inProduct('dev', '/account')).toBe('/dev/account');
     expect(inProduct('dev', '/')).toBe('/dev/');
+  });
+});
+
+describe('productOfRedirectUri', () => {
+  it('/dev/ 아래로 돌아오는 서비스는 개발자 제품이다', () => {
+    expect(productOfRedirectUri('https://doro.example.com/dev/blog/api/v1/bff/callback')).toBe('dev');
+    expect(productOfRedirectUri('https://doro.example.com/dev/interview/api/v1/bff/callback')).toBe('dev');
+  });
+
+  it('일반 서비스·잘못된 주소·없는 값은 허브다', () => {
+    expect(productOfRedirectUri('https://doro.example.com/party/api/v1/bff/callback')).toBe('hub');
+    expect(productOfRedirectUri('https://doro.example.com/developers/x')).toBe('hub');
+    expect(productOfRedirectUri('not a url')).toBe('hub');
+    expect(productOfRedirectUri(null)).toBe('hub');
+    expect(productOfRedirectUri(undefined)).toBe('hub');
   });
 });
