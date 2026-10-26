@@ -11,10 +11,10 @@ export const getBlogUrl = (): string => {
     if (window.location.port === '3000') {
       return `${window.location.protocol}//${window.location.hostname}:3002/`;
     }
-    // 게이트웨이: DORO.log 블로그는 '/blog/' (루트 '/'는 허브)
-    return '/blog/';
+    // 게이트웨이: DORO.log 블로그는 개발자 제품 아래 '/dev/blog/' (루트 '/'는 허브)
+    return '/dev/blog/';
   }
-  return '/blog/';
+  return '/dev/blog/';
 };
 
 export const getMenuUrl = (): string => {
@@ -55,7 +55,7 @@ export const getGamesUrl = (): string => {
   return '/games/';
 };
 
-/** 도로 면접 URL(VITE_INTERVIEW_URL 로 덮어쓴다). 게이트웨이 기준 '/interview/', 3000 포트 직접 접속이면 3007 포트 */
+/** 도로 면접 URL(VITE_INTERVIEW_URL 로 덮어쓴다). 게이트웨이 기준 '/dev/interview/', 3000 포트 직접 접속이면 3007 포트 */
 export const getInterviewUrl = (): string => {
   if (import.meta.env.VITE_INTERVIEW_URL) {
     return import.meta.env.VITE_INTERVIEW_URL;
@@ -63,7 +63,7 @@ export const getInterviewUrl = (): string => {
   if (typeof window !== 'undefined' && window.location.port === '3000') {
     return `${window.location.protocol}//${window.location.hostname}:3007/interview/`;
   }
-  return '/interview/';
+  return '/dev/interview/';
 };
 
 const ALLOWED_DOCS_PROTOCOLS = new Set(['http:', 'https:']);

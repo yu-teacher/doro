@@ -46,10 +46,10 @@ describe('getBlogUrl', () => {
     vi.unstubAllGlobals();
   });
 
-  it('게이트웨이 기준으로 블로그는 /blog/ 이다(루트는 허브)', () => {
+  it('게이트웨이 기준으로 블로그는 개발자 제품 아래 /dev/blog/ 이다(루트는 허브)', () => {
     vi.stubEnv('VITE_BLOG_URL', '');
     vi.stubGlobal('window', { location: { port: '', protocol: 'https:', hostname: 'example.test' } });
-    expect(getBlogUrl()).toBe('/blog/');
+    expect(getBlogUrl()).toBe('/dev/blog/');
   });
 
   it('3000 포트 직접 접속이면 블로그 개발 서버(3002)로 간다', () => {

@@ -30,10 +30,10 @@ export interface CatalogOptions {
 }
 
 /**
- * 일반 제품(허브)에서 개발자 서비스(블로그·면접·문서·로그)를 숨길지. 개발자 입구(/dev/)와 옛 주소 이전이 끝난 뒤에 true 로 바꾼다.
- * 그 전에는 허브가 지금처럼 모든 서비스를 보여 줘서, 게이트웨이가 아직 /dev/ 를 받지 않는 동안에도 블로그·면접으로 갈 수 있다.
+ * 일반 제품(허브)에서 개발자 서비스(블로그·면접·문서·로그)를 숨길지. 두 제품은 로그인(Doro 계정)만 공유하므로 true 다.
+ * 개발자 서비스는 개발자 입구(/dev/)에서만 보인다.
  */
-export const HIDE_DEV_ON_HUB = false;
+export const HIDE_DEV_ON_HUB = true;
 
 /** 입구(제품)에 보여 줄 대상인지: 개발자 입구는 개발자 항목만, 허브는 (숨김 설정이 켜지면) 개발자 항목을 뺀 나머지 */
 function visibleIn(product: Product, audience: ServiceAudience): boolean {
