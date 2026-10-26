@@ -110,3 +110,31 @@ GET /blog/api/v1/posts?page=0&size=1                    200 doro-blog-backend /a
 GET /games/api/v1/bff/session                           200 doro-games-api /api/v1/bff/session
 GET /notify/internal/v1/notifications                   301 redirect:/blog/notify/internal/v1/notifications
 GET /_bff_auth_blog                                     404 none
+
+# --- 개발자 제품(Doro Dev) 새 주소: 옛 /blog/·/interview/ 와 나란히 동작한다(이전 1단계). 입구와 내 계정·로그는 같은 포털이 렌더링한다.
+GET /dev                                                200 web
+GET /dev/                                               200 web
+GET /dev/account                                        200 web
+GET /dev/logs                                           200 web
+GET /dev/unknown                                        404 none
+# --- 블로그: /dev/blog/ (접두사를 떼고 같은 컨테이너·BFF 로, 인증 대상 이름은 그대로 blog)
+GET /dev/blog                                           302 redirect:/dev/blog/
+GET /dev/blog/                                          200 doro-blog-web       /
+GET /dev/blog/assets/index-abc.js                       200 doro-blog-web       /assets/index-abc.js
+GET /dev/blog/api/v1/posts?page=0&size=1                200 doro-blog-backend   /api/v1/posts?page=0&size=1
+GET /dev/blog/api/v1/bff/login?return=%2F@a             200 doro-bff-api        /bff/blog/login?return=%2F@a
+GET /dev/blog/api/v1/bff/callback?code=x&state=y        200 doro-bff-api        /bff/blog/callback?code=x&state=y
+POST /dev/blog/api/v1/bff/logout                        200 doro-bff-api        /bff/blog/logout
+GET /dev/blog/api/v1/bff/session                        200 doro-blog-backend   /api/v1/bff/session
+POST /dev/blog/api/v1/uploads                           200 doro-blog-backend   /api/v1/uploads
+GET /dev/blog/api/v1/notify/preferences                 200 doro-notify-api     /api/v1/notify/preferences app=blog
+# --- 도로 면접: /dev/interview/ (웹은 컨테이너의 /interview/ 로 접두사를 바꿔 넘긴다)
+GET /dev/interview                                      302 redirect:/dev/interview/
+GET /dev/interview/                                     200 doro-interview-web  /interview/
+GET /dev/interview/assets/index-abc.js                  200 doro-interview-web  /interview/assets/index-abc.js
+GET /dev/interview/api/v1/bff/login?return=%2Fq%2Ftx-01 200 doro-bff-api        /bff/interview/login?return=%2Fq%2Ftx-01
+GET /dev/interview/api/v1/bff/callback?code=x&state=y   200 doro-bff-api        /bff/interview/callback?code=x&state=y
+POST /dev/interview/api/v1/bff/logout                   200 doro-bff-api        /bff/interview/logout
+GET /dev/interview/api/v1/bff/session                   200 doro-interview-api  /api/v1/bff/session
+GET /dev/interview/api/v1/categories                    200 doro-interview-api  /api/v1/categories
+PUT /dev/interview/api/v1/progress/tx-01                200 doro-interview-api  /api/v1/progress/tx-01
