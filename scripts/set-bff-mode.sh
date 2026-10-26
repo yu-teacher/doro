@@ -15,7 +15,7 @@ set -Eeuo pipefail
 
 SVC="${1:-}"; MODE_ARG="${2:---check}"
 case "$SVC" in
-  blog)  DIR="$HOME/doro-blog";  SERVICE=blog-backend; CONTAINER=doro-blog-backend; VAR=BLOG_AUTH_MODE;  KEYVAR=BLOG_SESSION_KEY;  LOGIN=/blog/api/v1/bff/login ;;
+  blog)  DIR="$HOME/doro-blog";  SERVICE=blog-backend; CONTAINER=doro-blog-backend; VAR=BLOG_AUTH_MODE;  KEYVAR=BLOG_SESSION_KEY;  LOGIN=/dev/blog/api/v1/bff/login ;;
   party) DIR="$HOME/doro-party"; SERVICE=party-api;    CONTAINER=doro-party-api;    VAR=PARTY_AUTH_MODE; KEYVAR=PARTY_SESSION_KEY; LOGIN=/party/api/v1/bff/login ;;
   games) DIR="$HOME/doro-games"; SERVICE=games-api;    CONTAINER=doro-games-api;    VAR=GAMES_AUTH_MODE; KEYVAR=GAMES_SESSION_KEY; LOGIN=/games/api/v1/bff/login ;;
   *) echo "사용법: bash -s -- blog|party|games --check|--gateway|--embedded" >&2; exit 2 ;;

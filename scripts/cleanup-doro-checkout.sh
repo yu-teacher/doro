@@ -104,7 +104,7 @@ log "정리 완료. 남은 항목:"; ls -A "$DIR" | sed 's/^/    /'
 
 # 5) 확인: 게이트웨이가 그대로 서비스하는지
 docker exec doro-gateway nginx -t >/dev/null 2>&1 || die "게이트웨이 설정 검증 실패(이 스크립트가 바꾼 것은 없다. 확인 필요)"
-for u in / /login /blog/ /menu/ /party/ /games/; do
+for u in / /login /dev/blog/ /menu/ /party/ /games/; do
   code="$(curl -sk -o /dev/null -m 6 -w '%{http_code}' "https://127.0.0.1$u" || true)"
   [ "$code" = 200 ] && log "  OK   $u -> $code" || die "  FAIL $u -> ${code:-없음}"
 done
