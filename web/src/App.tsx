@@ -8,6 +8,8 @@ import { MyAccountPage } from './pages/MyAccountPage';
 import { OAuthConsentPage } from './pages/OAuthConsentPage';
 import { LogViewerPage } from './pages/LogViewerPage';
 import { HubPage } from './pages/HubPage';
+import { DevHubPage } from './pages/DevHubPage';
+import { inProduct, productOf } from './utils/product';
 import { useAuthStore } from './store/authStore';
 
 const RootRedirect: React.FC = () => {
@@ -27,7 +29,7 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     return <Navigate to="/login" replace state={loginStateFrom(location)} />;
   }
   if (!isAdmin) {
-    return <Navigate to="/account" replace />;
+    return <Navigate to={inProduct(productOf(location.pathname), '/account')} replace />;
   }
   return <>{children}</>;
 };
@@ -44,6 +46,17 @@ export const AppRoutes: React.FC = () => (
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignUpPage />} />
         <Route path="/account" element={<MyAccountPage />} />
+        {/* 개발자 제품(Doro Dev)의 입구와 그 안의 화면. 같은 포털 앱이지만 개발자 서비스만 보인다 */}
+        <Route path="/dev" element={<DevHubPage />} />
+        <Route path="/dev/account" element={<MyAccountPage />} />
+        <Route
+          path="/dev/logs"
+          element={
+            <AdminRoute>
+              <LogViewerPage />
+            </AdminRoute>
+          }
+        />
         <Route path="/oauth2/consent" element={<OAuthConsentPage />} />
         <Route
           path="/logs"

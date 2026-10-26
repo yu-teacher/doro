@@ -6,7 +6,7 @@
  * (옛 블로그 주소 /@사용자 같은 것은 허용되지 않아 네트워크로 가고, 게이트웨이가 /blog 로 이동시킨다.)
  * 허브 라우트(App.tsx)가 바뀌면 여기도 함께 바꾼다.
  */
-export const HUB_ROUTE_NAMES = ['portal', 'login', 'signup', 'account', 'logs'] as const;
+export const HUB_ROUTE_NAMES = ['portal', 'login', 'signup', 'account', 'logs', 'dev', 'dev/account', 'dev/logs'] as const;
 
 /** 경로(pathname)+쿼리 문자열 전체에 맞춘다. 예: "/", "/login", "/login?returnTo=x", "/account/" */
 export const HUB_NAVIGATE_ALLOWLIST: RegExp[] = [new RegExp(`^/(?:(?:${HUB_ROUTE_NAMES.join('|')})/?)?(?:\\?.*)?$`)];

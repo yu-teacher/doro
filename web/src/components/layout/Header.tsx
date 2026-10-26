@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { loginStateFrom } from '../../utils/afterLogin';
 import { useAuthStore } from '../../store/authStore';
+import { inProduct, productOf } from '../../utils/product';
 import { Shield, Grid, User, Terminal, Home } from 'lucide-react';
 import { AppLauncherModal } from './AppLauncherModal';
 import { AccountSwitcherModal } from './AccountSwitcherModal';
@@ -19,13 +20,15 @@ export const Header: React.FC = () => {
   const activeAccount = accounts[activeAccountIndex] || accounts[0];
   const isAdmin = activeAccount?.role === 'ADMIN' || activeAccount?.role === 'SUPER_ADMIN';
 
+  const product = productOf(location.pathname);
   const isAuthPage = location.pathname === '/login' || location.pathname === '/signup';
   // 메인(허브)에 있을 때는 돌아갈 곳이 없으므로 홈 버튼을 숨긴다
-  const isHub = location.pathname === '/' || location.pathname === '/portal';
+  const isHub = ['/', '/portal', '/dev', '/dev/'].includes(location.pathname);
+  const logsPath = inProduct(product, '/logs');
 
   const handleLogoClick = () => {
     if (activeAccount) {
-      navigate('/account', { state: { tab: 'home', timestamp: Date.now() } });
+      navigate(inProduct(product, '/account'), { state: { tab: 'home', timestamp: Date.now() } });
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
       navigate('/login', { state: loginStateFrom(location) });
@@ -45,8 +48,8 @@ export const Header: React.FC = () => {
               <Shield className="w-5 h-5" />
             </div>
             <div className="flex flex-col">
-              <span className="text-base font-extrabold tracking-tight text-slate-800 leading-tight">Doro 계정</span>
-              <span className="text-[10px] font-semibold text-slate-400 leading-tight">Central Identity Portal</span>
+              <span className="text-base font-extrabold tracking-tight text-slate-800 leading-tight">{product === 'dev' ? 'Doro Dev' : 'Doro 계정'}</span>
+              <span className="text-[10px] font-semibold text-slate-400 leading-tight">{product === 'dev' ? 'Developer Space' : 'Central Identity Portal'}</span>
             </div>
           </div>
 
@@ -55,10 +58,10 @@ export const Header: React.FC = () => {
             {/* System Logs Navigation Button (Admins only) */}
             {isAdmin && (
               <button
-                onClick={() => navigate('/logs')}
+                onClick={() => navigate(logsPath)}
                 title="시스템 로그 모니터링"
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
-                  location.pathname === '/logs'
+                  location.pathname === logsPath
                     ? 'bg-indigo-50 text-indigo-600 border border-indigo-200'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                 }`}
@@ -71,9 +74,9 @@ export const Header: React.FC = () => {
             {/* 메인(허브)으로 돌아가기: 로그인·가입·계정·로그 어느 화면에서든 서비스 전체로 갈 수 있다 */}
             {!isHub && (
               <button
-                onClick={() => navigate('/')}
-                title="Doro 메인으로"
-                aria-label="Doro 메인으로"
+                onClick={() => navigate(inProduct(product, '/'))}
+                title={product === 'dev' ? 'Doro Dev 메인으로' : 'Doro 메인으로'}
+                aria-label={product === 'dev' ? 'Doro Dev 메인으로' : 'Doro 메인으로'}
                 className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
               >
                 <Home className="w-4 h-4" />
@@ -87,7 +90,7 @@ export const Header: React.FC = () => {
                 setIsAppLauncherOpen(!isAppLauncherOpen);
                 setIsAccountSwitcherOpen(false);
               }}
-              title="Doro 앱"
+              title={product === 'dev' ? 'Doro Dev 앱' : 'Doro 앱'}
               className="p-2.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-full transition-colors cursor-pointer"
             >
               <Grid className="w-5 h-5" />
@@ -125,7 +128,7 @@ export const Header: React.FC = () => {
       </header>
 
       {/* Modals */}
-      <AppLauncherModal isOpen={isAppLauncherOpen} onClose={() => setIsAppLauncherOpen(false)} />
+      <AppLauncherModal product={product} isOpen={isAppLauncherOpen} onClose={() => setIsAppLauncherOpen(false)} />
       <AccountSwitcherModal
         isOpen={isAccountSwitcherOpen}
         onClose={() => setIsAccountSwitcherOpen(false)}

@@ -19,6 +19,17 @@ test.describe('포털: 비로그인 화면', () => {
     await expectMobileFriendly(page);
   });
 
+  test('개발자 입구(Doro Dev): 개발자 서비스만 보이고 일반 서비스는 없다', async ({ page }) => {
+    await page.goto('/dev/');
+    await expect(page.getByRole('heading', { name: 'Doro Dev' })).toBeVisible();
+    await expect(page.getByText('DORO.log')).toBeVisible();
+    await expect(page.getByText('도로 면접')).toBeVisible();
+    for (const hidden of ['도로 파티', '도로 게임 천국', '도로메뉴']) {
+      await expect(page.getByText(hidden)).toHaveCount(0);
+    }
+    await expectMobileFriendly(page);
+  });
+
   test('로그인(이메일 단계)', async ({ page }) => {
     await page.goto('/login');
     await expect(page.getByRole('button', { name: '다음' })).toBeVisible();
