@@ -14,7 +14,9 @@ export const DevHubPage: React.FC = () => {
   const isLoggedIn = Boolean(activeAccount);
   const isAdmin = activeAccount?.role === 'ADMIN' || activeAccount?.role === 'SUPER_ADMIN';
   const cards = buildServiceCards({ isLoggedIn, isAdmin, product: 'dev' });
-  const services = cards.filter((c) => c.group === 'service');
+  const services = cards.filter((c) => c.group === 'service' && c.audience === 'developer');
+  // 관리자에게만 나온다(개발자 입구의 일반 사용자는 일반 서비스를 볼 수 없다)
+  const generalServices = cards.filter((c) => c.group === 'service' && c.audience === 'general');
   const admin = cards.filter((c) => c.group !== 'service');
 
   return (
@@ -48,6 +50,19 @@ export const DevHubPage: React.FC = () => {
           ))}
         </div>
       </section>
+
+      {generalServices.length > 0 && (
+        <section aria-labelledby="dev-general">
+          <h2 id="dev-general" className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">
+            일반 서비스 · 관리자에게만 보여요
+          </h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {generalServices.map((card) => (
+              <HubCard key={card.id} card={card} />
+            ))}
+          </div>
+        </section>
+      )}
 
       {admin.length > 0 && (
         <section aria-labelledby="dev-admin">

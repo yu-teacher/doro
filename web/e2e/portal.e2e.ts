@@ -150,6 +150,30 @@ test.describe('포털: 알림 설정(내 계정 > 기기 및 세션)', () => {
   });
 });
 
+test.describe('포털: 두 제품 사이의 노출', () => {
+  test('일반 사용자: 허브에는 개발자 서비스가 없고 개발자 입구에는 일반 서비스가 없다', async ({ page }) => {
+    await mockApi(page, { account: USER_ACCOUNT });
+    await seedLoggedIn(page, USER_ACCOUNT);
+    await gotoInApp(page, '/');
+    await expect(page.getByText('도로 파티')).toBeVisible();
+    for (const hidden of ['DORO.log', '도로 면접', '개발자 서비스']) await expect(page.getByText(hidden)).toHaveCount(0);
+    await gotoInApp(page, '/dev/');
+    await expect(page.getByText('DORO.log')).toBeVisible();
+    for (const hidden of ['도로 파티', '도로 게임 천국', '도로메뉴', '일반 서비스']) await expect(page.getByText(hidden)).toHaveCount(0);
+  });
+
+  test('관리자: 양쪽 입구에서 두 제품의 서비스를 모두 본다', async ({ page }) => {
+    await mockApi(page, { account: ADMIN_ACCOUNT });
+    await seedLoggedIn(page, ADMIN_ACCOUNT);
+    await gotoInApp(page, '/');
+    await expect(page.getByText('개발자 서비스 · 관리자에게만 보여요')).toBeVisible();
+    await expect(page.getByText('DORO.log').first()).toBeVisible();
+    await gotoInApp(page, '/dev/');
+    await expect(page.getByText('일반 서비스 · 관리자에게만 보여요')).toBeVisible();
+    await expect(page.getByText('도로 파티').first()).toBeVisible();
+  });
+});
+
 test.describe('포털: 관리자', () => {
   test.beforeEach(async ({ page }) => {
     await mockApi(page, { account: ADMIN_ACCOUNT });

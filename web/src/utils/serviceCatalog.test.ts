@@ -68,21 +68,31 @@ describe('buildServiceCards', () => {
     expect(ids(cards)).not.toContain('iam-docs');
   });
 
-  it('관리자라도 허브에는 개발자용 카드(문서·로그)가 나오지 않는다', () => {
+  it('일반 사용자의 허브에는 개발자용 카드(서비스·문서·로그)가 하나도 없다', () => {
     vi.stubEnv('VITE_GUARD_DOCS_URL', 'https://guard.example.com/docs');
     vi.stubEnv('VITE_IAM_DOCS_URL', 'https://iam.example.com/docs');
-    expect(ids(buildServiceCards({ isLoggedIn: true, isAdmin: true }))).toEqual(['party', 'games', 'menu', 'account']);
+    expect(ids(buildServiceCards({ isLoggedIn: true, isAdmin: false }))).toEqual(['party', 'games', 'menu', 'account']);
+  });
+
+  it('관리자는 어느 입구에서든 양쪽 서비스를 모두 본다(오가야 하므로)', () => {
+    const hub = buildServiceCards({ isLoggedIn: true, isAdmin: true, product: 'hub' });
+    const dev = buildServiceCards({ isLoggedIn: true, isAdmin: true, product: 'dev' });
+    for (const cards of [hub, dev]) expect(ids(cards.filter((c) => c.group === 'service')).sort()).toEqual(['blog', 'games', 'interview', 'menu', 'party']);
+    // 계정 카드는 들어온 입구의 계정 화면으로 간다
+    expect(hub.find((c) => c.id === 'account')!.href).toBe('/account');
+    expect(dev.find((c) => c.id === 'account')!.href).toBe('/dev/account');
   });
 
   it('관리자: 로그 카드는 항상, 문서 카드는 환경변수가 있을 때만 보인다', () => {
     vi.stubEnv('VITE_GUARD_DOCS_URL', '');
     vi.stubEnv('VITE_IAM_DOCS_URL', '');
-    expect(ids(buildServiceCards({ isLoggedIn: true, isAdmin: true, product: 'dev' }))).toEqual(['blog', 'interview', 'logs']);
+    const kinds = (cards: { id: string }[]) => ids(cards).filter((id) => ['iam-docs', 'guard-docs', 'logs'].includes(id));
+    expect(kinds(buildServiceCards({ isLoggedIn: true, isAdmin: true, product: 'dev' }))).toEqual(['logs']);
 
     vi.stubEnv('VITE_GUARD_DOCS_URL', 'https://guard.example.com/docs');
     vi.stubEnv('VITE_IAM_DOCS_URL', 'https://iam.example.com/docs');
     const adminCards = buildServiceCards({ isLoggedIn: true, isAdmin: true, product: 'dev' });
-    expect(ids(adminCards)).toEqual(['blog', 'interview', 'iam-docs', 'guard-docs', 'logs']);
+    expect(kinds(adminCards)).toEqual(['iam-docs', 'guard-docs', 'logs']);
     expect(adminCards.find((c) => c.id === 'guard-docs')!.href).toBe('https://guard.example.com/docs');
   });
 
@@ -105,7 +115,7 @@ describe('개발자 제품(Doro Dev) 입구', () => {
     vi.stubEnv('VITE_GUARD_DOCS_URL', 'https://guard.example.com/docs');
     vi.stubEnv('VITE_IAM_DOCS_URL', 'https://iam.example.com/docs');
     const cards = buildServiceCards({ isLoggedIn: true, isAdmin: true, product: 'dev' });
-    expect(ids(cards)).toEqual(['blog', 'interview', 'iam-docs', 'guard-docs', 'logs']);
+    expect(ids(cards).filter((id) => ['iam-docs', 'guard-docs', 'logs'].includes(id))).toEqual(['iam-docs', 'guard-docs', 'logs']);
     expect(cards.find((c) => c.id === 'logs')!.href).toBe('/dev/logs');
   });
 
@@ -116,11 +126,12 @@ describe('개발자 제품(Doro Dev) 입구', () => {
     expect(apps[0].internal).toBe(true);
   });
 
-  it('관리자 앱 목록의 로그는 /dev/logs 이고 일반 서비스는 여전히 없다', () => {
+  it('관리자 앱 목록: 로그는 /dev/logs 이고 일반 허브 홈과 일반 서비스도 함께 나온다', () => {
     vi.stubEnv('VITE_GUARD_DOCS_URL', 'https://guard.example.com/docs');
     const apps = buildLauncherApps({ isAdmin: true, product: 'dev' });
-    expect(ids(apps)).toEqual(['hub', 'blog', 'interview', 'guard-docs', 'logs']);
+    expect(ids(apps)).toEqual(['hub', 'other-home', 'blog', 'party', 'games', 'interview', 'menu', 'guard-docs', 'logs']);
     expect(apps.find((a) => a.id === 'logs')!.href).toBe('/dev/logs');
+    expect(apps.find((a) => a.id === 'other-home')!.href).toBe('/');
   });
 });
 
@@ -145,15 +156,18 @@ describe('buildLauncherApps (헤더 앱 목록)', () => {
     vi.stubEnv('VITE_GUARD_DOCS_URL', 'https://guard.example.com/docs');
     expect(ids(buildLauncherApps({ isAdmin: false, product: 'dev' }))).not.toContain('logs');
     const admin = buildLauncherApps({ isAdmin: true, product: 'dev' });
-    expect(ids(admin)).toEqual(['hub', 'blog', 'interview', 'guard-docs', 'logs']);
+    expect(ids(admin)).toEqual(['hub', 'other-home', 'blog', 'party', 'games', 'interview', 'menu', 'guard-docs', 'logs']);
     expect(admin.find((a) => a.id === 'logs')!.internal).toBe(true);
     expect(admin.find((a) => a.id === 'guard-docs')!.internal).toBe(false);
-    // 허브(일반 제품)의 앱 목록에는 관리자라도 개발자용 항목이 없다
-    expect(ids(buildLauncherApps({ isAdmin: true }))).toEqual(['hub', 'party', 'games', 'menu']);
+    // 일반 사용자의 허브 앱 목록에는 개발자용 항목이 없고, 관리자의 허브 앱 목록에는 Doro Dev 홈과 개발자 서비스가 더해진다
+    expect(ids(buildLauncherApps({ isAdmin: false }))).toEqual(['hub', 'party', 'games', 'menu']);
+    const hubAdmin = buildLauncherApps({ isAdmin: true });
+    expect(hubAdmin.find((a) => a.id === 'other-home')!.href).toBe('/dev/');
+    expect(ids(hubAdmin)).toEqual(expect.arrayContaining(['blog', 'interview']));
   });
 
   it('문서 URL 이 없으면 Guard 문서 항목은 숨긴다', () => {
     vi.stubEnv('VITE_GUARD_DOCS_URL', '');
-    expect(ids(buildLauncherApps({ isAdmin: true, product: 'dev' }))).toEqual(['hub', 'blog', 'interview', 'logs']);
+    expect(ids(buildLauncherApps({ isAdmin: true, product: 'dev' }))).toEqual(['hub', 'other-home', 'blog', 'party', 'games', 'interview', 'menu', 'logs']);
   });
 });

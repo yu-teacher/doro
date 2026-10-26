@@ -13,7 +13,9 @@ export const HubPage: React.FC = () => {
   const isLoggedIn = Boolean(activeAccount);
   const isAdmin = activeAccount?.role === 'ADMIN' || activeAccount?.role === 'SUPER_ADMIN';
   const cards = buildServiceCards({ isLoggedIn, isAdmin });
-  const services = cards.filter((c) => c.group === 'service');
+  const services = cards.filter((c) => c.group === 'service' && c.audience === 'general');
+  // 관리자에게만 나온다(일반 사용자의 허브에는 개발자 서비스가 없다)
+  const devServices = cards.filter((c) => c.group === 'service' && c.audience === 'developer');
   const platform = cards.filter((c) => c.group === 'platform');
 
   return (
@@ -49,6 +51,19 @@ export const HubPage: React.FC = () => {
           ))}
         </div>
       </section>
+
+      {devServices.length > 0 && (
+        <section aria-labelledby="hub-dev">
+          <h2 id="hub-dev" className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">
+            개발자 서비스 · 관리자에게만 보여요
+          </h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {devServices.map((card) => (
+              <HubCard key={card.id} card={card} />
+            ))}
+          </div>
+        </section>
+      )}
 
       <section aria-labelledby="hub-platform">
         <h2 id="hub-platform" className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">
