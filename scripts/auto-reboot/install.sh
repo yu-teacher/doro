@@ -43,7 +43,7 @@ case "$PROFILE" in
 AUTO_REBOOT_HOST=mini
 CHECK_DOCKER=yes
 BACKUP_LOCK_FILES="$HOME_DIR/backups/auto/.lock"
-AFTER_HTTP_CHECKS="https://127.0.0.1/|200 https://127.0.0.1/login|200 https://127.0.0.1/blog/|200 https://127.0.0.1/menu/|200 https://127.0.0.1/party/|200 https://127.0.0.1/games/|200 https://127.0.0.1/loki/api/v1/labels|401"
+AFTER_HTTP_CHECKS="https://127.0.0.1/|200 https://127.0.0.1/login|200 https://127.0.0.1/dev/blog/|200 https://127.0.0.1/menu/|200 https://127.0.0.1/party/|200 https://127.0.0.1/games/|200 https://127.0.0.1/loki/api/v1/labels|401"
 AFTER_TIMEOUT_SEC=420
 CONF
     ;;

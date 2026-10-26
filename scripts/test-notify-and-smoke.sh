@@ -98,11 +98,12 @@ while [ $# -gt 0 ]; do case "$1" in -X) method="$2"; shift 2 ;; -o|-w|-m|-H|-d) 
 path="${url#https://127.0.0.1}"
 if [ -n "${STUB_BAD:-}" ] && [[ "$path" == *"$STUB_BAD"* ]]; then printf 500; exit 0; fi
 case "$method $path" in
-  "GET /"|"GET /login"|"GET /blog/"|"GET /party/"|"GET /games/") printf 200 ;;
-  "GET /api/v1/admin/users"|PUT*suspension|"POST /blog/api/v1/posts"|"POST /blog/api/v1/series") printf 401 ;;
+  "GET /"|"GET /login"|"GET /dev/"|"GET /dev/blog/"|"GET /dev/interview/"|"GET /party/"|"GET /games/") printf 200 ;;
+  "GET /blog/") printf 302 ;;
+  "GET /api/v1/admin/users"|PUT*suspension|"POST /dev/blog/api/v1/posts"|"POST /dev/blog/api/v1/series") printf 401 ;;
   "POST /api/v1/auth/token/refresh") printf 400 ;;
   "POST /api/v1/auth/lookup") printf 404 ;;
-  "GET /party/api/v1/bff/login"|"GET /blog/api/v1/bff/login"|"GET /games/api/v1/bff/login") printf 302 ;;
+  "GET /party/api/v1/bff/login"|"GET /dev/blog/api/v1/bff/login"|"GET /games/api/v1/bff/login") printf 302 ;;
   *) printf 000 ;;
 esac
 SH
@@ -118,7 +119,7 @@ run_smoke() { set +e; smoke "$@" > "$WORK/out" 2>&1; echo $? > "$WORK/code"; set
 
 run_smoke
 expect "모두 정상이면 종료 코드 0" bash -c "[ \$(cat '$WORK/code') = 0 ]"
-expect "통과 요약이 나온다" has "$WORK/out" "20개 중 20개 통과"
+expect "통과 요약이 나온다" has "$WORK/out" "23개 중 23개 통과"
 expect "실패 줄이 없다" hasnt "$WORK/out" "❌"
 
 run_smoke STUB_BAD=/api/v1/admin/users
