@@ -174,11 +174,13 @@ services:
       BFF_COOKIE_SECURE: "true"
       # 브라우저가 보는 공개 주소(기본: IAM issuer 와 같다). 서비스별 redirect_uri 는 IAM 의 OAuth 클라이언트에 등록한 값과 같아야 한다.
       BFF_OAUTH_AUTHORIZE_URL: ${BFF_PUBLIC_ORIGIN:-${DORO_IAM_ISSUER:-https://auth.doro.local}}/oauth2/authorize
-      BLOG_WEB_BASE_PATH: /blog
-      BLOG_OAUTH_REDIRECT_URI: ${BFF_PUBLIC_ORIGIN:-${DORO_IAM_ISSUER:-https://auth.doro.local}}/blog/api/v1/bff/callback
+      # 개발자 제품(Doro Dev) 아래로 옮겼다: 옛 /blog/·/interview/ 는 게이트웨이가 새 주소로 이동시킨다. 새 복귀 주소는 IAM 에 미리 등록돼 있어야 한다.
+      BLOG_WEB_BASE_PATH: /dev/blog
+      BLOG_OAUTH_REDIRECT_URI: ${BFF_PUBLIC_ORIGIN:-${DORO_IAM_ISSUER:-https://auth.doro.local}}/dev/blog/api/v1/bff/callback
       PARTY_OAUTH_REDIRECT_URI: ${BFF_PUBLIC_ORIGIN:-${DORO_IAM_ISSUER:-https://auth.doro.local}}/party/api/v1/bff/callback
       GAMES_OAUTH_REDIRECT_URI: ${BFF_PUBLIC_ORIGIN:-${DORO_IAM_ISSUER:-https://auth.doro.local}}/games/api/v1/bff/callback
-      INTERVIEW_OAUTH_REDIRECT_URI: ${BFF_PUBLIC_ORIGIN:-${DORO_IAM_ISSUER:-https://auth.doro.local}}/interview/api/v1/bff/callback
+      INTERVIEW_WEB_BASE_PATH: /dev/interview
+      INTERVIEW_OAUTH_REDIRECT_URI: ${BFF_PUBLIC_ORIGIN:-${DORO_IAM_ISSUER:-https://auth.doro.local}}/dev/interview/api/v1/bff/callback
     depends_on:
       postgres:
         condition: service_healthy

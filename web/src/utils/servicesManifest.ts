@@ -15,6 +15,8 @@ export interface ManifestService {
   icon: string;
   /** 게이트웨이 기준 경로(항상 /로 시작해 /로 끝난다). 3000 포트 직접 접속용 주소는 넣지 않는다. */
   href: string;
+  /** 어느 제품의 서비스인지. 개발자 제품(블로그·면접)의 헤더는 developer 만, 일반 제품은 general 만 보여 준다. 없으면 모두 보인다(옛 소비자 호환). */
+  audience: 'general' | 'developer';
 }
 
 export interface ServicesManifest {
@@ -23,11 +25,11 @@ export interface ServicesManifest {
 }
 
 export const PUBLIC_SERVICES: readonly ManifestService[] = [
-  { id: 'blog', name: 'DORO.log', desc: '개발자 오픈 기술 블로그', icon: 'blog', href: '/blog/' },
-  { id: 'party', name: '도로 파티', desc: '친구들과 지도에 핀 모으기', icon: 'party', href: '/party/' },
-  { id: 'games', name: '도로 게임 천국', desc: '웹 미니게임', icon: 'games', href: '/games/' },
-  { id: 'interview', name: '도로 면접', desc: '면접 질문 은행', icon: 'interview', href: '/interview/' },
-  { id: 'menu', name: '도로메뉴', desc: '메뉴 정해주는 도로롱', icon: 'menu', href: '/menu/' },
+  { id: 'blog', name: 'DORO.log', desc: '개발자 오픈 기술 블로그', icon: 'blog', href: '/dev/blog/', audience: 'developer' },
+  { id: 'party', name: '도로 파티', desc: '친구들과 지도에 핀 모으기', icon: 'party', href: '/party/', audience: 'general' },
+  { id: 'games', name: '도로 게임 천국', desc: '웹 미니게임', icon: 'games', href: '/games/', audience: 'general' },
+  { id: 'interview', name: '도로 면접', desc: '면접 질문 은행', icon: 'interview', href: '/dev/interview/', audience: 'developer' },
+  { id: 'menu', name: '도로메뉴', desc: '메뉴 정해주는 도로롱', icon: 'menu', href: '/menu/', audience: 'general' },
 ];
 
 export function buildServicesManifest(): ServicesManifest {
