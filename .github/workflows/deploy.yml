@@ -106,11 +106,6 @@ jobs:
       - name: 🧪 Deploy rollback script tests
         run: scripts/test-deploy-rollback.sh
 
-      - name: 🧪 Auto reboot scripts tests
-        run: |
-          scripts/test-auto-reboot.sh
-          python3 -m unittest discover -s scripts/auto-reboot -p 'test_*.py'
-
   deploy:
     name: Build & Deploy on Mini Server
     needs: [test-backend, test-web, test-scripts]

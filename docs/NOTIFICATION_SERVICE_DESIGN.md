@@ -314,4 +314,4 @@ notify_requests        -- 요청 단위 기록 + 멱등 키
 
 **배포 단계에서 할 것(이 변경에 포함하지 않음)**
 - 서버 게이트웨이 설정에 위 location 반영(참고 사본과 같은 내용을 서버에서 손으로 적용하고 `nginx -t` 후 reload). 앞의 기존 앱 location(`/party/api/` 등)은 건드리지 않으며, 더 긴 접두사라 순서와 무관하게 먼저 맞는다.
-- `docker-compose.yml`에는 notify를 넣지 않는다(서비스 저장소의 compose로 따로 운영). DB `service_notify`와 계정 `notify_app` 생성은 `scripts/split-db-accounts.sh`, 스모크 항목은 `scripts/post-deploy-smoke.sh`에 서비스가 서버에 뜬 뒤 별도 PR로 추가한다(먼저 넣으면 스모크가 실패한다).
+- `docker-compose.yml`에는 notify를 넣지 않는다(서비스 저장소의 compose로 따로 운영). DB `service_notify`와 계정 `notify_app` 생성은 `split-db-accounts.sh`, 스모크 항목은 `scripts/post-deploy-smoke.sh`에 서비스가 서버에 뜬 뒤 별도 PR로 추가한다(먼저 넣으면 스모크가 실패한다).
