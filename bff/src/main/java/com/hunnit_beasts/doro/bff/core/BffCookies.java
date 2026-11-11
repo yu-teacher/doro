@@ -1,4 +1,4 @@
-package com.hunnit_beasts.doro.sdk.bff;
+package com.hunnit_beasts.doro.bff.core;
 
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;

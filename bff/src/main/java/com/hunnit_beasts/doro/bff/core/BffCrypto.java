@@ -1,4 +1,4 @@
-package com.hunnit_beasts.doro.sdk.bff;
+package com.hunnit_beasts.doro.bff.core;
 
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;

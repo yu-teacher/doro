@@ -1,8 +1,8 @@
-package com.hunnit_beasts.doro.sdk.bff;
+package com.hunnit_beasts.doro.bff.core;
 
-import com.hunnit_beasts.doro.sdk.bff.BffTestSupport.FakeIam;
-import com.hunnit_beasts.doro.sdk.bff.BffTestSupport.MemoryStores;
-import com.hunnit_beasts.doro.sdk.bff.BffTestSupport.MutableClock;
+import com.hunnit_beasts.doro.bff.core.BffTestSupport.FakeIam;
+import com.hunnit_beasts.doro.bff.core.BffTestSupport.MemoryStores;
+import com.hunnit_beasts.doro.bff.core.BffTestSupport.MutableClock;
 import com.hunnit_beasts.doro.sdk.domain.DoroUser;
 import com.hunnit_beasts.doro.sdk.security.DoroTokenVerifier;
 import org.junit.jupiter.api.AfterEach;
@@ -21,7 +21,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
-import static com.hunnit_beasts.doro.sdk.bff.BffTestSupport.CLIENT_ID;
+import static com.hunnit_beasts.doro.bff.core.BffTestSupport.CLIENT_ID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;

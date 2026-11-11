@@ -1,4 +1,4 @@
-package com.hunnit_beasts.doro.sdk.bff;
+package com.hunnit_beasts.doro.bff.core;
 
 import org.springframework.http.HttpStatus;
 

@@ -12,7 +12,6 @@ KEEP=1 e2e/run.sh     # 시험 후에도 스택을 남긴다(디버깅). 내릴 
 
 ## 두 가지 모드
 - **gateway(기본)**: 브라우저는 nginx(게이트웨이)로 접속하고, 로그인·세션·토큰 갱신은 별도 `doro-bff` 컨테이너가 맡는다. nginx 가 쿠키를 `Authorization: Bearer` 로 바꿔 블로그 백엔드에 넘긴다(블로그는 `BLOG_AUTH_MODE=gateway`). 운영 게이트웨이의 `auth_request` 규칙을 그대로 옮긴 설정은 `gateway/default.conf.template`.
-- **embedded**: 블로그 안의 SDK BFF 를 쓰는 이전 방식. `E2E_BFF_MODE=embedded e2e/run.sh`. 공통 시나리오 9개를 같은 시험으로 확인한다(게이트웨이 전용 4개는 건너뜀).
 
 ## 구성
 - `compose.e2e.yml`: 격리 스택(컨테이너 이름 `e2e-*`, 포트 5xxxx, 볼륨 없음). 개발·운영 스택과 겹치지 않는다. 설정값은 `e2e.env`(비밀 아님).

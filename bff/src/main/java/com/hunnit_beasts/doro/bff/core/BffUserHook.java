@@ -1,9 +1,9 @@
-package com.hunnit_beasts.doro.sdk.bff;
+package com.hunnit_beasts.doro.bff.core;
 
 import com.hunnit_beasts.doro.sdk.domain.DoroUser;
 
 /**
- * 로그인에 성공한 직후 호출된다. 서비스가 자기 사용자 행을 만들거나 갱신한다(JIT 생성).
+ * 로그인에 성공한 직후 호출된다. 사용자 행이 필요한 쪽이 만들거나 갱신한다(JIT 생성).
  * 예외가 나면 로그인은 실패로 처리된다.
  */
 @FunctionalInterface

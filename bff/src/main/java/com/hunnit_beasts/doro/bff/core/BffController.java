@@ -1,4 +1,4 @@
-package com.hunnit_beasts.doro.sdk.bff;
+package com.hunnit_beasts.doro.bff.core;
 
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
@@ -7,21 +7,15 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
 import java.util.Map;
 
 /**
- * Doro OAuth 로그인(BFF). 브라우저는 /login 으로 이동해 Doro 에서 로그인하고, /callback 에서 세션 쿠키를 받는다.
+ * 한 서비스의 Doro OAuth 로그인(BFF) 동작. 브라우저는 login 으로 이동해 Doro 에서 로그인하고, callback 에서 세션 쿠키를 받는다.
  * 토큰은 서버에만 있고 JavaScript 는 볼 수 없다. 로그인 상태 조회(/session)는 서비스가 자기 프로필 모양으로 직접 제공한다.
+ * 스프링 빈이 아니다: 서비스마다 구성({@code config.BffServiceRegistry})이 하나씩 만들고, HTTP 경로는 {@code web.BffGatewayController} 가 맡는다.
  */
-@RestController
-@RequestMapping("/api/v1/bff")
 public class BffController {
 
     private static final Logger log = LoggerFactory.getLogger(BffController.class);
@@ -40,8 +34,7 @@ public class BffController {
     }
 
     /** 로그인 시작: Doro 로그인 화면으로 이동한다. return 은 로그인 후 돌아올 사이트 내 경로. */
-    @GetMapping("/login")
-    public ResponseEntity<Void> login(@RequestParam(name = "return", required = false) String returnPath) {
+    public ResponseEntity<Void> login(String returnPath) {
         BffAuthService.StartedLogin started = authService.startLogin(returnPath);
         // 이 브라우저를 로그인 시도에 묶는다: 콜백이 같은 브라우저에서 와야 끝낼 수 있다(남이 시작한 로그인을 이 사람에게 끝내게 하는 공격 방지)
         return ResponseEntity.status(HttpStatus.FOUND).header(HttpHeaders.LOCATION, started.authorizeUrl())
@@ -50,12 +43,11 @@ public class BffController {
     }
 
     /** 로그인 콜백: Doro 가 인가 코드와 함께 돌려보내는 곳. 세션 쿠키를 발급하고 원래 페이지로 이동한다. */
-    @GetMapping("/callback")
     public ResponseEntity<Void> callback(
             HttpServletRequest request,
-            @RequestParam(name = "code", required = false) String code,
-            @RequestParam(name = "state", required = false) String state,
-            @RequestParam(name = "error", required = false) String error) {
+            String code,
+            String state,
+            String error) {
         if (error != null) {
             // 사용자가 취소했거나 Doro 가 거부했다. 사유를 화면에 그대로 싣지 않는다.
             log.info("BFF login ended with an authorization error from IAM: {}", error);
@@ -72,7 +64,6 @@ public class BffController {
     }
 
     /** 로그아웃: 세션과 Doro 세션을 종료한다. 상태를 바꾸는 요청이므로 CSRF 헤더가 필요하다. */
-    @PostMapping("/logout")
     public ResponseEntity<Map<String, Object>> logout(HttpServletRequest request) {
         String cookieValue = cookies.sessionValue(request);
         String csrf = request.getHeader(props.getCsrfHeader());

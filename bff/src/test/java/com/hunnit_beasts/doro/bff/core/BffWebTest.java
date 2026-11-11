@@ -1,28 +1,32 @@
-package com.hunnit_beasts.doro.sdk.bff;
+package com.hunnit_beasts.doro.bff.core;
 
-import com.hunnit_beasts.doro.sdk.bff.BffTestSupport.FakeIam;
-import com.hunnit_beasts.doro.sdk.bff.BffTestSupport.MemoryStores;
-import com.hunnit_beasts.doro.sdk.bff.BffTestSupport.MutableClock;
+import com.hunnit_beasts.doro.bff.core.BffTestSupport.FakeIam;
+import com.hunnit_beasts.doro.bff.core.BffTestSupport.MemoryStores;
+import com.hunnit_beasts.doro.bff.core.BffTestSupport.MutableClock;
 import com.hunnit_beasts.doro.sdk.domain.DoroUser;
-import com.hunnit_beasts.doro.sdk.domain.DoroUserContext;
 import com.hunnit_beasts.doro.sdk.security.DoroTokenVerifier;
 import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.ResponseEntity;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
-import static com.hunnit_beasts.doro.sdk.bff.BffTestSupport.CLIENT_ID;
+import static com.hunnit_beasts.doro.bff.core.BffTestSupport.CLIENT_ID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -31,22 +35,31 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/** BFF 엔드포인트(로그인·콜백·로그아웃)와 세션 인증 필터의 쿠키·CSRF 규칙. */
+/** BFF 엔드포인트(로그인·콜백·로그아웃)의 쿠키·CSRF 규칙. 게이트웨이 요청의 CSRF 는 BffGatewayTest 가 본다. */
 class BffWebTest {
 
     private static final UUID USER = UUID.randomUUID();
 
+    /** 운영에서 경로를 잡는 BffGatewayController 처럼, 시험용으로 한 서비스의 BffController 를 /api/v1/bff 에 이어 준다. */
     @RestController
-    static class Probe {
-        @GetMapping("/probe")
-        String read() {
-            DoroUser u = DoroUserContext.getCurrentUser();
-            return u != null && u.isAuthenticated() ? "user:" + u.email() : "anonymous";
+    @RequestMapping("/api/v1/bff")
+    record Endpoints(BffController bff) {
+        @GetMapping("/login")
+        ResponseEntity<Void> login(@RequestParam(name = "return", required = false) String returnPath) {
+            return bff.login(returnPath);
         }
 
-        @PostMapping("/probe")
-        String write() {
-            return "written";
+        @GetMapping("/callback")
+        ResponseEntity<Void> callback(HttpServletRequest request,
+                                      @RequestParam(name = "code", required = false) String code,
+                                      @RequestParam(name = "state", required = false) String state,
+                                      @RequestParam(name = "error", required = false) String error) {
+            return bff.callback(request, code, state, error);
+        }
+
+        @PostMapping("/logout")
+        ResponseEntity<Map<String, Object>> logout(HttpServletRequest request) {
+            return bff.logout(request);
         }
     }
 
@@ -67,8 +80,7 @@ class BffWebTest {
         BffAuthService service = new BffAuthService(props, new BffOAuthClient(props, clock), new BffCrypto(props.getSessionEncryptionKey()),
                 stores, stores, verifier, BffUserHook.none(), clock);
         BffCookies cookies = new BffCookies(props);
-        mvc = MockMvcBuilders.standaloneSetup(new BffController(service, props, cookies), new Probe())
-                .addFilters(new BffSessionAuthFilter(service, props, cookies)).build();
+        mvc = MockMvcBuilders.standaloneSetup(new Endpoints(new BffController(service, props, cookies))).build();
     }
 
     @AfterEach
@@ -159,39 +171,11 @@ class BffWebTest {
     }
 
     @Test
-    @DisplayName("세션 쿠키가 있으면 사용자로 인증되고, 쿠키가 없으면 익명이다")
-    void filterAuthenticatesBySessionCookie() throws Exception {
-        String session = loginAndGetSessionCookie();
-
-        assertThat(mvc.perform(get("/probe").cookie(new Cookie(props.getCookieName(), session))).andReturn().getResponse().getContentAsString())
-                .isEqualTo("user:u@doro.test");
-        assertThat(mvc.perform(get("/probe")).andReturn().getResponse().getContentAsString()).isEqualTo("anonymous");
-        assertThat(mvc.perform(get("/probe").cookie(new Cookie(props.getCookieName(), "bogus"))).andReturn().getResponse().getContentAsString())
-                .isEqualTo("anonymous");
-    }
-
-    @Test
-    @DisplayName("CSRF: 쿠키로 상태를 바꾸는 요청은 커스텀 헤더가 있어야 하고, Origin 이 있다면 이 사이트와 같아야 한다")
-    void csrfRules() throws Exception {
-        String session = loginAndGetSessionCookie();
-        Cookie cookie = new Cookie(props.getCookieName(), session);
-
-        mvc.perform(post("/probe").cookie(cookie)).andExpect(status().isForbidden());
-        mvc.perform(post("/probe").cookie(cookie).header(props.getCsrfHeader(), "1").header("Origin", "https://evil.example"))
-                .andExpect(status().isForbidden());
-        mvc.perform(post("/probe").cookie(cookie).header(props.getCsrfHeader(), "1")).andExpect(status().isOk());
-        mvc.perform(post("/probe").cookie(cookie).header(props.getCsrfHeader(), "1").header("Origin", "https://svc.example"))
-                .andExpect(status().isOk());
-        mvc.perform(get("/probe").cookie(cookie)).andExpect(status().isOk());      // 읽기는 CSRF 헤더 불필요
-        mvc.perform(post("/probe")).andExpect(status().isOk());                    // 쿠키 없는 요청은 CSRF 대상이 아니다
-    }
-
-    @Test
     @DisplayName("CSRF 거부 응답은 워크스페이스 표준 오류 모양이다")
     void csrfRejectionBodyHasTheStandardShape() throws Exception {
         String session = loginAndGetSessionCookie();
 
-        String body = mvc.perform(post("/probe").cookie(new Cookie(props.getCookieName(), session))).andReturn().getResponse().getContentAsString();
+        String body = mvc.perform(post("/api/v1/bff/logout").cookie(new Cookie(props.getCookieName(), session))).andReturn().getResponse().getContentAsString();
 
         assertThat(body).contains("\"success\":false", "\"code\":\"AUTH-403-03\"", "\"status\":403", "\"error\":{");
     }

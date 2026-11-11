@@ -1,12 +1,12 @@
-package com.hunnit_beasts.doro.sdk.bff;
+package com.hunnit_beasts.doro.bff.core;
 
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
 /**
- * BFF 세션 저장소. 서비스가 자기 DB(JPA 등)로 구현한다. SDK 는 트랜잭션을 열지 않으므로 각 메서드는 그 자체로 원자적이어야 한다
- * (구현체에 {@code @Transactional} 을 붙인다).
+ * BFF 세션 저장소. 서비스(클라이언트)마다 하나씩, BFF 의 DB 로 구현한다({@code store.ServiceStores}). 이 계층은 트랜잭션을 열지 않으므로
+ * 각 메서드는 그 자체로 원자적이어야 한다(구현체에 {@code @Transactional} 을 붙인다).
  */
 public interface BffSessionStore {
 

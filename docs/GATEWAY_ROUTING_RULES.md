@@ -108,7 +108,7 @@ nginx 의 평가 순서(이 순서를 모르고 location 을 추가하면 반드
 - **`auth_request` 내부 location**: `/_bff_auth_blog`, `/_bff_auth_party`, `/_bff_auth_games`(모두 `internal`, 밖에서 부르면 404). 서비스 쿠키가 있을 때만 `bff_upstream` 의 `/internal/auth` 를 부르고, 쿠키가 없으면 BFF 에 닿지 않고 `204` 로 통과한다(공개 요청·API 키 요청은 BFF 가 내려가 있어도 영향이 없다).
 - **`$bff_authorization` 규칙**: 서비스 API location 은 `auth_request_set $bff_token $upstream_http_x_doro_access_token` 으로 BFF 가 돌려준 토큰을 받아 `Authorization` 을 정한다. 쿠키가 있어 토큰이 오면 `Bearer <토큰>` 으로 **덮어쓰고**(클라이언트가 보낸 값은 버린다), 토큰이 없으면(쿠키 없음·익명) 클라이언트가 보낸 `Authorization`/`X-API-Key` 를 그대로 통과시킨다.
 - **JSON 오류 응답**: 쿠키로 상태를 바꾸는 요청에 CSRF 증명이 없어 BFF 가 403 을 주면 `@bff_forbidden` 이 서비스에 닿기 전에 JSON `403`(`AUTH-403-03`)으로 끝낸다. 쿠키가 있는데 BFF 에 닿지 못하면 `@bff_unavailable` 이 익명으로 넘기지 않고 JSON `503`(`AUTH-503-02`, `Retry-After: 5`)을 준다.
-- 새 서비스를 BFF 에 붙일 때는 같은 구성(로그인·콜백·로그아웃 location + `/_bff_auth_<서비스>` + 서비스 API location)을 추가하고 `scripts/gateway-routing/expect-current.txt` 에 기대 라우팅을 더한다. 서비스별 전환 스위치는 `scripts/enable-bff.sh`, `scripts/set-bff-mode.sh` 와 `docs/BFF.md` 를 본다.
+- 새 서비스를 BFF 에 붙일 때는 같은 구성(로그인·콜백·로그아웃 location + `/_bff_auth_<서비스>` + 서비스 API location)을 추가하고 `scripts/gateway-routing/expect-current.txt` 에 기대 라우팅을 더한다. BFF 준비는 `scripts/enable-bff.sh`, 구조는 `docs/BFF.md` 를 본다.
 
 ---
 

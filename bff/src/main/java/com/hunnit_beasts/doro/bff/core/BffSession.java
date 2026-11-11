@@ -1,4 +1,4 @@
-package com.hunnit_beasts.doro.sdk.bff;
+package com.hunnit_beasts.doro.bff.core;
 
 import java.time.Instant;
 import java.util.UUID;

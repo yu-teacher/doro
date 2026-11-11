@@ -1,9 +1,9 @@
 package com.hunnit_beasts.doro.bff.store;
 
-import com.hunnit_beasts.doro.sdk.bff.BffLoginAttempt;
-import com.hunnit_beasts.doro.sdk.bff.BffLoginAttemptStore;
-import com.hunnit_beasts.doro.sdk.bff.BffSession;
-import com.hunnit_beasts.doro.sdk.bff.BffSessionStore;
+import com.hunnit_beasts.doro.bff.core.BffLoginAttempt;
+import com.hunnit_beasts.doro.bff.core.BffLoginAttemptStore;
+import com.hunnit_beasts.doro.bff.core.BffSession;
+import com.hunnit_beasts.doro.bff.core.BffSessionStore;
 
 import java.time.Instant;
 import java.util.Optional;

@@ -4,7 +4,6 @@
 #
 #   e2e/run.sh            # 전체 실행(처음엔 이미지 빌드로 몇 분 걸린다)
 #   KEEP=1 e2e/run.sh     # 시험 후에도 스택을 남겨 둔다(디버깅용; 직접 내릴 때: e2e/run.sh --down)
-#   E2E_BFF_MODE=embedded e2e/run.sh   # 블로그 안의 BFF(이전 방식)로 실행. 기본은 gateway(별도 BFF + nginx)
 #
 # 필요: Docker, Java 25, Node 24, 형제 디렉터리 ../doro-blog. 시험 계정 비밀번호는 실행마다 무작위이며 .state/ 에만 있다.
 set -Eeuo pipefail
@@ -12,7 +11,8 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 MODE_OVERRIDE="${E2E_BFF_MODE:-}"
 set -a; source e2e.env; set +a
 [ -z "$MODE_OVERRIDE" ] || E2E_BFF_MODE="$MODE_OVERRIDE"
-case "$E2E_BFF_MODE" in gateway|embedded) ;; *) echo "E2E_BFF_MODE 는 gateway 또는 embedded 여야 한다: $E2E_BFF_MODE" >&2; exit 1;; esac
+# 서비스 안의 BFF(embedded)는 2026-11 에 지웠다. 별도 BFF + nginx(gateway) 만 있다.
+case "$E2E_BFF_MODE" in gateway) ;; *) echo "E2E_BFF_MODE 는 gateway 여야 한다(embedded 는 없어졌다): $E2E_BFF_MODE" >&2; exit 1;; esac
 export E2E_BFF_MODE
 # gateway 모드에서만 BFF 와 nginx 컨테이너를 쓴다(compose 프로필)
 COMPOSE=(docker compose -p doro-e2e --env-file e2e.env --profile gateway -f compose.e2e.yml)

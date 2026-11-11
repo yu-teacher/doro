@@ -2,13 +2,13 @@ package com.hunnit_beasts.doro.bff.config;
 
 import com.hunnit_beasts.doro.bff.store.BffStorage;
 import com.hunnit_beasts.doro.bff.store.ServiceStores;
-import com.hunnit_beasts.doro.sdk.bff.BffAuthService;
-import com.hunnit_beasts.doro.sdk.bff.BffController;
-import com.hunnit_beasts.doro.sdk.bff.BffCookies;
-import com.hunnit_beasts.doro.sdk.bff.BffCrypto;
-import com.hunnit_beasts.doro.sdk.bff.BffOAuthClient;
-import com.hunnit_beasts.doro.sdk.bff.BffProperties;
-import com.hunnit_beasts.doro.sdk.bff.BffUserHook;
+import com.hunnit_beasts.doro.bff.core.BffAuthService;
+import com.hunnit_beasts.doro.bff.core.BffController;
+import com.hunnit_beasts.doro.bff.core.BffCookies;
+import com.hunnit_beasts.doro.bff.core.BffCrypto;
+import com.hunnit_beasts.doro.bff.core.BffOAuthClient;
+import com.hunnit_beasts.doro.bff.core.BffProperties;
+import com.hunnit_beasts.doro.bff.core.BffUserHook;
 import com.hunnit_beasts.doro.sdk.security.DoroTokenVerifier;
 import org.springframework.stereotype.Component;
 
