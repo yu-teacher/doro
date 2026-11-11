@@ -1,4 +1,4 @@
-package com.hunnit_beasts.doro.sdk.bff;
+package com.hunnit_beasts.doro.bff.core;
 
 import com.hunnit_beasts.doro.sdk.domain.DoroUser;
 import com.hunnit_beasts.doro.sdk.security.DoroTokenVerifier;

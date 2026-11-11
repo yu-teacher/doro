@@ -378,7 +378,7 @@ curl -s -X POST $IAM/api/v1/users/me/deletion -H "Authorization: Bearer $TOKEN" 
 - 액세스 토큰만으로는 탈퇴할 수 없습니다. **비밀번호를 다시 입력**하고(2FA 사용 계정은 OTP 코드도), 비밀번호가 틀리면 `401 INVALID_CREDENTIALS`, 2FA 코드가 틀리면 `INVALID_2FA_CODE` 입니다.
 - 요청하면 계정이 `PENDING_DELETION` 이 되고 **모든 세션이 즉시 종료**됩니다. 응답은 `{"scheduledPurgeAt": "..."}`(영구 처리 예정 시각)입니다.
 - **유예 기간(기본 30일, `DORO_IAM_ACCOUNT_DELETION_GRACE_DAYS`) 안에 다시 로그인하면 탈퇴가 취소**되고 계정이 복구됩니다. 지나면 주기 작업(`DORO_IAM_ACCOUNT_DELETION_PURGE_INTERVAL_MS`, 기본 1시간)이 개인정보를 **익명화**하고 상태를 `DELETED` 로 바꿉니다.
-- 서브 서비스는 IAM 의 내부 API 로 영구 탈퇴한 사용자 ID 를 받아 자기 데이터를 정리합니다: `GET /internal/v1/deleted-users?since=&limit=`(SDK 의 탈퇴 동기화 모듈이 사용, [`SDK_BFF.md`](SDK_BFF.md)). 계정 상태만 필요하면 `GET /internal/v1/users/{userId}/status`(`ACTIVE`/`SUSPENDED`/`PENDING_DELETION`/`DELETED`, 개인정보 없음)를 씁니다. 두 API 는 서비스 토큰(`X-Doro-Service-Token`, `DORO_IAM_INTERNAL_TOKENS`)을 쓰는 **내부 전용**이며 게이트웨이로는 노출되지 않습니다.
+- 서브 서비스는 IAM 의 내부 API 로 영구 탈퇴한 사용자 ID 를 받아 자기 데이터를 정리합니다: `GET /internal/v1/deleted-users?since=&limit=`(SDK 의 탈퇴 동기화 모듈이 사용, [`SDK_DELETED_USERS.md`](SDK_DELETED_USERS.md)). 계정 상태만 필요하면 `GET /internal/v1/users/{userId}/status`(`ACTIVE`/`SUSPENDED`/`PENDING_DELETION`/`DELETED`, 개인정보 없음)를 씁니다. 두 API 는 서비스 토큰(`X-Doro-Service-Token`, `DORO_IAM_INTERNAL_TOKENS`)을 쓰는 **내부 전용**이며 게이트웨이로는 노출되지 않습니다.
 
 ---
 

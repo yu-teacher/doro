@@ -69,7 +69,7 @@ probe "없는 계정 조회"               404 POST /api/v1/auth/lookup -H "$JSO
 # 본문 검증(400)이 인증보다 먼저 일어나지 않도록 제목·이름 두 필드를 모두 담는다(운영에서 401 을 확인한 본문)
 probe "비로그인 블로그 글 작성"        401 POST /dev/blog/api/v1/posts -H "$JSON" -d '{"title":"x","name":"x"}'
 probe "비로그인 블로그 시리즈 작성"     401 POST /dev/blog/api/v1/series -H "$JSON" -d '{"title":"x","name":"x"}'
-# 로그인 시작은 서비스 안의 BFF 든 별도 BFF(doro-bff)든 IAM 으로 302 이동시킨다(어느 쪽이 처리하는지는 모드에 따라 다르다).
+# 로그인 시작은 별도 BFF(doro-bff)가 IAM 으로 302 이동시킨다.
 probe "파티 로그인 시작(BFF)"          302 GET  /party/api/v1/bff/login
 probe "블로그 로그인 시작(BFF)"        302 GET  /dev/blog/api/v1/bff/login
 probe "게임 로그인 시작(BFF)"          302 GET  /games/api/v1/bff/login

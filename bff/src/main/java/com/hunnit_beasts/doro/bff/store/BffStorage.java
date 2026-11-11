@@ -1,7 +1,7 @@
 package com.hunnit_beasts.doro.bff.store;
 
-import com.hunnit_beasts.doro.sdk.bff.BffLoginAttempt;
-import com.hunnit_beasts.doro.sdk.bff.BffSession;
+import com.hunnit_beasts.doro.bff.core.BffLoginAttempt;
+import com.hunnit_beasts.doro.bff.core.BffSession;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 

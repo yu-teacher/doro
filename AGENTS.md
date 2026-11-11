@@ -79,5 +79,5 @@
 ### 6. 문서·도구 안내
 - 설정과 환경변수: `.env.example`(전체 목록), [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) §7.3, [`docs/DORO_AGENT_GUIDE.md`](docs/DORO_AGENT_GUIDE.md) §9.
 - 게이트웨이: [`docs/GATEWAY_ROUTING_RULES.md`](docs/GATEWAY_ROUTING_RULES.md). location 을 바꾸면 `scripts/gateway-routing/expect-current.txt` 를 함께 고치고 `scripts/test-gateway-routing.sh gateway/nginx.conf scripts/gateway-routing/expect-current.txt` 로 확인한다(CI 에서도 실행).
-- BFF: [`docs/BFF.md`](docs/BFF.md)(독립 서비스), [`docs/SDK_BFF.md`](docs/SDK_BFF.md)(서비스 내장·SDK 부품). 통합 시험: [`e2e/README.md`](e2e/README.md).
-- 운영 도구(`scripts/`): `deploy-rollback.sh`(배포 실패 시 이전 이미지 복원), `enable-bff.sh`·`set-bff-mode.sh`(BFF 준비와 서비스별 전환), `enable-deleted-sync.sh`(탈퇴 동기화 준비).
+- BFF: [`docs/BFF.md`](docs/BFF.md)(독립 서비스), [`docs/SDK_DELETED_USERS.md`](docs/SDK_DELETED_USERS.md)(SDK 탈퇴 동기화). 통합 시험: [`e2e/README.md`](e2e/README.md).
+- 운영 도구(`scripts/`): `deploy-rollback.sh`(배포 실패 시 이전 이미지 복원), `enable-bff.sh`(BFF 준비), `enable-deleted-sync.sh`(탈퇴 동기화 준비).

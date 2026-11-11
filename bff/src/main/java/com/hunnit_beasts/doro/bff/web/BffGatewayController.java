@@ -16,7 +16,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.Map;
 
 /**
- * 서비스별 로그인·콜백·로그아웃. 동작은 SDK 의 {@code BffController} 그대로이고, 서비스 이름으로 그 서비스의 구성을 골라 위임한다.
+ * 서비스별 로그인·콜백·로그아웃. 동작은 {@code core.BffController} 가 맡고, 서비스 이름으로 그 서비스의 구성을 골라 위임한다.
  * 게이트웨이가 브라우저가 보는 기존 주소(예: /party/api/v1/bff/login)를 이 경로(/bff/party/login)로 이어 준다.
  */
 @RestController

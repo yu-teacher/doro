@@ -41,21 +41,31 @@
 
 | 구성 요소 | 위치 |
 |---|---|
-| BFF 로그인·세션·토큰 갱신 로직(서비스 무관) | `sdk/.../bff` (`BffAuthService`, `BffOAuthClient`, `BffController`, `BffCookies` …) |
+| BFF 로그인·세션·토큰 갱신 로직(서비스 무관) | `bff/.../core` (`BffAuthService`, `BffOAuthClient`, `BffController`, `BffCookies` …) |
 | 서비스별 구성·저장소·`auth_request` 엔드포인트 | `bff/` (`BffServiceRegistry`, `BffGatewayController`, `AuthRequestController`) |
 | 게이트웨이 규칙 | `gateway/nginx.conf` 의 "BFF(doro-bff)" 구간 |
 | 통합(E2E) 시험 | `e2e/` (진짜 nginx · BFF · IAM · Guard · 서비스 · Chromium) |
 
 설정은 `doro.bff.*` 에 있다. 공통: IAM 주소, 세션 암호화 키(`BFF_SESSION_KEY`, base64 32바이트), 쿠키 정책. 서비스별(`doro.bff.services.<이름>.*`): OAuth `client-id`, 쿠키 이름·경로, 웹 기준 경로, `redirect-uri`, CSRF 헤더, 복귀 경로 규칙. 서비스 이름은 게이트웨이가 `X-Doro-Service` 로 넘긴다. 서비스끼리 클라이언트 ID나 쿠키 이름이 겹치면 기동하지 않는다.
 
-## 서비스 쪽 전환 (`*.auth.mode`)
+## 서비스 쪽
 
-각 서비스는 `blog.auth.mode` / `party.auth.mode` / `games.auth.mode` 로 두 모드를 지원한다.
+서비스에는 BFF 코드·세션 저장소가 없고 게이트웨이가 붙여 준 Bearer 만 검증한다. 사용자 행은 로그인 후 첫 `GET /api/v1/bff/session` 조회에서 만든다.
+(예전에는 서비스 안에서 BFF 를 돌리는 `embedded` 모드가 있었다. 모든 서비스가 이 구조로 옮긴 뒤 2026-11 에 그 코드를 서비스와 SDK 에서 지웠다.)
 
-- `embedded`(기본): 로그인·세션을 서비스 안의 SDK BFF 가 한다([SDK_BFF.md](SDK_BFF.md)).
-- `gateway`: 서비스에는 BFF 빈·세션 저장소가 없고 Bearer 만 검증한다. 사용자 행은 로그인 후 첫 `/api/v1/bff/session` 조회에서 만든다.
+## 동작 규칙 (테스트로 고정돼 있다)
 
-전환은 서비스별로 따로 하고 언제든 되돌릴 수 있다. 게이트웨이가 BFF 를 앞세운 뒤에도 `embedded` 서비스는 옛 세션 쿠키를 계속 알아본다(Bearer 가 없으면 자기 세션으로 인증). 모드를 바꾸면 사용자는 한 번 다시 로그인한다.
+- **로그인 CSRF 방지**: `/login` 이 로그인을 시작한 브라우저에 짧은 수명의 쿠키를 심고, `/callback` 은 그 쿠키가 있어야 끝낸다. 다른 브라우저의 콜백은 코드 교환 없이 거부하고 state 도 소진된다.
+- **state 는 1회용**: 저장소의 `consume` 이 행을 실제로 지운 요청만 통과한다.
+- **세션 고정 방지**: 새 로그인은 이전 세션 쿠키의 세션을 지운다.
+- **토큰 갱신**: 액세스 토큰 만료 60초 전부터 갱신하고, 같은 세션의 동시 갱신은 한 번만 IAM 을 부른다(리프레시 토큰은 회전되므로 두 요청이 같은 토큰을 쓰면 IAM 이 탈취로 본다). 저장은 토큰 컬럼만 바꾸는 `updateTokens` 로 한다.
+- **IAM 장애·429 는 로그아웃이 아니다**: 갱신이 IAM 5xx, 429, 408, 403, 404, 연결 실패면 세션을 지우지 않고 **이번 요청만 익명**으로 둔다. IAM 이 400/401 로 명시적으로 거부할 때만 세션을 끝낸다.
+- **IAM 세션 폐기 반영**: 액세스 토큰 검증이 실패하면(다른 곳에서 로그아웃) 세션을 지운다.
+- **쿠키 CSRF**: 쿠키가 있는 요청이 상태를 바꾸면(POST/PUT/PATCH/DELETE) 커스텀 헤더가 있어야 하고, `Origin` 이 있다면 이 사이트와 같아야 한다.
+- **복귀 경로(`return`)**: 사이트 안의 올바른 URI 경로만 허용한다(`//`, `://`, 역슬래시, 제어 문자, URI 문법 위반, 500자 초과는 첫 화면). 오픈 리다이렉트와 콜백 500 을 막는다.
+- **실패한 콜백은 기존 세션 쿠키를 건드리지 않는다**: 가짜 콜백 링크 하나로 남을 로그아웃시킬 수 없다.
+- 토큰 응답 오류 구분: IAM 응답 400/401 만 "거부"이고 나머지는 "일시 장애"다.
+
 
 ## 새 서비스를 붙이는 순서
 
@@ -75,5 +85,5 @@
 
 - 단위·웹: `bff/src/test` — 로그인·콜백·로그아웃·`auth_request`(토큰·익명·CSRF·설정 오류·갱신·IAM 장애), 서비스 격리, 설정 검증, 마이그레이션 스키마 검증. PostgreSQL 에서도 같은 시험을 돌린다(`scripts/ci-test.sh pg`).
 - 게이트웨이 라우팅: `scripts/test-gateway-routing.sh gateway/nginx.conf scripts/gateway-routing/expect-current.txt`.
-- 통합: `e2e/run.sh` (진짜 nginx·BFF·IAM·서비스·Chromium 으로 로그인·토큰 만료 갱신·IAM 장애·BFF 장애·CSRF·위조 헤더·3기기 등 13개 시나리오). `E2E_BFF_MODE=embedded e2e/run.sh` 로 이전 방식도 같은 시험으로 확인한다.
+- 통합: `e2e/run.sh` (진짜 nginx·BFF·IAM·서비스·Chromium 으로 로그인·토큰 만료 갱신·IAM 장애·BFF 장애·CSRF·위조 헤더·3기기 등 13개 시나리오).
 - 시험이 실제로 회귀를 잡는지 게이트웨이 설정을 일부러 망가뜨려 확인했다: 클라이언트 `Authorization` 덮어쓰기 제거 → 위조 헤더 시나리오 실패, 서비스 API 의 `auth_request` 제거 → 로그인 상태 시나리오 실패, 쿠키 없는 요청의 BFF 우회 분기 제거 → BFF 장애 시나리오 실패, CSRF 403 처리 제거 → CSRF 시나리오 실패. 원복하면 모두 통과한다.

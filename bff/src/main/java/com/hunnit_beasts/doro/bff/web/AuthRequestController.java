@@ -2,7 +2,7 @@ package com.hunnit_beasts.doro.bff.web;
 
 import com.hunnit_beasts.doro.bff.config.BffServiceRegistry;
 import com.hunnit_beasts.doro.bff.config.ServiceBff;
-import com.hunnit_beasts.doro.sdk.bff.BffAuthService;
+import com.hunnit_beasts.doro.bff.core.BffAuthService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

@@ -5,7 +5,7 @@ import { mkdirSync, writeFileSync, chmodSync, readFileSync } from 'node:fs';
 
 const fileEnv = Object.fromEntries(readFileSync(new URL('./e2e.env', import.meta.url), 'utf8')
   .split('\n').filter((l) => l && !l.startsWith('#')).map((l) => l.split('=')));
-// 실행할 때 준 E2E_* 환경변수가 파일 값보다 우선한다(예: E2E_BFF_MODE=embedded)
+// 실행할 때 준 E2E_* 환경변수가 파일 값보다 우선한다(예: E2E_PORTAL_PORT)
 const env = { ...fileEnv, ...Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith('E2E_'))) };
 const MODE = env.E2E_BFF_MODE ?? 'gateway';
 const IAM = `http://localhost:${env.E2E_AUTH_PORT}`;
