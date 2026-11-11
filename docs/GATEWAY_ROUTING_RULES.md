@@ -3,7 +3,7 @@
 본 문서는 DORO 플랫폼의 게이트웨이(nginx)에 서비스를 추가하거나 API 경로를 바꿀 때 생기는 라우팅 충돌·누락을 막기 위한 에이전트/개발자 필수 규칙이다. **기준은 `gateway/nginx.conf`(게이트웨이)와 `web/nginx.conf`(포털 컨테이너 내부)이며, 이 문서와 설정이 다르면 설정이 맞다.**
 
 - 검증 기준 커밋: `12d6582` (2026-10-02), 설정 파일을 전부 읽고 작성. 실제 서버에 배포된 설정과의 일치 여부는 `[미검증]`(§8 참고).
-- **2026-10-09 주소 개편**: 메인(`/`)은 허브, 블로그는 `/blog/`. 서버 설정과 `gateway/nginx.conf` 를 맞췄다(서버 값이 기준). 반영 절차와 라우팅 시험은 `scripts/apply-gateway-blog.sh`, `scripts/gateway_blog_switch.py`, `scripts/test-gateway-routing.sh`(기대 목록 `scripts/gateway-routing/`)에 있다.
+- **2026-10-09 주소 개편**: 메인(`/`)은 허브, 블로그는 `/blog/`. 서버 설정과 `gateway/nginx.conf` 를 맞췄다(서버 값이 기준). 반영 절차와 라우팅 시험은 `apply-gateway-blog.sh`, `gateway_blog_switch.py`, `scripts/test-gateway-routing.sh`(기대 목록 `scripts/gateway-routing/`)에 있다.
 - 인증·인가 연동 사실은 `docs/DORO_AGENT_GUIDE.md` 를, 브라우저 로그인(BFF) 구조는 `docs/BFF.md` 를 본다.
 - **라우팅 회귀 시험**: `scripts/test-gateway-routing.sh gateway/nginx.conf scripts/gateway-routing/expect-current.txt` 가 설정의 location 매칭을 기대 목록(경로 → 업스트림)과 비교한다. CI(`deploy.yml`)가 배포 전에 실행하므로 location 을 바꾸면 `expect-current.txt` 도 함께 고친다.
 
@@ -26,7 +26,7 @@
 | `blog_web_upstream` | `doro-blog-web:80` | 블로그 프런트엔드(`/blog/` 아래) |
 | `blog_api_upstream` | `doro-blog-backend:8082` | 블로그 백엔드 API |
 | `minio_upstream` | `doro-minio:9000` | 업로드 미디어(MinIO) |
-| `loki_upstream` | 중앙 Loki(노트북, IP 로 지정) | 로그 조회(Loki). 미니의 loki 컨테이너는 없앴다(`scripts/apply-gateway-loki.sh`). nginx 는 시작 때 이름을 해석하므로 컨테이너 이름이 아니라 IP 로 가리킨다 |
+| `loki_upstream` | 중앙 Loki(노트북, IP 로 지정) | 로그 조회(Loki). 미니의 loki 컨테이너는 없앴다(`apply-gateway-loki.sh`). nginx 는 시작 때 이름을 해석하므로 컨테이너 이름이 아니라 IP 로 가리킨다 |
 | `menu_upstream` | `doro-menu:80` | 도로메뉴 서브 서비스 |
 | `party_web_upstream` / `party_api_upstream` | `doro-party-web:80` / `doro-party-api:8086` | 도로 파티(`/party/`) 프런트엔드 / 백엔드 |
 | `games_web_upstream` / `games_api_upstream` | `doro-games-web:80` / `doro-games-api:8087` | 도로 게임 천국(`/games/`) 프런트엔드 / 백엔드 |

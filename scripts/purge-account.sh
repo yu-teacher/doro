@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 계정 하나(이메일로 지정)를 운영에서 지운다. 운영 서버(mini)에서 실행한다. 비밀 값은 다루지 않는다. 지우기 전에 IAM DB 를 pg_dump 로 백업한다.
-# 시드 정리(purge-seed-data.sh)와 같은 경로를 쓴다: IAM 계정을 탈퇴 대기(유예 만료)로 바꾸면 정리 스케줄러(최대 1시간)가 영구 삭제하고,
+# 시드 정리 스크립트(운영 저장소의 purge-seed-data.sh)와 같은 경로를 쓴다: IAM 계정을 탈퇴 대기(유예 만료)로 바꾸면 정리 스케줄러(최대 1시간)가 영구 삭제하고,
 # 그 사이 각 서비스는 탈퇴 동기화(IAM /internal/v1/deleted-users 폴링)로 자기 데이터를 익명화하고 Guard 튜플·역할을 정리한다.
 #
 #   ssh mini 'bash -s -- --check --email yusm@doro.local' < scripts/purge-account.sh   # 읽기 전용: 계정과 서비스별 데이터, 지워도 되는지
