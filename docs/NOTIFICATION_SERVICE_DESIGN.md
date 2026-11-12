@@ -267,7 +267,7 @@ notify_requests        -- 요청 단위 기록 + 멱등 키
 6. **아웃박스 vs 메모리 이벤트**(11장): 부가 기능이라는 점과 구현 비용 사이의 선택. 권고는 아웃박스.
 7. **파티 이관 중 옛 화면의 옛 API 처리**(12장).
 8. **Guard 스키마**: 알림 서비스 컨트롤러는 사용자 본인 데이터만 다뤄서 Zanzibar 타입이 필요 없다고 보지만, `@DoroGuard` 적용 여부(표준 절차 2~3단계)를 확인해야 한다. 스키마 등록은 병합 절차 필수.
-9. **인프라 변경은 승인 뒤**: 게이트웨이 location(`nginx.conf`는 compose 밖에서 손으로 반영)과 `scripts/gateway-routing/expect-current.txt`, compose, CI, 서비스 토큰 발급은 구현 승인 뒤에 한다.
+9. **인프라 변경은 승인 뒤**: 게이트웨이 location(`nginx.conf`는 compose 밖에서 손으로 반영)과 라우팅 기대 목록(현재는 doro-gateway 저장소의 `scripts/gateway-routing/expect-current.txt`), compose, CI, 서비스 토큰 발급은 구현 승인 뒤에 한다.
 
 ## 16. 관측성과 운영
 
@@ -302,7 +302,7 @@ notify_requests        -- 요청 단위 기록 + 멱등 키
 
 **들어간 것**
 - 허브 알림 섹션: `web/src/components/notifications/NotificationSettingsSection.tsx`, API 클라이언트 `web/src/api/notifyApi.ts`, 순수 로직 `web/src/utils/notifySettings.ts`. "내 계정 > 기기 및 세션" 탭 아래에 붙는다. 허브에서 다른 앱의 구독을 직접 만드는 기능은 넣지 않았다(8장). 서버가 없거나 내려가 있으면(404·502·503·504) 이 섹션만 "사용할 수 없음"으로 보인다.
-- 게이트웨이(`gateway/nginx.conf` 참고 사본): upstream `notify_api_upstream`(api 포트 8089)과 location 4개. 허브용 `/notify/api/v1/`은 Bearer를 그대로 넘기고 클라이언트의 `X-Doro-Notify-App`을 지운다. 앱용 `/party|blog|games/api/v1/notify/`는 각 앱의 `auth_request`를 쓰고 `X-Doro-Notify-App`을 location이 고정한다. `/internal/v1/**`은 라우팅하지 않는다. 라우팅 시험(`scripts/test-gateway-routing.sh`)은 위조 헤더가 덮어써지는지도 확인한다.
+- 게이트웨이(당시 Doro 의 `gateway/nginx.conf` 참고 사본, 지금은 doro-gateway 저장소): upstream `notify_api_upstream`(api 포트 8089)과 location 4개. 허브용 `/notify/api/v1/`은 Bearer를 그대로 넘기고 클라이언트의 `X-Doro-Notify-App`을 지운다. 앱용 `/party|blog|games/api/v1/notify/`는 각 앱의 `auth_request`를 쓰고 `X-Doro-Notify-App`을 location이 고정한다. `/internal/v1/**`은 라우팅하지 않는다. 라우팅 시험(`scripts/test-gateway-routing.sh`)은 위조 헤더가 덮어써지는지도 확인한다.
 - 개발 서버 프록시: `/notify/api/v1`을 알림 서비스의 `/api/v1/notify`로 넘긴다(`VITE_DEV_NOTIFY_TARGET`).
 
 **허브 쪽 가정(백엔드 확정 시 `notifyApi.ts` 타입만 맞춘다)**

@@ -20,7 +20,7 @@ if [ "${1:-}" = "--down" ]; then down; log "내렸다"; exit 0; fi
 
 mkdir -p "$STATE"; chmod 700 "$STATE"
 for p in "$E2E_AUTH_PORT" "$E2E_PORTAL_PORT" "$E2E_PG_PORT" "${E2E_EXT_APP_PORT:-19001}"; do
-  ! lsof -ti ":$p" >/dev/null 2>&1 || die "포트 $p 가 이미 쓰이고 있다(다른 e2e 스택이 떠 있나? e2e/run.sh --down 또는 e2e/run-third-party.sh --down)"
+  ! lsof -ti ":$p" >/dev/null 2>&1 || die "포트 $p 가 이미 쓰이고 있다(다른 e2e 스택이 떠 있나? e2e/run-deleted-sync.sh --down 또는 e2e/run-third-party.sh --down)"
 done
 trap '[ "${KEEP:-0}" = 1 ] || { log "정리"; down; }' EXIT
 

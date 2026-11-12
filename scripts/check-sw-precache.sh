@@ -83,5 +83,5 @@ for p in "${PATHS[@]}"; do
   retried=""; [ "$attempt" -le 1 ] || retried=" (${attempt}번째 시도)"
   if [ "$ok" = true ]; then printf '  OK   %s -> %s%s\n' "$p" "$code" "$retried"; else printf '  FAIL %s -> %s %s%s\n' "$p" "$code" "$why" "$retried"; bad=$((bad + 1)); fi
 done
-if [ "$bad" -gt 0 ]; then log "ERROR: 미리 캐시 주소 $bad 개가 올바르지 않다. 게이트웨이 라우팅을 고치기 전에는 배포하지 않는다(docs/GATEWAY_ROUTING_RULES.md 의 허브 PWA 파일 규칙 참고)."; exit 1; fi
+if [ "$bad" -gt 0 ]; then log "ERROR: 미리 캐시 주소 $bad 개가 올바르지 않다. 게이트웨이 라우팅을 고치기 전에는 배포하지 않는다(doro-gateway 저장소 docs/GATEWAY_ROUTING_RULES.md 의 허브 PWA 파일 규칙 참고)."; exit 1; fi
 log "미리 캐시 주소 전부 정상(${PHASE})"

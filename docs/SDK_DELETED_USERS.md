@@ -2,7 +2,7 @@
 
 계정 삭제 정책(30일 유예 후 익명화)을 모든 서비스에 적용하는 SDK 모듈이다. 서비스는 설정, 진행 위치 저장소, "그 사용자의 데이터를 어떻게 정리할지"만 제공하고, 가져오기·재시도·멱등 처리는 SDK 한 곳에 있다.
 
-> 브라우저 로그인(BFF)은 SDK 에 없다. 서비스 밖의 독립 서비스 `doro-bff` 가 맡는다([BFF.md](BFF.md)). 서비스는 게이트웨이가 붙여 주는 Bearer 만 검증한다.
+> 브라우저 로그인(BFF)은 SDK 에 없다. 서비스 밖의 독립 서비스 `doro-bff` 가 맡는다([doro-gateway](https://github.com/yu-teacher/doro-gateway) 저장소, [BFF.md](https://github.com/yu-teacher/doro-gateway/blob/main/docs/BFF.md)). 서비스는 게이트웨이가 붙여 주는 Bearer 만 검증한다.
 
 ## 구성 (`com.hunnit_beasts.doro.sdk.sync`)
 

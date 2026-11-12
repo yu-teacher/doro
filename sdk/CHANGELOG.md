@@ -8,7 +8,7 @@
 - **삭제**: 서비스 안에서 돌던 브라우저 로그인(BFF) 모듈(`com.hunnit_beasts.doro.sdk.bff`)과 그 자동 구성(`DoroBffAutoConfiguration`).
   로그인 로직은 독립 서비스 doro-bff(`bff` 모듈, `com.hunnit_beasts.doro.bff.core`)로 옮겼다. 서비스 안의 세션 쿠키 필터(`BffSessionAuthFilter`)는 없어졌다.
 - 서비스가 할 일: `com.hunnit_beasts.doro.sdk.bff` 를 쓰는 코드(설정 빈, 세션 저장소, 사용자 훅, `BffCrypto`)를 먼저 지운다.
-  게이트웨이가 붙여 주는 Bearer 검증과 `GET /api/v1/bff/session` 만 남긴다([docs/BFF.md](../docs/BFF.md)).
+  게이트웨이가 붙여 주는 Bearer 검증과 `GET /api/v1/bff/session` 만 남긴다([BFF.md](https://github.com/yu-teacher/doro-gateway/blob/main/docs/BFF.md)).
 - 그 밖의 SDK(토큰 검증, `@DoroGuard`, `@CurrentDoroUser`, Guard 클라이언트, 탈퇴 동기화)는 바뀌지 않았다.
 
 ## 0.1.0 (`sdk-v0.1.0`)
