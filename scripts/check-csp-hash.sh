@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# 각 앱 index.html 의 인라인 <script> 해시가 gateway/nginx.conf 의 CSP script-src 에 등록돼 있는지 검증한다.
+# 각 앱 index.html 의 인라인 <script> 해시가 게이트웨이 nginx.conf 의 CSP script-src 에 등록돼 있는지 검증한다.
+# 게이트웨이 설정은 doro-gateway 저장소에 있다. 기본은 형제 디렉터리 ../doro-gateway 의 사본이고, 배포는 서버의 실제 설정을 CSP_CONF 로 넘긴다.
 # 인라인 스크립트를 바꾸고 CSP 해시를 갱신하지 않으면 운영에서 그 스크립트가 조용히 차단되므로, 배포 전에 실패시킨다.
 #
 #   scripts/check-csp-hash.sh                      # 이 저장소의 web/index.html 만 검사
@@ -7,7 +8,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-CONF="${CSP_CONF:-$ROOT/gateway/nginx.conf}"
+CONF="${CSP_CONF:-$ROOT/../doro-gateway/gateway/nginx.conf}"
 FILES=("$@")
 [ ${#FILES[@]} -gt 0 ] || FILES=("$ROOT/web/index.html")
 
@@ -33,5 +34,5 @@ PY
     *)   echo "FAIL  $f -> ${result%% [0-9]*}" >&2; status=1 ;;
   esac
 done
-[ $status -eq 0 ] || echo "gateway/nginx.conf 의 Content-Security-Policy script-src 에 위 해시를 추가하고 서버 게이트웨이에도 반영한다." >&2
+[ $status -eq 0 ] || echo "게이트웨이 설정(doro-gateway 저장소의 gateway/nginx.conf)의 Content-Security-Policy script-src 에 위 해시를 추가하고 서버 게이트웨이에도 반영한다." >&2
 exit $status

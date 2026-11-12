@@ -66,7 +66,7 @@
 | Guard (ReBAC 인가 엔진) | `guard/` | REST `http://localhost:8081`, gRPC `localhost:9090` (기본 `127.0.0.1` 바인딩) |
 | SDK (서브 서비스용 Spring Boot 라이브러리) | `sdk/` | 라이브러리 |
 | 포털 (React) | `web/` | `http://localhost:3000` |
-| 게이트웨이 (nginx) | `gateway/nginx.conf` | 443 (compose 프로젝트 밖) |
+| 게이트웨이 (nginx) | [doro-gateway](https://github.com/yu-teacher/doro-gateway) 저장소의 `gateway/nginx.conf` | 443 (compose 프로젝트 밖) |
 
 이 가이드의 예제는 아래 셸 변수를 쓴다고 가정합니다. `curl`과 `jq`가 필요합니다.
 
@@ -427,7 +427,7 @@ docker compose restart auth-api
 ```
 (DB 이름·사용자는 `.env`의 `AUTH_DB`/`POSTGRES_USER` 값에 맞추세요. 이것은 **데이터** 수정일 뿐 스키마 변경이 아닙니다.)
 
-> **게이트웨이 경유 주의**: 저장소의 `gateway/nginx.conf`는 관리자 API 중 `/api/v1/admin/users`와 `/api/v1/admin/oauth/`만 IAM으로 보냅니다(`/api/v1/admin/oauth/` 라우트는 최근 추가됐고, 이 라우트가 없으면 요청이 블로그 백엔드로 흘러갑니다). **게이트웨이는 compose 밖이라 서버에 수동 반영해야 하며**, 서버에 실제로 반영된 nginx 설정은 확인하지 못했습니다 `(미검증)`. 반영 전에는 `/iam/` prefix(`/iam/api/v1/admin/oauth/clients`)나 IAM에 직접 붙어서 호출하세요.
+> **게이트웨이 경유 주의**: 게이트웨이 설정(doro-gateway 저장소의 `gateway/nginx.conf`)은 관리자 API 중 `/api/v1/admin/users`와 `/api/v1/admin/oauth/`만 IAM으로 보냅니다(`/api/v1/admin/oauth/` 라우트는 최근 추가됐고, 이 라우트가 없으면 요청이 블로그 백엔드로 흘러갑니다). **게이트웨이는 compose 밖이라 서버에 수동 반영해야 하며**, 서버에 실제로 반영된 nginx 설정은 확인하지 못했습니다 `(미검증)`. 반영 전에는 `/iam/` prefix(`/iam/api/v1/admin/oauth/clients`)나 IAM에 직접 붙어서 호출하세요.
 
 ---
 
@@ -886,7 +886,7 @@ curl -s -o /dev/null -w 'sessions/current  -> %{http_code}\n' $IAM/api/v1/sessio
 
 - **코드 저장소**: Redis에서는 `doro:oauth:code:<sha256>` 키에 TTL로 보관하고, 사용된 코드의 해시는 `doro:oauth:code-used:` 키에 코드 TTL 동안 남겨 재사용을 탐지합니다. `auto`는 **기동 시점**에 Redis가 닿지 않으면 그 프로세스가 끝날 때까지 메모리를 씁니다(재시작/다중 인스턴스에서 코드가 유실됩니다).
 - **CORS**: 클라이언트 앱의 프런트가 다른 origin에서 `POST /oauth2/token`을 브라우저로 직접 호출하면 그 origin이 `DORO_CORS_ALLOWED_ORIGIN_PATTERNS`에 있어야 합니다. 값은 쉼표 구분 패턴이고 `*` 단독은 기동 시 거부됩니다. 허용 헤더는 `Authorization`, `Content-Type`, `Accept`, `X-Trace-Id`, `X-Requested-With`, 자격증명(쿠키/Authorization) 허용입니다. 서버 측에서 토큰을 교환하는 앱에는 필요 없습니다.
-- 게이트웨이의 `/oauth2/consent`(포털로) 및 `/oauth2/`(IAM으로) 라우트는 `gateway/nginx.conf`에 있고, 서버에 반영하려면 수동으로 복사해야 합니다(게이트웨이는 compose 밖).
+- 게이트웨이의 `/oauth2/consent`(포털로) 및 `/oauth2/`(IAM으로) 라우트는 게이트웨이 설정(doro-gateway 저장소의 `gateway/nginx.conf`)에 있고, 서버에 반영하려면 수동으로 복사해야 합니다(게이트웨이는 compose 밖).
 
 ---
 
@@ -1606,7 +1606,7 @@ public class GuardTuples {
 ### 5단계. 게이트웨이, compose, CI
 
 - **compose**: 서비스 컨테이너를 `doro-network`에 연결하고, 로그는 **stdout**(SLF4J)으로만 내보내 서버별 수집기(Grafana Alloy)가 중앙 Loki로 수집하게 합니다. `X-Trace-Id`는 SDK가 HTTP/gRPC로 전파합니다. 서비스 컨테이너에서 IAM/Guard는 `auth-api:8080`, `guard-api:9090`(gRPC)/`guard-api:8081`(REST) 이름으로 접근합니다.
-- **게이트웨이**: 같은 origin으로 노출하려면 `gateway/nginx.conf`에 upstream과 `location`을 추가합니다. 현재 설정에서 `/api/v1/` 전체는 블로그 백엔드로 가는 catch-all이라, 새 서비스는 **더 구체적인 prefix**(예: `/api/v1/shop/`)를 그보다 위에 둬야 합니다. 게이트웨이는 **compose 프로젝트 밖의 컨테이너라 CI가 배포하지 않으므로**, 서버의 nginx.conf를 직접 갱신하고 `nginx -t` 후 reload 해야 합니다.
+- **게이트웨이**: 같은 origin으로 노출하려면 doro-gateway 저장소의 `gateway/nginx.conf`에 upstream과 `location`을 추가합니다. 현재 설정에서 `/api/v1/` 전체는 블로그 백엔드로 가는 catch-all이라, 새 서비스는 **더 구체적인 prefix**(예: `/api/v1/shop/`)를 그보다 위에 둬야 합니다. 게이트웨이는 **compose 프로젝트 밖의 컨테이너라 CI가 배포하지 않으므로**, 서버의 nginx.conf를 직접 갱신하고 `nginx -t` 후 reload 해야 합니다.
 - **CI/배포**: `main`에 push하면 self-hosted runner가 테스트(`scripts/ci-test.sh`) → 배포(`docker compose up -d --build`) → IAM/Guard `/actuator/health` 확인을 합니다. 서브 서비스(doro-blog)는 이 파이프라인에 포함되지 않고 수동으로 배포합니다. 배포 뒤에는 서비스의 `/actuator/health`가 `UP`인지 확인하세요.
 - **CORS**: 브라우저가 서비스를 다른 origin에서 직접 호출한다면 서비스 쪽 CORS 설정이 필요합니다(IAM의 `DORO_CORS_ALLOWED_ORIGIN_PATTERNS`는 IAM에만 적용됩니다).
 
@@ -1721,11 +1721,4 @@ public class GuardTuples {
 | `DORO_GUARD_CACHE_TTL_SECONDS` / `_CACHE_MAX_SIZE` | `60` / `50000` | Guard | 인가 캐시 |
 | `DORO_GUARD_EXPAND_MAX_NODES` | `5000` | Guard | Expand 노드 상한 |
 
-BFF(브라우저 로그인·세션을 서비스 밖에서 처리, [`BFF.md`](BFF.md))를 compose 로 함께 띄울 때의 환경변수:
-
-| 환경변수 | 기본 | 설명 |
-|---|---|---|
-| `BFF_SESSION_KEY` | (필수) | 토큰·PKCE verifier 를 DB 에 암호화하는 키(`openssl rand -base64 32`). 바꾸면 모든 BFF 세션이 무효가 된다 |
-| `BFF_IAM_INTERNAL_TOKEN` | 비어 있음 | 탈퇴 동기화용 IAM 내부 API 토큰(`DORO_IAM_INTERNAL_TOKENS` 에 `bff:<토큰>` 으로 등록) |
-| `BFF_PUBLIC_ORIGIN` | `DORO_IAM_ISSUER` | 브라우저가 보는 공개 주소(OAuth 인가·redirect_uri 의 기준) |
-| `BFF_DB` / `BFF_PORT` | `doro_bff` / `8085` | BFF 데이터베이스 이름 / 호스트 포트(127.0.0.1 바인딩) |
+BFF(브라우저 로그인·세션을 서비스 밖에서 처리)는 2026-11 에 [doro-gateway](https://github.com/yu-teacher/doro-gateway) 저장소로 옮겼다. 환경변수는 그 저장소의 `docker-compose.prod.yml` 과 [BFF.md](https://github.com/yu-teacher/doro-gateway/blob/main/docs/BFF.md) 를 본다.
