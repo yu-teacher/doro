@@ -12,7 +12,7 @@ import java.time.Duration;
 import java.util.Map;
 
 /** 공급자 호출 공통부: 짧은 타임아웃, 폼 POST, Bearer GET, JSON 파싱. 오류는 모두 SocialLoginException 으로 바꾼다. */
-final class SocialHttp {
+class SocialHttp {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -25,6 +25,7 @@ final class SocialHttp {
         this.client = RestClient.builder().requestFactory(factory).build();
     }
 
+    /** 공급자 호출을 막아 둔 시험용으로 바꿔 끼울 수 있다. */
     JsonNode postForm(String url, Map<String, String> form) {
         MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
         form.forEach(body::add);

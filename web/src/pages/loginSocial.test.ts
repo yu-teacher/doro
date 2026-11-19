@@ -77,6 +77,15 @@ describe('소셜 로그인 버튼', () => {
     expect(labels.some((l) => l.includes('Google'))).toBe(true);
   });
 
+  it('카카오 버튼은 "카카오로 계속하기" 문구와 노란 배경을 쓴다', async () => {
+    mockGet([{ id: 'kakao', name: '카카오' }]);
+    await open('/login');
+
+    const button = [...host!.querySelectorAll('button')].find((b) => b.textContent?.includes('카카오')) as HTMLButtonElement;
+    expect(button.textContent).toContain('카카오로 계속하기');
+    expect(button.className).toContain('#FEE500');
+  });
+
   it('공급자가 없거나 목록을 못 받으면 버튼이 없고 이메일 로그인은 그대로 쓸 수 있다', async () => {
     mockGet([]);
     await open('/login');

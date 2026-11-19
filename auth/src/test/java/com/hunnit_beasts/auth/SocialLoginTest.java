@@ -165,11 +165,11 @@ class SocialLoginTest {
     }
 
     @Test
-    @DisplayName("공급자 목록: 설정이 끝난 공급자만 나온다(GitHub·Google 은 키가 없어 꺼져 있다)")
+    @DisplayName("공급자 목록: 설정이 끝난 공급자만 나온다(GitHub·Google·카카오는 키가 없어 꺼져 있다)")
     void listsOnlyConfiguredProviders() throws Exception {
         String body = mockMvc.perform(get("/api/v1/auth/social/providers")).andReturn().getResponse().getContentAsString();
         List<String> ids = objectMapper.readTree(body).path("data").findValuesAsText("id");
-        assertThat(ids).contains("fake").doesNotContain("github", "google");
+        assertThat(ids).contains("fake").doesNotContain("github", "google", "kakao");
     }
 
     @Test
