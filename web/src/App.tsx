@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { applyProductManifest } from './utils/productManifest';
 import { loginStateFrom } from './utils/afterLogin';
 import { Header } from './components/layout/Header';
 import { LoginPage } from './pages/LoginPage';
@@ -34,9 +35,19 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return <>{children}</>;
 };
 
+/** 주소가 바뀔 때마다 설치 앱 정의를 들어온 입구(일반/Doro Dev)에 맞춘다. */
+const ProductManifestSync: React.FC = () => {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    applyProductManifest(pathname);
+  }, [pathname]);
+  return null;
+};
+
 /** 라우트와 공통 화면 틀. BrowserRouter 밖에서도(테스트의 MemoryRouter) 쓸 수 있게 따로 둔다. */
 export const AppRoutes: React.FC = () => (
   <div className="min-h-screen flex flex-col bg-slate-50/50">
+    <ProductManifestSync />
     <Header />
     <main className="flex-1">
       <Routes>
