@@ -259,6 +259,37 @@ class JwksKeyProviderHttpTest {
     }
 
     @Test
+    @DisplayName("새 kid 조회가 진행 중일 때 같은 kid 로 온 다른 요청은 쿨다운에 막혀 null 을 받지 않고 조회 결과를 기다린다")
+    void concurrentUnknownKidWaitsForInFlightFetch() throws Exception {
+        // 운영 재현: 키가 바뀐 직후 두 요청이 거의 동시에 오면, 먼저 조회를 시작한 요청이 쿨다운 시각을 찍어
+        // 다른 요청은 조회도 대기도 없이 null(→ 401)을 받았다. 쿨다운은 운영 기본값처럼 길게 둔다.
+        body.set(jwks("k1", keyA, null, null));
+        delayMillis = 300L;
+        JwksKeyProvider provider = new JwksKeyProvider(jwksUri, LONG_MILLIS, LONG_MILLIS);
+
+        int threads = 8;
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(threads);
+        var start = new java.util.concurrent.CountDownLatch(1);
+        List<java.util.concurrent.Future<PublicKey>> results = new java.util.ArrayList<>();
+        for (int i = 0; i < threads; i++) {
+            results.add(pool.submit(() -> {
+                start.await();
+                return provider.getPublicKey("k1");
+            }));
+        }
+        start.countDown();
+        for (var f : results) {
+            assertThat(f.get(10, java.util.concurrent.TimeUnit.SECONDS)).isEqualTo(keyA);
+        }
+        pool.shutdownNow();
+        assertThat(hits.get()).isEqualTo(1);
+
+        // 쿨다운 안에서 모르는 kid 는 여전히 재조회하지 않는다(임의 kid 증폭 방지)
+        assertThat(provider.getPublicKey("unknown")).isNull();
+        assertThat(hits.get()).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("prefetchAsync 는 호출을 막지 않고 백그라운드에서 키를 적재하며, 실패해도 예외가 없다")
     void prefetchIsBackgroundAndBestEffort() {
         delayMillis = 500L;

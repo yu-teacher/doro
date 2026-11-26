@@ -67,15 +67,17 @@ public class JwksKeyProvider {
             return cached;
         }
 
-        // 알 수 없는 kid 는 새 키일 수 있으므로 동기 조회한다 (쿨다운으로 증폭 방지)
-        if (cooldownElapsed(now)) {
+        // 알 수 없는 kid 는 새 키일 수 있으므로 동기 조회한다 (쿨다운으로 증폭 방지).
+        // 쿨다운은 락 안에서만 판단한다: 다른 스레드의 조회가 진행 중이면(시도 시각이 이미 찍혀 있다)
+        // 락 밖에서 쿨다운을 보고 바로 null 을 돌려주면, 키가 바뀐 직후 동시에 온 요청이 401 을 받는다.
+        if (jwksConfigured()) {
             refreshKeysForUnknownKid(kid);
         }
         return keyCache.get(kid);
     }
 
     /**
-     * 미지 kid 동기 조회. 락을 기다리는 동안 앞선 스레드가 이미 조회했을 수 있으므로 락 안에서
+     * 미지 kid 동기 조회. 진행 중인 조회가 있으면 락에서 그 결과를 기다리고, 락을 얻은 뒤
      * kid 존재 여부와 쿨다운을 다시 확인한다 (임의 kid 토큰이 몰려도 쿨다운 구간당 JWKS 조회는 최대 1회).
      */
     private synchronized void refreshKeysForUnknownKid(String kid) {
@@ -85,8 +87,12 @@ public class JwksKeyProvider {
         fetchAndApply();
     }
 
+    private boolean jwksConfigured() {
+        return jwksUri != null && !jwksUri.isBlank();
+    }
+
     private boolean cooldownElapsed(long now) {
-        return jwksUri != null && !jwksUri.isBlank() && now - lastRefreshAttemptMillis >= refreshCooldownMillis;
+        return jwksConfigured() && now - lastRefreshAttemptMillis >= refreshCooldownMillis;
     }
 
     public void registerKey(String kid, PublicKey publicKey) {
