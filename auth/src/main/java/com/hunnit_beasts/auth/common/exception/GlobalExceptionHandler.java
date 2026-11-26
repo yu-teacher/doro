@@ -62,6 +62,9 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidationException(MethodArgumentNotValidException ex, HttpServletRequest request) {
+        // 값은 남기지 않고 필드 이름만 남긴다(비밀번호 등). 로그가 없으면 운영에서 400 원인을 찾을 수 없다.
+        log.warn("Request validation failed at {}: fields={}", request.getRequestURI(),
+                ex.getBindingResult().getFieldErrors().stream().map(err -> err.getField()).distinct().toList());
         List<ErrorResponse.FieldErrorDetail> details = ex.getBindingResult().getFieldErrors().stream()
                 .map(err -> ErrorResponse.FieldErrorDetail.builder()
                         .field(err.getField())
