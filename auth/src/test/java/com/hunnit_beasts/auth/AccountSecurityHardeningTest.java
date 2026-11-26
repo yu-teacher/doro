@@ -158,6 +158,20 @@ class AccountSecurityHardeningTest {
         assertThat(failedAttempts(me.id())).isZero();
     }
 
+    @Test
+    @DisplayName("A2: 비밀번호를 정한 적 없는 소셜 가입 계정은 비밀번호 없이 2FA 등록을 시작한다(화면이 보내는 본문 그대로)")
+    void totpSetupWithoutPasswordForSocialAccount() throws Exception {
+        Account me = account();
+        // 소셜 가입 계정과 같은 상태로 만든다(SocialLoginService 가 Credential.discardPassword 로 남기는 상태)
+        jdbc.update("update credentials set password_set = false where user_id = ?", me.id());
+
+        setup2fa(me, "{}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.secret").isNotEmpty());
+        assertThat(jdbc.queryForObject("select pending_totp_secret from credentials where user_id = ?", String.class, me.id()))
+                .isNotNull();
+    }
+
     // ---------------- A3: 계정 상태 비노출 ----------------
 
     @Test
