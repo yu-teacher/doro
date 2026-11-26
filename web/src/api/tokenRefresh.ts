@@ -19,8 +19,11 @@ interface TokenPayload {
 
 const inFlight = new Map<string, Promise<RefreshResult>>();
 
-/** 여러 탭이 같은 쿠키의 리프레시 토큰을 동시에 회전시키지 않도록 브라우저 전체 락을 잡는다. (미지원 환경은 그대로 실행) */
-function withCrossTabLock<T>(task: () => Promise<T>): Promise<T> {
+/**
+ * 여러 탭이 같은 쿠키의 리프레시 토큰을 동시에 회전시키지 않도록 브라우저 전체 락을 잡는다. (미지원 환경은 그대로 실행)
+ * 리프레시 엔드포인트를 부르는 다른 경로(소셜 로그인 복귀 등)도 이 락을 거쳐야 서로 경합하지 않는다.
+ */
+export function withCrossTabLock<T>(task: () => Promise<T>): Promise<T> {
   const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
   return locks ? locks.request(REFRESH_LOCK_NAME, task) : task();
 }

@@ -1,5 +1,6 @@
 import { apiClient } from './client';
 import { cookieSessionHeaders } from './cookieSession';
+import { withCrossTabLock } from './tokenRefresh';
 import { AccountDeletionResult, AdminUserSummary, LoginData, TokenResponse, TotpSetupData, SessionResponseDto, UserProfileData } from '../types/auth';
 import { AdminUserListParams, adminUserListParams, parseTotalCount } from '../utils/adminUserList';
 import type { SocialProvider } from '../utils/socialLogin';
@@ -38,11 +39,13 @@ export const authApi = {
   },
 
   // 2-2. 소셜 로그인 뒤 서버가 슬롯 쿠키에 심은 리프레시 토큰으로 액세스 토큰을 받는다.
-  refreshFromCookie: async (slot: number) => {
-    const response = await apiClient.post<{ success: boolean; data: TokenResponse }>(
-      '/api/v1/auth/token/refresh', {}, { headers: cookieSessionHeaders(slot) });
-    return response.data.data;
-  },
+  // 같은 쿠키를 다른 갱신과 동시에 회전시키면 서버가 재사용 공격으로 보고 세션을 끊으므로, 공용 갱신 락 안에서 보낸다.
+  refreshFromCookie: (slot: number) =>
+    withCrossTabLock(async () => {
+      const response = await apiClient.post<{ success: boolean; data: TokenResponse }>(
+        '/api/v1/auth/token/refresh', {}, { headers: cookieSessionHeaders(slot) });
+      return response.data.data;
+    }),
 
   // 3. 2FA 로그인 완료 (2차 OTP 입력)
   loginWith2fa: async (data: { tempTicket: string; code: string }, slot: number) => {
