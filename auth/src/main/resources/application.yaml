@@ -120,6 +120,9 @@ doro:
     jwt:
       access-token-validity-seconds: ${DORO_IAM_ACCESS_TOKEN_TTL_SECONDS:900} # 기본 15분. 로그인 유지는 30일 리프레시 토큰(회전)이 담당한다
       refresh-token-validity-seconds: 2592000 # 30일 (1달)
+      # 회전 직후 이 시간(초) 안에 들어온 직전 리프레시 토큰은 같은 브라우저의 동시 요청으로 보고 세션을 유지한다(그 요청만 거부).
+      # 0 이면 즉시 재사용 공격으로 판정해 세션을 끊는다. 운영에서 동시 갱신 경합으로 사용자가 로그아웃된 일이 있어 기본으로 켠다.
+      refresh-reuse-grace-seconds: ${DORO_IAM_REFRESH_REUSE_GRACE_SECONDS:10}
       # ---------------------------------------------------------------------------------------------
       # JWT 서명키 보관 및 로테이션
       #  - private-key-pem / public-key-pem (PKCS#8 / X.509 PEM) 를 주입하면 그 키를 사용한다. 주입하지 않으면 최초 기동 시

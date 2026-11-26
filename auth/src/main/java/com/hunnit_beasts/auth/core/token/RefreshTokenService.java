@@ -51,7 +51,7 @@ public class RefreshTokenService {
 
     /**
      * 회전 직후 이 시간(초) 안에 들어온 직전 토큰은 공격이 아니라 동시 요청(다중 탭 등)으로 보고 세션을 유지한다.
-     * 기본값 0 은 비활성(즉시 재사용 공격으로 판정)이며, 다중 탭 경합이 문제될 때만 켠다.
+     * 0 은 비활성(즉시 재사용 공격으로 판정)이다. 운영은 application.yaml 에서 10초로 켠다(동시 갱신 경합으로 로그아웃되던 문제).
      */
     @Value("${doro.iam.jwt.refresh-reuse-grace-seconds:0}")
     private long refreshReuseGraceSeconds;
